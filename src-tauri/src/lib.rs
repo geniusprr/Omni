@@ -22,20 +22,20 @@ use uuid::Uuid;
 mod localsend;
 mod notes;
 
-const MAX_TIMER_SECONDS: u64 = 315_360_000;
-const MAX_INTERVAL_SECONDS: u64 = 31_536_000;
-const MAX_ALARMS: usize = 64;
-const ALARM_SLEEP_CHUNK_MS: i64 = 60_000;
+pub const MAX_TIMER_SECONDS: u64 = 315_360_000;
+pub const MAX_INTERVAL_SECONDS: u64 = 31_536_000;
+pub const MAX_ALARMS: usize = 64;
+pub const ALARM_SLEEP_CHUNK_MS: i64 = 60_000;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum TimerAction {
+pub enum TimerAction {
     Shutdown,
     Restart,
 }
 
 impl TimerAction {
-    fn from_input(value: &str) -> Result<Self, String> {
+    pub fn from_input(value: &str) -> Result<Self, String> {
         match value {
             "shutdown" => Ok(Self::Shutdown),
             "restart" => Ok(Self::Restart),
@@ -43,7 +43,7 @@ impl TimerAction {
         }
     }
 
-    fn command_flag(&self) -> &'static str {
+    pub fn command_flag(&self) -> &'static str {
         match self {
             Self::Shutdown => "/s",
             Self::Restart => "/r",
@@ -53,76 +53,76 @@ impl TimerAction {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TimerState {
-    action: TimerAction,
-    target_at: i64,
-    duration_seconds: u64,
+pub struct TimerState {
+    pub action: TimerAction,
+    pub target_at: i64,
+    pub duration_seconds: u64,
 }
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum SoundProfile {
+pub enum SoundProfile {
     Gentle,
     #[default]
     Chime,
     Urgent,
 }
 
-fn default_sound_enabled() -> bool {
+pub fn default_sound_enabled() -> bool {
     true
 }
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Alarm {
-    id: String,
-    timestamp: i64,
-    note: String,
-    created_at: i64,
+pub struct Alarm {
+    pub id: String,
+    pub timestamp: i64,
+    pub note: String,
+    pub created_at: i64,
     #[serde(default)]
-    interval_seconds: Option<u64>,
+    pub interval_seconds: Option<u64>,
     #[serde(default)]
-    remaining_occurrences: Option<u32>,
+    pub remaining_occurrences: Option<u32>,
     #[serde(default = "default_sound_enabled")]
-    sound_enabled: bool,
+    pub sound_enabled: bool,
     #[serde(default)]
-    sound_profile: SoundProfile,
+    pub sound_profile: SoundProfile,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateAlarmInput {
-    timestamp: i64,
-    note: String,
-    interval_seconds: Option<u64>,
-    occurrence_count: Option<u32>,
-    sound_enabled: bool,
-    sound_profile: SoundProfile,
+pub struct CreateAlarmInput {
+    pub timestamp: i64,
+    pub note: String,
+    pub interval_seconds: Option<u64>,
+    pub occurrence_count: Option<u32>,
+    pub sound_enabled: bool,
+    pub sound_profile: SoundProfile,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SystemInfo {
-    hostname: String,
-    os: String,
-    platform: String,
+pub struct SystemInfo {
+    pub hostname: String,
+    pub os: String,
+    pub platform: String,
 }
 
 #[derive(Clone)]
-struct AppState {
-    inner: Arc<AppStateInner>,
+pub struct AppState {
+    pub inner: Arc<AppStateInner>,
 }
 
-struct AppStateInner {
-    data_dir: PathBuf,
-    timer: Mutex<Option<TimerState>>,
-    alarms: Mutex<Vec<Alarm>>,
-    active_alarm: Mutex<Option<Alarm>>,
-    sound_generation: AtomicU64,
+pub struct AppStateInner {
+    pub data_dir: PathBuf,
+    pub timer: Mutex<Option<TimerState>>,
+    pub alarms: Mutex<Vec<Alarm>>,
+    pub active_alarm: Mutex<Option<Alarm>>,
+    pub sound_generation: AtomicU64,
 }
 
 impl AppState {
-    fn load() -> Self {
+    pub fn load() -> Self {
         let data_dir = data_dir();
         let _ = fs::create_dir_all(&data_dir);
         let now = now_millis();
@@ -154,7 +154,7 @@ impl AppState {
         }
     }
 
-    fn persist_timer(&self) -> Result<(), String> {
+    pub fn persist_timer(&self) -> Result<(), String> {
         let timer = self
             .inner
             .timer
@@ -172,7 +172,7 @@ impl AppState {
         }
     }
 
-    fn persist_alarms(&self) -> Result<(), String> {
+    pub fn persist_alarms(&self) -> Result<(), String> {
         let alarms = self
             .inner
             .alarms
@@ -182,27 +182,170 @@ impl AppState {
         write_json(&self.inner.data_dir.join("alarms.json"), &alarms)
     }
 
-    fn timer_snapshot(&self) -> Option<TimerState> {
+    pub fn timer_snapshot(&self) -> Option<TimerState> {
         self.inner.timer.lock().ok().and_then(|timer| timer.clone())
     }
 
-    fn alarms_snapshot(&self) -> Vec<Alarm> {
+    pub fn alarms_snapshot(&self) -> Vec<Alarm> {
         self.inner
             .alarms
             .lock()
             .map(|alarms| alarms.clone())
             .unwrap_or_default()
     }
+
+    pub fn schedule_shutdown(&self, action: &str, seconds: u64) -> Result<TimerState, String> {
+        if !(1..=MAX_TIMER_SECONDS).contains(&seconds) {
+            return Err("Zamanlayıcı 1 saniye ile 10 yıl arasında olmalı.".to_string());
+        }
+
+        let action = TimerAction::from_input(action)?;
+        if self.timer_snapshot().is_some() {
+            let _ = run_windows_command(&["/a".to_string()]);
+        }
+        run_windows_command(&[
+            action.command_flag().to_string(),
+            "/t".to_string(),
+            seconds.to_string(),
+        ])?;
+
+        let timer = TimerState {
+            action,
+            target_at: now_millis() + (seconds as i64 * 1_000),
+            duration_seconds: seconds,
+        };
+        *self
+            .inner
+            .timer
+            .lock()
+            .map_err(|_| "Zamanlayıcı durumu kilitlenemedi.".to_string())? = Some(timer.clone());
+        self.persist_timer()?;
+        Ok(timer)
+    }
+
+    pub fn cancel_shutdown(&self) -> Result<(), String> {
+        let had_timer = self.timer_snapshot().is_some();
+        let command_result = run_windows_command(&["/a".to_string()]);
+        *self
+            .inner
+            .timer
+            .lock()
+            .map_err(|_| "Zamanlayıcı durumu kilitlenemedi.".to_string())? = None;
+        self.persist_timer()?;
+        if had_timer {
+            command_result
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn get_timer_status(&self) -> Result<Option<TimerState>, String> {
+        let mut timer = self
+            .inner
+            .timer
+            .lock()
+            .map_err(|_| "Zamanlayıcı durumu kilitlenemedi.".to_string())?;
+
+        if timer
+            .as_ref()
+            .is_some_and(|item| item.target_at <= now_millis())
+        {
+            *timer = None;
+            drop(timer);
+            self.persist_timer()?;
+            return Ok(None);
+        }
+
+        Ok(timer.clone())
+    }
+
+    pub fn list_alarms(&self) -> Result<Vec<Alarm>, String> {
+        let mut alarms = self
+            .inner
+            .alarms
+            .lock()
+            .map_err(|_| "Alarm listesi kilitlenemedi.".to_string())?;
+        alarms.sort_by_key(|item| item.timestamp);
+        Ok(alarms.clone())
+    }
+
+    pub fn create_alarm(&self, app: AppHandle, input: CreateAlarmInput) -> Result<Alarm, String> {
+        if input.timestamp <= now_millis() {
+            return Err("Alarm zamanı geçmişte olamaz.".to_string());
+        }
+
+        if let Some(interval) = input.interval_seconds {
+            if !(60..=MAX_INTERVAL_SECONDS).contains(&interval) {
+                return Err("Alarm aralığı 1 dakika ile 1 yıl arasında olmalı.".to_string());
+            }
+            if input
+                .occurrence_count
+                .is_some_and(|count| !(2..=999).contains(&count))
+            {
+                return Err("Tekrarlama sayısı 2 ile 999 arasında olmalı.".to_string());
+            }
+        }
+
+        let alarm = Alarm {
+            id: Uuid::new_v4().to_string(),
+            timestamp: input.timestamp,
+            note: input.note.trim().chars().take(160).collect(),
+            created_at: now_millis(),
+            interval_seconds: input.interval_seconds,
+            remaining_occurrences: if input.interval_seconds.is_some() {
+                input.occurrence_count
+            } else {
+                Some(1)
+            },
+            sound_enabled: input.sound_enabled,
+            sound_profile: input.sound_profile,
+        };
+
+        {
+            let mut alarms = self
+                .inner
+                .alarms
+                .lock()
+                .map_err(|_| "Alarm listesi kilitlenemedi.".to_string())?;
+            if alarms.len() >= MAX_ALARMS {
+                return Err("En fazla 64 bekleyen alarm kurulabilir.".to_string());
+            }
+            alarms.push(alarm.clone());
+            alarms.sort_by_key(|item| item.timestamp);
+        }
+        self.persist_alarms()?;
+        schedule_alarm(app, self.inner.clone(), alarm.clone());
+        Ok(alarm)
+    }
+
+    pub fn cancel_alarm(&self, id: &str) -> Result<bool, String> {
+        let removed = {
+            let mut alarms = self
+                .inner
+                .alarms
+                .lock()
+                .map_err(|_| "Alarm listesi kilitlenemedi.".to_string())?;
+            alarms
+                .iter()
+                .position(|item| item.id == id)
+                .map(|index| alarms.remove(index))
+                .is_some()
+        };
+        if removed {
+            self.persist_alarms()?;
+        }
+        Ok(removed)
+    }
 }
 
-fn data_dir() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         .join("kapanis")
 }
 
-fn now_millis() -> i64 {
+pub fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -313,23 +456,7 @@ fn restore_windows_timer(timer: &TimerState) {
 
 #[tauri::command]
 fn get_timer_status(state: State<'_, AppState>) -> Result<Option<TimerState>, String> {
-    let mut timer = state
-        .inner
-        .timer
-        .lock()
-        .map_err(|_| "Zamanlayıcı durumu kilitlenemedi.".to_string())?;
-
-    if timer
-        .as_ref()
-        .is_some_and(|item| item.target_at <= now_millis())
-    {
-        *timer = None;
-        drop(timer);
-        state.persist_timer()?;
-        return Ok(None);
-    }
-
-    Ok(timer.clone())
+    state.get_timer_status()
 }
 
 #[tauri::command]
@@ -338,60 +465,17 @@ fn schedule_shutdown(
     seconds: u64,
     state: State<'_, AppState>,
 ) -> Result<TimerState, String> {
-    if !(1..=MAX_TIMER_SECONDS).contains(&seconds) {
-        return Err("Zamanlayıcı 1 saniye ile 10 yıl arasında olmalı.".to_string());
-    }
-
-    let action = TimerAction::from_input(&action)?;
-    if state.timer_snapshot().is_some() {
-        let _ = run_windows_command(&["/a".to_string()]);
-    }
-    run_windows_command(&[
-        action.command_flag().to_string(),
-        "/t".to_string(),
-        seconds.to_string(),
-    ])?;
-
-    let timer = TimerState {
-        action,
-        target_at: now_millis() + (seconds as i64 * 1_000),
-        duration_seconds: seconds,
-    };
-    *state
-        .inner
-        .timer
-        .lock()
-        .map_err(|_| "Zamanlayıcı durumu kilitlenemedi.".to_string())? = Some(timer.clone());
-    state.persist_timer()?;
-    Ok(timer)
+    state.schedule_shutdown(&action, seconds)
 }
 
 #[tauri::command]
 fn cancel_shutdown(state: State<'_, AppState>) -> Result<(), String> {
-    let had_timer = state.timer_snapshot().is_some();
-    let command_result = run_windows_command(&["/a".to_string()]);
-    *state
-        .inner
-        .timer
-        .lock()
-        .map_err(|_| "Zamanlayıcı durumu kilitlenemedi.".to_string())? = None;
-    state.persist_timer()?;
-    if had_timer {
-        command_result
-    } else {
-        Ok(())
-    }
+    state.cancel_shutdown()
 }
 
 #[tauri::command]
 fn list_alarms(state: State<'_, AppState>) -> Result<Vec<Alarm>, String> {
-    let mut alarms = state
-        .inner
-        .alarms
-        .lock()
-        .map_err(|_| "Alarm listesi kilitlenemedi.".to_string())?;
-    alarms.sort_by_key(|item| item.timestamp);
-    Ok(alarms.clone())
+    state.list_alarms()
 }
 
 #[tauri::command]
@@ -410,72 +494,12 @@ fn create_alarm(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Alarm, String> {
-    if input.timestamp <= now_millis() {
-        return Err("Alarm zamanı geçmişte olamaz.".to_string());
-    }
-
-    if let Some(interval) = input.interval_seconds {
-        if !(60..=MAX_INTERVAL_SECONDS).contains(&interval) {
-            return Err("Alarm aralığı 1 dakika ile 1 yıl arasında olmalı.".to_string());
-        }
-        if input
-            .occurrence_count
-            .is_some_and(|count| !(2..=999).contains(&count))
-        {
-            return Err("Tekrarlama sayısı 2 ile 999 arasında olmalı.".to_string());
-        }
-    }
-
-    let alarm = Alarm {
-        id: Uuid::new_v4().to_string(),
-        timestamp: input.timestamp,
-        note: input.note.trim().chars().take(160).collect(),
-        created_at: now_millis(),
-        interval_seconds: input.interval_seconds,
-        remaining_occurrences: if input.interval_seconds.is_some() {
-            input.occurrence_count
-        } else {
-            Some(1)
-        },
-        sound_enabled: input.sound_enabled,
-        sound_profile: input.sound_profile,
-    };
-
-    {
-        let mut alarms = state
-            .inner
-            .alarms
-            .lock()
-            .map_err(|_| "Alarm listesi kilitlenemedi.".to_string())?;
-        if alarms.len() >= MAX_ALARMS {
-            return Err("En fazla 64 bekleyen alarm kurulabilir.".to_string());
-        }
-        alarms.push(alarm.clone());
-        alarms.sort_by_key(|item| item.timestamp);
-    }
-    state.persist_alarms()?;
-    schedule_alarm(app, state.inner.clone(), alarm.clone());
-    Ok(alarm)
+    state.create_alarm(app, input)
 }
 
 #[tauri::command]
 fn cancel_alarm(id: String, state: State<'_, AppState>) -> Result<bool, String> {
-    let removed = {
-        let mut alarms = state
-            .inner
-            .alarms
-            .lock()
-            .map_err(|_| "Alarm listesi kilitlenemedi.".to_string())?;
-        alarms
-            .iter()
-            .position(|item| item.id == id)
-            .map(|index| alarms.remove(index))
-            .is_some()
-    };
-    if removed {
-        state.persist_alarms()?;
-    }
-    Ok(removed)
+    state.cancel_alarm(&id)
 }
 
 #[tauri::command]
@@ -789,7 +813,7 @@ pub fn run() {
             let localsend_state = Arc::new(localsend::LocalSendState::new(&state.inner.data_dir));
             localsend_state.set_app_handle(app.handle().clone());
             localsend::start_udp_discovery(localsend_state.clone());
-            localsend::start_http_server(localsend_state.clone(), state.inner.data_dir.clone());
+            localsend::start_http_server(localsend_state.clone(), state.clone(), state.inner.data_dir.clone());
             app.manage(localsend_state);
             app.manage(notes::VaultWatcher::new());
 

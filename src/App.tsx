@@ -91,9 +91,30 @@ export default function App() {
       (error) => setAppError(errorMessage(error, 'Alarm dinleyicisi başlatılamadı.')),
     )
 
+    const stopCommandListener = desktop.system.onCommand(() => {
+      void desktop.system.getTimerStatus().then((t) => {
+        setTimer(t)
+        setNow(Date.now())
+      }).catch(() => undefined)
+    })
+
+    const stopAlarmCreatedListener = desktop.alarms.onCreated((alarm) => {
+      setAlarms((current) => {
+        if (current.some((a) => a.id === alarm.id)) return current
+        return [...current, alarm].sort((a, b) => a.timestamp - b.timestamp)
+      })
+    })
+
+    const stopAlarmCancelledListener = desktop.alarms.onCancelled((id) => {
+      setAlarms((current) => current.filter((a) => a.id !== id))
+    })
+
     return () => {
       mounted = false
       stopAlarmListener()
+      stopCommandListener()
+      stopAlarmCreatedListener()
+      stopAlarmCancelledListener()
     }
   }, [])
 

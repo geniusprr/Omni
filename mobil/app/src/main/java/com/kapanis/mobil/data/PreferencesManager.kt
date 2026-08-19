@@ -2,6 +2,8 @@ package com.kapanis.mobil.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 
 class PreferencesManager(context: Context) {
@@ -25,8 +27,12 @@ class PreferencesManager(context: Context) {
         set(value) = prefs.edit().putString("server_host", value.trim()).apply()
 
     var port: Int
-        get() = prefs.getInt("server_port", 54321)
+        get() = prefs.getInt("server_port", 53317)
         set(value) = prefs.edit().putInt("server_port", value).apply()
+
+    var wifiSsid: String
+        get() = prefs.getString("last_wifi_ssid", "") ?: ""
+        set(value) = prefs.edit().putString("last_wifi_ssid", value).apply()
 
     // Supabase Online Settings
     var supabaseUrl: String
@@ -67,4 +73,88 @@ class PreferencesManager(context: Context) {
     var lastConnectedAt: Long
         get() = prefs.getLong("last_connected_at", 0L)
         set(value) = prefs.edit().putLong("last_connected_at", value).apply()
+
+    // Paired Devices History
+    fun getPairedDevices(): List<PairedDeviceItem> {
+        val raw = prefs.getString("paired_devices_json", "[]") ?: "[]"
+        val list = mutableListOf<PairedDeviceItem>()
+        try {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val modeStr = obj.optString("mode", ConnectionMode.LOCAL.name)
+                val mode = try { ConnectionMode.valueOf(modeStr) } catch (e: Exception) { ConnectionMode.LOCAL }
+                list.add(
+                    PairedDeviceItem(
+                        id = obj.optString("id", UUID.randomUUID().toString()),
+                        name = obj.optString("name", "Windows PC"),
+                        host = obj.optString("host", "192.168.1.100"),
+                        port = obj.optInt("port", 53317),
+                        mode = mode,
+                        wifiSsid = obj.optString("wifiSsid", ""),
+                        pairingCode = obj.optString("pairingCode", ""),
+                        lastConnectedAt = obj.optLong("lastConnectedAt", System.currentTimeMillis()),
+                        isOnline = obj.optBoolean("isOnline", false),
+                        osInfo = obj.optString("osInfo", "Windows 11")
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return list.sortedByDescending { it.lastConnectedAt }
+    }
+
+    fun savePairedDevice(device: PairedDeviceItem) {
+        val current = getPairedDevices().toMutableList()
+        val existingIndex = current.indexOfFirst {
+            if (device.mode == ConnectionMode.LOCAL) it.host == device.host && it.port == device.port
+            else it.pairingCode == device.pairingCode && it.pairingCode.isNotEmpty()
+        }
+
+        if (existingIndex != -1) {
+            current[existingIndex] = device.copy(lastConnectedAt = System.currentTimeMillis())
+        } else {
+            current.add(0, device.copy(lastConnectedAt = System.currentTimeMillis()))
+        }
+
+        val array = JSONArray()
+        for (item in current.take(20)) {
+            val obj = JSONObject().apply {
+                put("id", item.id.ifEmpty { UUID.randomUUID().toString() })
+                put("name", item.name)
+                put("host", item.host)
+                put("port", item.port)
+                put("mode", item.mode.name)
+                put("wifiSsid", item.wifiSsid)
+                put("pairingCode", item.pairingCode)
+                put("lastConnectedAt", item.lastConnectedAt)
+                put("isOnline", item.isOnline)
+                put("osInfo", item.osInfo)
+            }
+            array.put(obj)
+        }
+        prefs.edit().putString("paired_devices_json", array.toString()).apply()
+    }
+
+    fun removePairedDevice(id: String) {
+        val filtered = getPairedDevices().filter { it.id != id }
+        val array = JSONArray()
+        for (item in filtered) {
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("name", item.name)
+                put("host", item.host)
+                put("port", item.port)
+                put("mode", item.mode.name)
+                put("wifiSsid", item.wifiSsid)
+                put("pairingCode", item.pairingCode)
+                put("lastConnectedAt", item.lastConnectedAt)
+                put("isOnline", item.isOnline)
+                put("osInfo", item.osInfo)
+            }
+            array.put(obj)
+        }
+        prefs.edit().putString("paired_devices_json", array.toString()).apply()
+    }
 }

@@ -3,7 +3,10 @@ package com.kapanis.mobil.network
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.kapanis.mobil.data.AlarmItem
+import com.kapanis.mobil.data.LocalDeviceState
 import com.kapanis.mobil.data.NoteItem
+import com.kapanis.mobil.data.RemoteTimerState
 import com.kapanis.mobil.data.ServerStatus
 import com.kapanis.mobil.data.TransferItem
 import kotlinx.coroutines.Dispatchers
@@ -14,25 +17,23 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
-import okio.source
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.InputStream
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class KapanisApiClient {
 
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun ping(host: String, port: Int): Result<ServerStatus> = withContext(Dispatchers.IO) {
-        // 1. Try /api/status
+        // 1. Try /api/status or /api/local/state
         try {
             val url = "http://$host:$port/api/status"
             val request = Request.Builder().url(url).get().build()
@@ -40,11 +41,25 @@ class KapanisApiClient {
                 if (response.isSuccessful) {
                     val body = response.body?.string().orEmpty()
                     val json = JSONObject(body)
+                    val timerJson = json.optJSONObject("timerState")
+                    val timerState = if (timerJson != null) {
+                        RemoteTimerState(
+                            action = timerJson.optString("action", "shutdown"),
+                            targetAt = timerJson.optLong("targetAt", 0L),
+                            durationSeconds = timerJson.optLong("durationSeconds", 0L)
+                        )
+                    } else null
+
+                    val alarmsArray = json.optJSONArray("alarms")
+                    val alarmsList = parseAlarmsArray(alarmsArray)
+
                     val status = ServerStatus(
                         status = json.optString("status", "ok"),
                         deviceName = json.optString("deviceName", "Windows PC"),
-                        version = json.optString("version", "1.0.0"),
-                        port = json.optInt("port", port)
+                        version = json.optString("version", "2.0.0"),
+                        port = json.optInt("port", port),
+                        timerState = timerState,
+                        alarms = alarmsList
                     )
                     return@withContext Result.success(status)
                 }
@@ -75,6 +90,216 @@ class KapanisApiClient {
         }
 
         Result.failure(Exception("Sunucuya ulaşılamadı ($host:$port)"))
+    }
+
+    suspend fun registerDevice(
+        host: String,
+        port: Int,
+        alias: String,
+        model: String,
+        wifiName: String = ""
+    ): Result<LocalDeviceState> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/register"
+            val json = JSONObject().apply {
+                put("alias", alias)
+                put("deviceModel", model)
+                put("deviceType", "mobile")
+                put("port", 53317)
+                put("wifiName", wifiName)
+                put("fingerprint", "android-${System.currentTimeMillis() % 100000}")
+                put("protocol", "http")
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string().orEmpty()
+                    val respJson = JSONObject(respBody)
+                    val timerJson = respJson.optJSONObject("timerState")
+                    val timerState = if (timerJson != null) {
+                        RemoteTimerState(
+                            action = timerJson.optString("action", "shutdown"),
+                            targetAt = timerJson.optLong("targetAt", 0L),
+                            durationSeconds = timerJson.optLong("durationSeconds", 0L)
+                        )
+                    } else null
+                    val alarms = parseAlarmsArray(respJson.optJSONArray("alarms"))
+                    val state = LocalDeviceState(
+                        status = "ok",
+                        deviceName = respJson.optString("deviceName", "Windows PC"),
+                        version = respJson.optString("version", "2.0.0"),
+                        port = respJson.optInt("port", port),
+                        timerState = timerState,
+                        alarms = alarms
+                    )
+                    Result.success(state)
+                } else {
+                    Result.failure(Exception("Kayıt başarısız (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchLocalState(host: String, port: Int): Result<LocalDeviceState> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/status"
+            val request = Request.Builder().url(url).get().build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string().orEmpty()
+                    val json = JSONObject(body)
+                    val timerJson = json.optJSONObject("timerState")
+                    val timerState = if (timerJson != null) {
+                        RemoteTimerState(
+                            action = timerJson.optString("action", "shutdown"),
+                            targetAt = timerJson.optLong("targetAt", 0L),
+                            durationSeconds = timerJson.optLong("durationSeconds", 0L)
+                        )
+                    } else null
+
+                    val alarms = parseAlarmsArray(json.optJSONArray("alarms"))
+
+                    val state = LocalDeviceState(
+                        status = "ok",
+                        deviceName = json.optString("deviceName", "Windows PC"),
+                        version = json.optString("version", "2.0.0"),
+                        port = json.optInt("port", port),
+                        timerState = timerState,
+                        alarms = alarms
+                    )
+                    Result.success(state)
+                } else {
+                    Result.failure(Exception("Durum alınamadı (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun sendCommand(
+        host: String,
+        port: Int,
+        command: String,
+        delaySeconds: Long
+    ): Result<RemoteTimerState?> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/command"
+            val json = JSONObject().apply {
+                put("command", command)
+                put("delay_seconds", delaySeconds)
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string().orEmpty()
+                    val respJson = JSONObject(respBody)
+                    val timerJson = respJson.optJSONObject("timerState")
+                    val timerState = if (timerJson != null) {
+                        RemoteTimerState(
+                            action = timerJson.optString("action", "shutdown"),
+                            targetAt = timerJson.optLong("targetAt", 0L),
+                            durationSeconds = timerJson.optLong("durationSeconds", 0L)
+                        )
+                    } else null
+                    Result.success(timerState)
+                } else {
+                    Result.failure(Exception("Komut gönderilemedi (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createAlarm(
+        host: String,
+        port: Int,
+        timestamp: Long,
+        note: String,
+        soundEnabled: Boolean = true,
+        soundProfile: String = "chime"
+    ): Result<AlarmItem> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/alarms/create"
+            val json = JSONObject().apply {
+                put("timestamp", timestamp)
+                put("note", note)
+                put("soundEnabled", soundEnabled)
+                put("soundProfile", soundProfile)
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string().orEmpty()
+                    val respJson = JSONObject(respBody)
+                    val alarmJson = respJson.optJSONObject("alarm")
+                    val alarm = if (alarmJson != null) {
+                        parseAlarmObject(alarmJson)
+                    } else {
+                        AlarmItem(
+                            id = System.currentTimeMillis().toString(),
+                            timestamp = timestamp,
+                            note = note,
+                            soundEnabled = soundEnabled,
+                            soundProfile = soundProfile
+                        )
+                    }
+                    Result.success(alarm)
+                } else {
+                    Result.failure(Exception("Alarm oluşturulamadı (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun cancelAlarm(
+        host: String,
+        port: Int,
+        id: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/alarms/cancel"
+            val json = JSONObject().apply {
+                put("id", id)
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) Result.success(true)
+                else Result.failure(Exception("Alarm iptal edilemedi (${response.code})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchAlarms(
+        host: String,
+        port: Int
+    ): Result<List<AlarmItem>> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/alarms"
+            val request = Request.Builder().url(url).get().build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string().orEmpty()
+                    val array = JSONArray(respBody)
+                    Result.success(parseAlarmsArray(array))
+                } else {
+                    Result.failure(Exception("Alarmlar alınamadı (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun sendNotification(
@@ -190,29 +415,6 @@ class KapanisApiClient {
         }
     }
 
-    suspend fun sendCommand(
-        host: String,
-        port: Int,
-        command: String,
-        delaySeconds: Long
-    ): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val url = "http://$host:$port/api/command"
-            val json = JSONObject().apply {
-                put("command", command)
-                put("delay_seconds", delaySeconds)
-            }
-            val body = json.toString().toRequestBody(jsonMediaType)
-            val request = Request.Builder().url(url).post(body).build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) Result.success(true)
-                else Result.failure(Exception("Komut gönderilemedi (${response.code})"))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     suspend fun uploadFile(
         context: Context,
         host: String,
@@ -280,6 +482,28 @@ class KapanisApiClient {
         }
     }
 
+    private fun parseAlarmsArray(array: JSONArray?): List<AlarmItem> {
+        if (array == null) return emptyList()
+        val list = mutableListOf<AlarmItem>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            list.add(parseAlarmObject(obj))
+        }
+        return list.sortedBy { it.timestamp }
+    }
+
+    private fun parseAlarmObject(obj: JSONObject): AlarmItem {
+        return AlarmItem(
+            id = obj.optString("id", ""),
+            timestamp = obj.optLong("timestamp", 0L),
+            note = obj.optString("note", ""),
+            soundEnabled = obj.optBoolean("soundEnabled", true),
+            soundProfile = obj.optString("soundProfile", "chime"),
+            intervalSeconds = if (obj.has("intervalSeconds") && !obj.isNull("intervalSeconds")) obj.optLong("intervalSeconds") else null,
+            remainingOccurrences = if (obj.has("remainingOccurrences") && !obj.isNull("remainingOccurrences")) obj.optInt("remainingOccurrences") else null
+        )
+    }
+
     private fun getFileMetadata(context: Context, uri: Uri): Pair<String, Long> {
         var name = "dosya_${System.currentTimeMillis()}.dat"
         var size = -1L
@@ -298,3 +522,4 @@ class KapanisApiClient {
         return Pair(name, size)
     }
 }
+

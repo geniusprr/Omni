@@ -83,6 +83,10 @@ export const desktop = {
       }
       return invoke<{ hostname: string; os: string; platform: string }>('get_system_info')
     },
+    onCommand: (callback: (payload: { command: string; delaySeconds: number }) => void) => {
+      if (!isTauriRuntime()) return () => undefined
+      return listenWithoutBlocking<{ command: string; delaySeconds: number }>('remote:command', callback)
+    },
   },
   autostart: {
     isEnabled: async () => {
@@ -147,6 +151,14 @@ export const desktop = {
     onTriggered: (callback: TriggeredAlarmHandler, onError?: (error: unknown) => void) => {
       if (!isTauriRuntime()) return () => undefined
       return listenWithoutBlocking<Alarm>('alarm:triggered', callback, onError)
+    },
+    onCreated: (callback: (alarm: Alarm) => void) => {
+      if (!isTauriRuntime()) return () => undefined
+      return listenWithoutBlocking<Alarm>('alarm:created', callback)
+    },
+    onCancelled: (callback: (id: string) => void) => {
+      if (!isTauriRuntime()) return () => undefined
+      return listenWithoutBlocking<string>('alarm:cancelled', callback)
     },
   },
   notes: {

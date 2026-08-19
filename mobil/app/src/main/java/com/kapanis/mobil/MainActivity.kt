@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
 
         // Parse Local parameters
         val host = data.getQueryParameter("host") ?: return null
-        val port = data.getQueryParameter("port")?.toIntOrNull() ?: 54321
+        val port = data.getQueryParameter("port")?.toIntOrNull() ?: 53317
         prefs.host = host
         prefs.port = port
         prefs.deviceName = name

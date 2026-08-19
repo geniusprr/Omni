@@ -23,6 +23,7 @@ import {
   saveEffectiveSettings,
   testSupabaseConnection,
 } from '@/features/remote/client'
+import { desktop } from '@/lib/desktop'
 import type { AppSettings, PairedController, RemoteConnectionStatus } from '@/types'
 
 interface SettingsPageProps {
@@ -176,6 +177,17 @@ export function SettingsPage({
   const [showQrModal, setShowQrModal] = useState(false)
   const [showSqlModal, setShowSqlModal] = useState(false)
   const [heartbeatAgo, setHeartbeatAgo] = useState<string>('')
+  const [localDevices, setLocalDevices] = useState<import('@/types').LocalSendDevice[]>([])
+
+  useEffect(() => {
+    void desktop.localsend.getDevices().then(setLocalDevices).catch(() => undefined)
+    const unlisten = desktop.localsend.onDeviceDiscovered(() => {
+      void desktop.localsend.getDevices().then(setLocalDevices).catch(() => undefined)
+    })
+    return () => {
+      unlisten()
+    }
+  }, [])
 
   const remoteUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/?mode=remote&pair=${encodeURIComponent(settings.pairingCode)}&supabaseUrl=${encodeURIComponent(url)}&supabaseKey=${encodeURIComponent(key)}`
@@ -382,18 +394,32 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><Smartphone size={17} /></div>
             <div>
-              <h3>Eşleştirilen Cihazlar ({pairedControllers.length})</h3>
-              <p>Bu bilgisayara uzaktan erişim izni olan telefon ve tarayıcılar.</p>
+              <h3>Eşleştirilen Cihazlar ({pairedControllers.length + localDevices.length})</h3>
+              <p>Bu bilgisayara uzaktan erişim izni olan yerel Wi-Fi ve bulut cihazları.</p>
             </div>
           </div>
           <div className="settings-card__body">
-            {pairedControllers.length === 0 ? (
+            {pairedControllers.length === 0 && localDevices.length === 0 ? (
               <div className="paired-empty">
                 <Smartphone size={22} />
-                <span>Henüz eşleşmiş bir cihaz yok. Telefondan eşleştirme kodunu girin veya QR kodu tarayın.</span>
+                <span>Henüz eşleşmiş bir cihaz yok. Telefondan eşleştirme kodunu girin veya aynı Wi-Fi ağından bağlanın.</span>
               </div>
             ) : (
               <div className="paired-list">
+                {localDevices.map((dev) => (
+                  <div className="paired-item" key={`local-${dev.ip}-${dev.port}`}>
+                    <div className="paired-item__icon">
+                      <Smartphone size={15} />
+                    </div>
+                    <div className="paired-item__info">
+                      <strong>{dev.alias || 'Yerel Android Cihaz'}</strong>
+                      <small>Yerel Ağ (Wi-Fi) · {dev.ip}:{dev.port} · {dev.deviceModel || 'Mobil'}</small>
+                    </div>
+                    <span className="status-badge status-badge--online" style={{ fontSize: '11px', padding: '2px 8px' }}>
+                      <span className="status-badge__dot" /> Yerel Bağlı
+                    </span>
+                  </div>
+                ))}
                 {pairedControllers.map((ctrl) => (
                   <div className="paired-item" key={ctrl.id}>
                     <div className="paired-item__icon">
@@ -401,7 +427,7 @@ export function SettingsPage({
                     </div>
                     <div className="paired-item__info">
                       <strong>{ctrl.controllerName || 'Telefon Denetleyici'}</strong>
-                      <small>Son aktiflik: {ctrl.lastActiveAt ? new Date(ctrl.lastActiveAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Bilinmiyor'}</small>
+                      <small>Bulut (Supabase) · Son aktiflik: {ctrl.lastActiveAt ? new Date(ctrl.lastActiveAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Bilinmiyor'}</small>
                     </div>
                     <Button
                       size="compact"

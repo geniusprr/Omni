@@ -1,3 +1,4 @@
+use crate::{AppState, CreateAlarmInput, SoundProfile, TimerState, Alarm};
 use serde::{Deserialize, Serialize};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
@@ -14,6 +15,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_notification::NotificationExt;
 use tiny_http::{Header, Response, Server, StatusCode};
 use uuid::Uuid;
 
@@ -236,14 +238,51 @@ impl LocalSendState {
         if dev.port == 0 {
             dev.port = LOCALSEND_DEFAULT_PORT;
         }
+        if dev.alias.trim().is_empty() {
+            dev.alias = if dev.device_type == "mobile" { "Android Telefon".to_string() } else { "Yerel Cihaz".to_string() };
+        }
         dev.last_seen = now_millis();
 
         let key = format!("{}:{}", dev.ip, dev.port);
         let mut devices = self.devices.lock().unwrap();
-        let is_new = !devices.contains_key(&key);
         devices.insert(key, dev.clone());
 
-        if is_new {
+        if let Some(app) = self.app_handle.lock().unwrap().as_ref() {
+            let _ = app.emit("localsend:device-discovered", &dev);
+        }
+    }
+
+    pub fn register_or_touch_sender(&self, sender_ip: &str, alias_hint: Option<&str>, model_hint: Option<&str>) {
+        if sender_ip.is_empty() || sender_ip == "127.0.0.1" || sender_ip == "0.0.0.0" {
+            return;
+        }
+        let key = format!("{}:{}", sender_ip, LOCALSEND_DEFAULT_PORT);
+        let mut devices = self.devices.lock().unwrap();
+        if let Some(dev) = devices.get_mut(&key) {
+            dev.last_seen = now_millis();
+            if let Some(alias) = alias_hint {
+                if !alias.trim().is_empty() {
+                    dev.alias = alias.to_string();
+                }
+            }
+            if let Some(model) = model_hint {
+                dev.device_model = Some(model.to_string());
+            }
+        } else {
+            let dev = LocalSendDevice {
+                ip: sender_ip.to_string(),
+                port: LOCALSEND_DEFAULT_PORT,
+                alias: alias_hint.unwrap_or("Android Telefon").to_string(),
+                version: "2.0".to_string(),
+                device_model: model_hint.map(|s| s.to_string()).or_else(|| Some("Android".to_string())),
+                device_type: "mobile".to_string(),
+                fingerprint: format!("mobile-{}", sender_ip.replace('.', "-")),
+                protocol: "http".to_string(),
+                download: false,
+                announce: Some(false),
+                last_seen: now_millis(),
+            };
+            devices.insert(key, dev.clone());
             if let Some(app) = self.app_handle.lock().unwrap().as_ref() {
                 let _ = app.emit("localsend:device-discovered", &dev);
             }
@@ -551,7 +590,7 @@ pub fn start_udp_discovery(state: Arc<LocalSendState>) {
 }
 
 /// Start HTTP REST API server on 53317 (tiny_http)
-pub fn start_http_server(state: Arc<LocalSendState>, data_dir: PathBuf) {
+pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_dir: PathBuf) {
     thread::spawn(move || {
         let addr = format!("0.0.0.0:{}", state.port);
         let server = match Server::http(&addr) {
@@ -573,10 +612,219 @@ pub fn start_http_server(state: Arc<LocalSendState>, data_dir: PathBuf) {
             let cors_header = Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
             let json_header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
 
-            // GET /api/status (Mobile App Ping)
-            if method == "GET" && url.starts_with("/api/status") {
+            // GET /api/status or /api/local/state (Mobile App Ping & Live State)
+            if method == "GET" && (url.starts_with("/api/status") || url.starts_with("/api/local/state")) {
+                state.register_or_touch_sender(&sender_ip, None, None);
                 let hostname = state.alias.lock().unwrap().clone();
-                let json = format!(r#"{{"status":"ok","deviceName":"{}","version":"1.0.0","port":{}}}"#, hostname, state.port);
+                let timer_state = app_state.get_timer_status().ok().flatten();
+                let alarms = app_state.list_alarms().unwrap_or_default();
+
+                #[derive(Serialize)]
+                #[serde(rename_all = "camelCase")]
+                struct StatusResp {
+                    status: &'static str,
+                    device_name: String,
+                    version: &'static str,
+                    port: u16,
+                    timer_state: Option<TimerState>,
+                    alarms: Vec<Alarm>,
+                }
+
+                let resp = StatusResp {
+                    status: "ok",
+                    device_name: hostname,
+                    version: "2.0.0",
+                    port: state.port,
+                    timer_state,
+                    alarms,
+                };
+
+                let json = serde_json::to_string(&resp).unwrap_or_default();
+                let mut response = Response::from_string(json);
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // POST /api/register or /api/localsend/v2/register
+            if method == "POST" && (url.starts_with("/api/register") || url.starts_with("/api/localsend/v2/register") || url.starts_with("/api/localsend/v1/register")) {
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+                if let Ok(dev) = serde_json::from_str::<LocalSendDevice>(&body) {
+                    state.register_device(dev, &sender_ip);
+                } else {
+                    state.register_or_touch_sender(&sender_ip, None, None);
+                }
+
+                let hostname = state.alias.lock().unwrap().clone();
+                let timer_state = app_state.get_timer_status().ok().flatten();
+                let alarms = app_state.list_alarms().unwrap_or_default();
+
+                #[derive(Serialize)]
+                #[serde(rename_all = "camelCase")]
+                struct RegisterResp {
+                    status: &'static str,
+                    device_name: String,
+                    version: &'static str,
+                    port: u16,
+                    timer_state: Option<TimerState>,
+                    alarms: Vec<Alarm>,
+                    device: LocalSendDevice,
+                }
+
+                let resp = RegisterResp {
+                    status: "ok",
+                    device_name: hostname,
+                    version: "2.0.0",
+                    port: state.port,
+                    timer_state,
+                    alarms,
+                    device: state.get_device_info(),
+                };
+
+                let json = serde_json::to_string(&resp).unwrap_or_default();
+                let mut response = Response::from_string(json);
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // POST /api/command (Power Commands: shutdown, restart, cancel)
+            if method == "POST" && url.starts_with("/api/command") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+
+                #[derive(Deserialize)]
+                struct CmdReq { command: String, delay_seconds: Option<u64> }
+
+                let mut ok = false;
+                if let Ok(cmd) = serde_json::from_str::<CmdReq>(&body) {
+                    let delay = cmd.delay_seconds.unwrap_or(0);
+                    if cmd.command == "cancel" {
+                        let _ = app_state.cancel_shutdown();
+                        if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
+                            let _ = app.emit("remote:command", serde_json::json!({ "command": "cancel", "delaySeconds": 0 }));
+                        }
+                        ok = true;
+                    } else if cmd.command == "shutdown" || cmd.command == "restart" {
+                        let _ = app_state.schedule_shutdown(&cmd.command, delay.max(1));
+                        if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
+                            let _ = app.emit("remote:command", serde_json::json!({ "command": cmd.command, "delaySeconds": delay }));
+                        }
+                        ok = true;
+                    }
+                }
+
+                let timer_state = app_state.get_timer_status().ok().flatten();
+                #[derive(Serialize)]
+                #[serde(rename_all = "camelCase")]
+                struct CmdResp {
+                    success: bool,
+                    timer_state: Option<TimerState>,
+                }
+                let resp_json = serde_json::to_string(&CmdResp { success: ok, timer_state }).unwrap_or_default();
+                let mut response = Response::from_string(resp_json);
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // POST /api/alarms/create or /api/alarm (Create Alarm on PC)
+            if method == "POST" && (url.starts_with("/api/alarms/create") || url.starts_with("/api/alarm")) {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct AlarmReq {
+                    timestamp: i64,
+                    note: Option<String>,
+                    interval_seconds: Option<u64>,
+                    occurrence_count: Option<u32>,
+                    sound_enabled: Option<bool>,
+                    sound_profile: Option<String>,
+                }
+
+                let mut created_alarm: Option<Alarm> = None;
+                if let Ok(req) = serde_json::from_str::<AlarmReq>(&body) {
+                    let profile = match req.sound_profile.as_deref() {
+                        Some("gentle") => SoundProfile::Gentle,
+                        Some("urgent") => SoundProfile::Urgent,
+                        _ => SoundProfile::Chime,
+                    };
+                    let input = CreateAlarmInput {
+                        timestamp: req.timestamp,
+                        note: req.note.unwrap_or_default(),
+                        interval_seconds: req.interval_seconds,
+                        occurrence_count: req.occurrence_count,
+                        sound_enabled: req.sound_enabled.unwrap_or(true),
+                        sound_profile: profile,
+                    };
+
+                    if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
+                        if let Ok(alarm) = app_state.create_alarm(app.clone(), input) {
+                            let _ = app.emit("alarm:created", &alarm);
+                            created_alarm = Some(alarm);
+                        }
+                    }
+                }
+
+                #[derive(Serialize)]
+                #[serde(rename_all = "camelCase")]
+                struct AlarmResp {
+                    success: bool,
+                    alarm: Option<Alarm>,
+                }
+                let resp_json = serde_json::to_string(&AlarmResp {
+                    success: created_alarm.is_some(),
+                    alarm: created_alarm,
+                }).unwrap_or_default();
+
+                let mut response = Response::from_string(resp_json);
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // POST /api/alarms/cancel (Cancel Alarm on PC)
+            if method == "POST" && url.starts_with("/api/alarms/cancel") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+
+                #[derive(Deserialize)]
+                struct CancelReq { id: String }
+
+                let mut ok = false;
+                if let Ok(req) = serde_json::from_str::<CancelReq>(&body) {
+                    if let Ok(removed) = app_state.cancel_alarm(&req.id) {
+                        ok = removed;
+                        if removed {
+                            if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
+                                let _ = app.emit("alarm:cancelled", &req.id);
+                            }
+                        }
+                    }
+                }
+
+                let mut response = Response::from_string(format!(r#"{{"success":{ok}}}"#));
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // GET /api/alarms (List Alarms on PC)
+            if method == "GET" && url.starts_with("/api/alarms") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let alarms = app_state.list_alarms().unwrap_or_default();
+                let json = serde_json::to_string(&alarms).unwrap_or_else(|_| "[]".to_string());
                 let mut response = Response::from_string(json);
                 response.add_header(cors_header);
                 response.add_header(json_header);
@@ -586,11 +834,26 @@ pub fn start_http_server(state: Arc<LocalSendState>, data_dir: PathBuf) {
 
             // POST /api/notify (Mobile Notification)
             if method == "POST" && url.starts_with("/api/notify") {
+                state.register_or_touch_sender(&sender_ip, None, None);
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
-                if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
-                    let _ = app.emit("remote:notify", &body);
+
+                #[derive(Deserialize)]
+                #[allow(dead_code)]
+                struct NotifyReq {
+                    title: Option<String>,
+                    message: String,
+                    urgent: Option<bool>,
                 }
+
+                if let Ok(req) = serde_json::from_str::<NotifyReq>(&body) {
+                    if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
+                        let title = req.title.as_deref().unwrap_or("kapanış. Mobil Bildirim");
+                        let _ = app.notification().builder().title(title).body(&req.message).show();
+                        let _ = app.emit("remote:notify", &body);
+                    }
+                }
+
                 let mut response = Response::from_string(r#"{"success":true}"#);
                 response.add_header(cors_header);
                 response.add_header(json_header);
@@ -600,6 +863,7 @@ pub fn start_http_server(state: Arc<LocalSendState>, data_dir: PathBuf) {
 
             // POST /api/clipboard (Mobile Clipboard Sync)
             if method == "POST" && url.starts_with("/api/clipboard") {
+                state.register_or_touch_sender(&sender_ip, None, None);
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 #[derive(Deserialize)]
@@ -632,57 +896,9 @@ pub fn start_http_server(state: Arc<LocalSendState>, data_dir: PathBuf) {
                 continue;
             }
 
-            // POST /api/command (Mobile Direct Power Command)
-            if method == "POST" && url.starts_with("/api/command") {
-                let mut body = String::new();
-                let _ = request.as_reader().read_to_string(&mut body);
-                #[derive(Deserialize)]
-                struct CmdReq { command: String, delay_seconds: Option<u64> }
-                if let Ok(cmd) = serde_json::from_str::<CmdReq>(&body) {
-                    let delay = cmd.delay_seconds.unwrap_or(0);
-                    let _ = match cmd.command.as_str() {
-                        "shutdown" => {
-                            let mut c = std::process::Command::new("shutdown");
-                            c.args(["/s", "/t", &delay.to_string()]);
-                            #[cfg(windows)]
-                            {
-                                use std::os::windows::process::CommandExt;
-                                c.creation_flags(0x08000000);
-                            }
-                            c.output()
-                        },
-                        "restart" => {
-                            let mut c = std::process::Command::new("shutdown");
-                            c.args(["/r", "/t", &delay.to_string()]);
-                            #[cfg(windows)]
-                            {
-                                use std::os::windows::process::CommandExt;
-                                c.creation_flags(0x08000000);
-                            }
-                            c.output()
-                        },
-                        "cancel" => {
-                            let mut c = std::process::Command::new("shutdown");
-                            c.arg("/a");
-                            #[cfg(windows)]
-                            {
-                                use std::os::windows::process::CommandExt;
-                                c.creation_flags(0x08000000);
-                            }
-                            c.output()
-                        },
-                        _ => Ok(std::process::Output { status: std::process::ExitStatus::default(), stdout: vec![], stderr: vec![] }),
-                    };
-                }
-                let mut response = Response::from_string(r#"{"success":true}"#);
-                response.add_header(cors_header);
-                response.add_header(json_header);
-                let _ = request.respond(response);
-                continue;
-            }
-
             // POST /api/upload (Mobile File Upload)
             if method == "POST" && url.starts_with("/api/upload") {
+                state.register_or_touch_sender(&sender_ip, None, None);
                 let raw_filename = request.headers().iter()
                     .find(|h| h.field.equiv("x-filename"))
                     .map(|h| h.value.as_str().to_string())
@@ -966,10 +1182,10 @@ pub fn localsend_get_status(state: State<'_, Arc<LocalSendState>>) -> Result<Loc
 pub fn localsend_get_devices(state: State<'_, Arc<LocalSendState>>) -> Result<Vec<LocalSendDevice>, String> {
     let devices = state.devices.lock().unwrap();
     let now = now_millis();
-    // Filter out devices not seen in the last 60 seconds
+    // Filter out devices not seen in the last 5 minutes (300 seconds)
     let mut list: Vec<LocalSendDevice> = devices
         .values()
-        .filter(|d| now - d.last_seen < 60_000)
+        .filter(|d| now - d.last_seen < 300_000)
         .cloned()
         .collect();
     list.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
