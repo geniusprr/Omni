@@ -1,0 +1,119 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
+/* Hallmark · macrostructure: Workbench · compact native utility surface
+ * theme: studied-DNA (source: attached references) · vibe: "quiet futuristic Windows glass" · paper: oklch(13.5% 0.012 235) · accent: oklch(78% 0.12 215)
+ * display: Bricolage Grotesque · body: Geist · axes: dark / geometric-sans / restrained glass
+ * studied: attached reference palette + product UI · context: explicit · v1.0.0
+ */
+
+:root {
+  --font-display: "Bricolage Grotesque", "Aptos Display", "Segoe UI Variable", sans-serif;
+  --font-body: "Geist", "Segoe UI Variable", "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", "Cascadia Mono", "Consolas", monospace;
+
+  --k-paper: oklch(13.5% 0.012 235);
+  --k-paper-deep: oklch(9.5% 0.014 235);
+  --k-paper-raised: oklch(18% 0.014 235);
+  --k-paper-hover: oklch(22% 0.016 235);
+  --k-ink: oklch(95.6% 0.012 235);
+  --k-ink-soft: oklch(82% 0.012 235);
+  --k-muted: oklch(68% 0.014 235);
+  --k-faint: oklch(58% 0.014 235);
+  --k-rule: oklch(30% 0.015 235);
+  --k-rule-strong: oklch(41% 0.018 235);
+  --k-accent: oklch(78% 0.12 215);
+  --k-accent-ink: oklch(15% 0.014 235);
+  --k-focus: oklch(82% 0.18 215);
+  --k-danger: oklch(72% 0.16 26);
+  --k-danger-ink: oklch(16% 0.012 26);
+  --k-success: oklch(76% 0.12 152);
+  --k-shadow: oklch(4% 0.016 235);
+
+  --color-paper: oklch(14% 0.012 235);
+  --color-paper-2: oklch(16.8% 0.014 235);
+  --color-paper-3: oklch(20.2% 0.016 235);
+  --color-paper-4: oklch(23.7% 0.017 235);
+  --color-ink: oklch(96% 0.009 235);
+  --color-ink-2: oklch(82% 0.012 235);
+  --color-muted: oklch(63% 0.014 235);
+  --color-neutral: oklch(48% 0.014 235);
+  --color-rule: oklch(30% 0.014 235);
+  --color-rule-2: oklch(38% 0.016 235);
+  --color-border: oklch(53% 0.018 235);
+  --color-accent: oklch(74% 0.16 216);
+  --color-accent-ink: oklch(19% 0.016 235);
+  --color-focus: oklch(81% 0.19 216);
+  --color-success: oklch(75% 0.13 150);
+  --color-success-ink: oklch(20% 0.014 235);
+  --color-danger: oklch(73% 0.16 26);
+  --color-danger-ink: oklch(20% 0.014 26);
+  --color-backdrop: oklch(9% 0.018 235);
+  --color-shadow: oklch(5% 0.02 235);
+  --color-rich-black: oklch(16.1% 0.018 236);
+  --color-rich-black-deep: oklch(10.2% 0.018 236);
+  --color-powder-white: oklch(95.6% 0.012 235);
+  --color-warm: oklch(82% 0.12 75);
+  --color-glass-surface: color-mix(in oklch, var(--color-rich-black) 78%, transparent);
+  --color-glass-surface-soft: color-mix(in oklch, var(--color-rich-black) 62%, transparent);
+  --color-glass-sidebar: color-mix(in oklch, var(--color-rich-black-deep) 56%, transparent);
+  --color-glass-line: color-mix(in oklch, var(--color-powder-white) 15%, transparent);
+  --color-glass-line-strong: color-mix(in oklch, var(--color-powder-white) 24%, transparent);
+  --color-glass-highlight: color-mix(in oklch, var(--color-powder-white) 7%, transparent);
+
+  --background: var(--k-paper);
+  --foreground: var(--k-ink);
+  --popover: var(--k-paper-raised);
+  --popover-foreground: var(--k-ink);
+  --primary: var(--k-ink);
+  --primary-foreground: var(--k-paper);
+  --secondary: var(--k-paper-raised);
+  --secondary-foreground: var(--k-ink);
+  --muted: var(--k-paper-hover);
+  --muted-foreground: var(--k-muted);
+  --accent: var(--k-accent);
+  --accent-foreground: var(--k-accent-ink);
+  --destructive: var(--k-danger);
+  --destructive-foreground: var(--k-danger-ink);
+  --border: var(--k-rule);
+  --input: var(--k-rule);
+  --ring: var(--k-focus);
+
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 2.5rem;
+  --space-3xl: 3rem;
+  --space-4xl: 4rem;
+  --space-5xl: 5rem;
+
+  --radius-window: 0.75rem;
+  --radius-shell: 1.25rem;
+  --radius-panel: 1rem;
+  --radius-control: 0.4375rem;
+  --radius-small: 0.3125rem;
+  --radius-2xs: 0.125rem;
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-pill: 999px;
+
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}

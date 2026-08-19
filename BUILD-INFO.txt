@@ -1,0 +1,31 @@
+kapanış. 1.0.0 — Windows x64 release
+Build date: 2026-08-19
+
+Installer
+  File: kapanış._1.0.0_x64-setup.exe
+  Size: 4,019,975 bytes (3.83 MiB)
+  SHA-256: F9BFB21D9426CE501EC895D2FB122AB91114D8F7992E58B03436C5F838203117
+  Authenticode: NotSigned
+
+Portable release executable
+  File: kapanis.exe
+  Size: 9,620,992 bytes (9.18 MiB)
+  SHA-256: 2EBE73687E36B09A430C5887B2131ABB1926B511B347B554715228C0B530EEB9
+  Authenticode: NotSigned
+
+Verification
+  npm run build: passed
+  cargo fmt --all -- --check: passed
+  cargo clippy --all-targets --locked -- -D warnings: passed
+  cargo test --locked: 5 passed, 0 failed
+  npm audit: 0 vulnerabilities
+  Native checks: fixed 780x620 viewport, close-to-tray, single-instance,
+  alarm notification/sound/repeat, and shutdown-plan cancellation passed.
+
+Idle tray sample (10 seconds)
+  Processes: 1
+  Working set: 32.33 MiB
+  Private memory: 8.26 MiB
+  CPU time delta: 0 seconds
+
+The binaries are intentionally unsigned. Windows may show an unknown publisher warning.

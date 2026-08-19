@@ -1,0 +1,22 @@
+{
+  "scannedAt": "2026-08-19",
+  "framework": "Tauri 2 + React 18 + Vite 6",
+  "fonts": "Bricolage Grotesque display + Geist body + Geist Mono data",
+  "palette": "OKLCH tokens in root tokens.css",
+  "motion": "opacity and transform only; reduced-motion covered",
+  "spacing": "named 4pt-oriented tokens",
+  "preserve": [
+    "Rust IPC boundary",
+    "local timer and alarm persistence",
+    "rich-black and powder-white reference palette",
+    "shadcn source-component ownership"
+  ],
+  "redesign": [
+    "780x620 fixed native viewport",
+    "two-mode shutdown and alarm shell",
+    "small custom titlebar",
+    "single controlled glass layer",
+    "no document scroll or dashboard modules"
+  ]
+}
+
