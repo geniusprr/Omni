@@ -1,7 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" rx="224" fill="#0b1118"/>
-  <rect x="184" y="184" width="656" height="656" rx="164" fill="#101c27" stroke="#496274" stroke-width="20"/>
-  <path d="M512 270 754 512 512 754 270 512Z" fill="#7de3f4"/>
-  <path d="M512 392 634 512 512 634 390 512Z" fill="#10202a"/>
-  <circle cx="512" cy="512" r="34" fill="#d8fbff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#0a0f18"/>
+      <stop offset="100%" stop-color="#05080c"/>
+    </linearGradient>
+
+    <!-- Glass Surface Gradient -->
+    <linearGradient id="glassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a2636" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#0d141f" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <!-- Border Glow Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7de3f4" stop-opacity="0.5"/>
+      <stop offset="50%" stop-color="#1e3a5f" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#0f1f30" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <!-- Cyan Glow Filter -->
+    <filter id="cyanGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16" result="blur1"/>
+      <feGaussianBlur stdDeviation="32" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Power Glow Filter -->
+    <filter id="intenseGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur1"/>
+      <feGaussianBlur stdDeviation="22" result="blur2"/>
+      <feGaussianBlur stdDeviation="4" result="sharp"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="sharp"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Radial Cyan Ambient Glow -->
+    <radialGradient id="ambientGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.32"/>
+      <stop offset="55%" stop-color="#38bdf8" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#0a0f16" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Progress Ring Gradient -->
+    <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#cffafe"/>
+      <stop offset="40%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Base Dark Canvas -->
+  <rect width="1024" height="1024" rx="230" fill="url(#bgGrad)"/>
+  
+  <!-- Glass Container Squircle Panel -->
+  <rect x="76" y="76" width="872" height="872" rx="190" fill="url(#glassGrad)" stroke="url(#borderGrad)" stroke-width="14"/>
+  
+  <!-- Ambient Center Glow -->
+  <circle cx="512" cy="512" r="380" fill="url(#ambientGlow)"/>
+
+  <!-- Outer Track Groove Ring -->
+  <circle cx="512" cy="512" r="280" fill="none" stroke="#14212e" stroke-width="34"/>
+
+  <!-- Glowing Countdown Progress Arc -->
+  <circle cx="512" cy="512" r="280" fill="none" stroke="url(#arcGrad)" stroke-width="34" stroke-linecap="round" stroke-dasharray="1280 1760" transform="rotate(-90 512 512)" filter="url(#cyanGlow)"/>
+
+  <!-- Power Symbol Circle Arc -->
+  <path d="M 436 380 A 148 148 0 1 0 588 380" fill="none" stroke="#7de3f4" stroke-width="38" stroke-linecap="round" filter="url(#intenseGlow)"/>
+
+  <!-- Power Symbol Vertical Bar -->
+  <line x1="512" y1="310" x2="512" y2="476" stroke="#7de3f4" stroke-width="38" stroke-linecap="round" filter="url(#intenseGlow)"/>
+  
+  <!-- Subtle Glass Sheen Top Reflection -->
+  <path d="M 120 130 C 220 90, 804 90, 904 130 C 860 260, 164 260, 120 130 Z" fill="white" opacity="0.035"/>
 </svg>

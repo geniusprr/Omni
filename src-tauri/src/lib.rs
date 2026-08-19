@@ -19,6 +19,9 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use uuid::Uuid;
 
+mod localsend;
+mod notes;
+
 const MAX_TIMER_SECONDS: u64 = 315_360_000;
 const MAX_INTERVAL_SECONDS: u64 = 31_536_000;
 const MAX_ALARMS: usize = 64;
@@ -95,6 +98,14 @@ struct CreateAlarmInput {
     occurrence_count: Option<u32>,
     sound_enabled: bool,
     sound_profile: SoundProfile,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemInfo {
+    hostname: String,
+    os: String,
+    platform: String,
 }
 
 #[derive(Clone)]
@@ -298,6 +309,8 @@ fn restore_windows_timer(timer: &TimerState) {
     ]);
 }
 
+// ----------------- COMMANDS -----------------
+
 #[tauri::command]
 fn get_timer_status(state: State<'_, AppState>) -> Result<Option<TimerState>, String> {
     let mut timer = state
@@ -470,6 +483,55 @@ fn stop_alarm_sound(state: State<'_, AppState>) -> Result<(), String> {
     state.inner.sound_generation.fetch_add(1, Ordering::SeqCst);
     set_active_alarm(&state.inner, None)
 }
+
+#[tauri::command]
+fn is_autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let autolaunch = app.autolaunch();
+    if enabled {
+        autolaunch.enable().map_err(|e| e.to_string())?;
+    } else {
+        autolaunch.disable().map_err(|e| e.to_string())?;
+    }
+    autolaunch.is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_app_settings(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let path = state.inner.data_dir.join("settings.json");
+    if path.exists() {
+        fs::read_to_string(&path).map(Some).map_err(|e| e.to_string())
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+fn save_app_settings(settings_json: String, state: State<'_, AppState>) -> Result<(), String> {
+    let path = state.inner.data_dir.join("settings.json");
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, settings_json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_system_info() -> Result<SystemInfo, String> {
+    let hostname = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "Windows PC".to_string());
+    Ok(SystemInfo {
+        hostname,
+        os: "Windows".to_string(),
+        platform: "win32".to_string(),
+    })
+}
+
+// ----------------- SCHEDULER & RUN -----------------
 
 fn schedule_alarm(app: AppHandle, state: Arc<AppStateInner>, initial_alarm: Alarm) {
     thread::spawn(move || {
@@ -677,7 +739,7 @@ fn configure_window_effects(app: &mut tauri::App) {
     #[cfg(windows)]
     for label in ["main", "splash"] {
         if let Some(window) = app.get_webview_window(label) {
-            let _ = window_vibrancy::apply_acrylic(&window, Some((1, 11, 19, 158)));
+            let _ = window_vibrancy::apply_acrylic(&window, Some((16, 20, 28, 125)));
         }
     }
 }
@@ -695,14 +757,26 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            let state = AppState::load();
+            let settings_path = state.inner.data_dir.join("settings.json");
+            let autostart_enabled = if settings_path.exists() {
+                fs::read_to_string(&settings_path)
+                    .ok()
+                    .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+                    .and_then(|json| json.get("autostart").and_then(|v| v.as_bool()))
+                    .unwrap_or(true)
+            } else {
+                true
+            };
+
             let autolaunch = app.autolaunch();
-            // Refresh the executable path after switching build profiles or installing an update.
             let _ = autolaunch.disable();
-            if let Err(error) = autolaunch.enable() {
-                eprintln!("Windows otomatik başlatma etkinleştirilemedi: {error}");
+            if autostart_enabled {
+                if let Err(error) = autolaunch.enable() {
+                    eprintln!("Windows otomatik başlatma etkinleştirilemedi: {error}");
+                }
             }
 
-            let state = AppState::load();
             if let Some(timer) = state.timer_snapshot() {
                 restore_windows_timer(&timer);
             }
@@ -711,6 +785,13 @@ pub fn run() {
             for alarm in alarms {
                 schedule_alarm(app.handle().clone(), state.inner.clone(), alarm);
             }
+
+            let localsend_state = Arc::new(localsend::LocalSendState::new(&state.inner.data_dir));
+            localsend_state.set_app_handle(app.handle().clone());
+            localsend::start_udp_discovery(localsend_state.clone());
+            localsend::start_http_server(localsend_state.clone(), state.inner.data_dir.clone());
+            app.manage(localsend_state);
+            app.manage(notes::VaultWatcher::new());
 
             configure_window_effects(app);
             configure_tray(app)?;
@@ -727,7 +808,34 @@ pub fn run() {
             get_active_alarm,
             create_alarm,
             cancel_alarm,
-            stop_alarm_sound
+            stop_alarm_sound,
+            is_autostart_enabled,
+            set_autostart_enabled,
+            get_app_settings,
+            save_app_settings,
+            get_system_info,
+            localsend::localsend_get_status,
+            localsend::localsend_get_devices,
+            localsend::localsend_scan_network,
+            localsend::localsend_send_file,
+            localsend::localsend_send_text,
+            localsend::localsend_get_received_files,
+            localsend::localsend_open_download_folder,
+            localsend::localsend_set_auto_accept,
+            localsend::localsend_add_manual_device,
+            notes::vault_select_folder,
+            notes::vault_get_default_path,
+            notes::vault_list_entries,
+            notes::vault_read_file,
+            notes::vault_write_file,
+            notes::vault_create_file,
+            notes::vault_create_folder,
+            notes::vault_rename_entry,
+            notes::vault_delete_entry,
+            notes::vault_reveal_in_explorer,
+            notes::vault_start_watcher,
+            notes::vault_stop_watcher,
+            notes::vault_set_window_mode
         ])
         .run(tauri::generate_context!())
         .expect("kapanış. başlatılamadı");

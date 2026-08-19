@@ -9,3 +9,14 @@ release
 src-tauri/target
 .supabase
 supabase/.temp
+
+# IDE & OS
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db

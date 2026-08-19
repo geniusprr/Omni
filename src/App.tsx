@@ -1,20 +1,45 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AlarmClock from 'lucide-react/dist/esm/icons/alarm-clock.js'
+import BookOpen from 'lucide-react/dist/esm/icons/book-open.js'
 import Power from 'lucide-react/dist/esm/icons/power.js'
+import Settings from 'lucide-react/dist/esm/icons/settings.js'
+import Share2 from 'lucide-react/dist/esm/icons/share-2.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import { CompactTitlebar } from '@/components/layout/CompactTitlebar'
 import { RingingOverlay } from '@/components/RingingOverlay'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
+import { LocalSendPage } from '@/features/localsend/LocalSendPage'
+import { NotesPage } from '@/features/notes/NotesPage'
 import { PowerPage } from '@/features/power/PowerPage'
-import { startRemoteCommandBridge } from '@/features/remote/client'
-import { desktop } from '@/lib/desktop'
+import { RemoteControllerView } from '@/features/remote/RemoteControllerView'
+import {
+  fetchPairedControllers,
+  getEffectiveSettings,
+  startRemoteEngine,
+} from '@/features/remote/client'
+import { SettingsPage } from '@/features/settings/SettingsPage'
+import { desktop, isTauriRuntime } from '@/lib/desktop'
 import { errorMessage } from '@/lib/format'
-import type { Alarm, CreateAlarmInput, TimerAction, TimerState } from '@/types'
+import type {
+  Alarm,
+  AppSettings,
+  CreateAlarmInput,
+  PairedController,
+  RemoteConnectionStatus,
+  TimerAction,
+  TimerState,
+} from '@/types'
 
-type AppMode = 'power' | 'alarms'
+type AppMode = 'power' | 'alarms' | 'notes' | 'localsend' | 'settings'
 
 export default function App() {
+  const [isRemoteView] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const params = new URLSearchParams(window.location.search)
+    return !isTauriRuntime() || params.get('mode') === 'remote' || params.has('pair')
+  })
+
   const [mode, setMode] = useState<AppMode>('power')
   const [timer, setTimer] = useState<TimerState | null>(null)
   const [alarms, setAlarms] = useState<Alarm[]>([])
@@ -26,9 +51,26 @@ export default function App() {
   const [alarmError, setAlarmError] = useState<string | null>(null)
   const [appError, setAppError] = useState<string | null>(null)
 
+  // Settings & Remote States
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [connectionStatus, setConnectionStatus] = useState<RemoteConnectionStatus>('disconnected')
+  const [lastHeartbeat, setLastHeartbeat] = useState<number | null>(null)
+  const [pairedControllers, setPairedControllers] = useState<PairedController[]>([])
+
+  const timerRef = useRef<TimerState | null>(null)
+  timerRef.current = timer
+
+  useEffect(() => {
+    void getEffectiveSettings().then(setSettings).catch(() => undefined)
+  }, [])
+
   useEffect(() => {
     let mounted = true
-    void Promise.all([desktop.system.getTimerStatus(), desktop.alarms.list(), desktop.alarms.getActive()])
+    void Promise.all([
+      desktop.system.getTimerStatus(),
+      desktop.alarms.list(),
+      desktop.alarms.getActive(),
+    ])
       .then(([storedTimer, storedAlarms, activeAlarm]) => {
         if (!mounted) return
         setTimer(storedTimer)
@@ -65,10 +107,13 @@ export default function App() {
     if (timer && timer.targetAt <= now) setTimer(null)
   }, [now, timer])
 
+  // Start Remote Engine with Supabase heartbeat and command listener
   useEffect(() => {
+    if (isRemoteView || !settings) return
     let dispose: () => void = () => undefined
     let active = true
-    void startRemoteCommandBridge({
+
+    void startRemoteEngine({
       execute: async (command, delaySeconds) => {
         if (command === 'cancel') {
           await desktop.system.cancelShutdown()
@@ -79,12 +124,33 @@ export default function App() {
         setTimer(nextTimer)
         setNow(Date.now())
       },
+      getTimerState: () => timerRef.current,
+      onStatusChange: (status, heartbeatTs) => {
+        if (!active) return
+        setConnectionStatus(status)
+        if (heartbeatTs) setLastHeartbeat(heartbeatTs)
+      },
+      onPairedControllersChange: (controllers) => {
+        if (!active) return
+        setPairedControllers(controllers)
+      },
     }).then((cleanup) => {
       if (active) dispose = cleanup
       else cleanup()
     }).catch(() => undefined)
-    return () => { active = false; dispose() }
-  }, [])
+
+    return () => {
+      active = false
+      dispose()
+    }
+  }, [isRemoteView, settings?.supabaseUrl, settings?.supabaseAnonKey, settings?.deviceId, settings?.pairingCode])
+
+  const refreshControllers = () => {
+    if (!settings?.supabaseUrl || !settings?.supabaseAnonKey || !settings?.deviceId) return
+    void fetchPairedControllers(settings.supabaseUrl, settings.supabaseAnonKey, settings.deviceId).then((list) => {
+      setPairedControllers(list)
+    })
+  }
 
   async function schedulePower(action: TimerAction, seconds: number) {
     setPowerBusy(true)
@@ -166,16 +232,26 @@ export default function App() {
     }
   }
 
+  if (isRemoteView) {
+    return <RemoteControllerView />
+  }
+
   return (
-    <div className="utility-window">
+    <div className={`utility-window ${mode === 'notes' ? 'utility-window--notes' : ''}`}>
       <CompactTitlebar />
       <Tabs className="app-tabs" value={mode} onValueChange={(value) => setMode(value as AppMode)}>
         <nav className="modebar" aria-label="Ana bölümler">
           <TabsList>
             <TabsTrigger value="power"><Power aria-hidden="true" size={16} />Kapat</TabsTrigger>
             <TabsTrigger value="alarms"><AlarmClock aria-hidden="true" size={16} />Alarm{alarms.length > 0 ? <span>{alarms.length}</span> : null}</TabsTrigger>
+            <TabsTrigger value="notes"><BookOpen aria-hidden="true" size={16} />Defter</TabsTrigger>
+            <TabsTrigger value="localsend"><Share2 aria-hidden="true" size={16} />Paylaş</TabsTrigger>
+            <TabsTrigger value="settings"><Settings aria-hidden="true" size={16} />Ayarlar</TabsTrigger>
           </TabsList>
-          <div className="modebar__runtime"><span className="runtime-dot" />yerel</div>
+          <div className="modebar__runtime">
+            <span className={`runtime-dot ${connectionStatus === 'connected' ? 'runtime-dot--online' : ''}`} />
+            {connectionStatus === 'connected' ? 'çevrim içi' : 'yerel'}
+          </div>
         </nav>
         <main className="utility-content">
           <TabsContent value="power">
@@ -183,6 +259,24 @@ export default function App() {
           </TabsContent>
           <TabsContent value="alarms">
             <AlarmsPage alarms={alarms} busy={alarmBusy} error={alarmError} onCreate={createAlarm} onCancel={cancelAlarm} />
+          </TabsContent>
+          <TabsContent value="notes">
+            <NotesPage />
+          </TabsContent>
+          <TabsContent value="localsend">
+            <LocalSendPage />
+          </TabsContent>
+          <TabsContent value="settings">
+            {settings ? (
+              <SettingsPage
+                settings={settings}
+                connectionStatus={connectionStatus}
+                lastHeartbeat={lastHeartbeat}
+                pairedControllers={pairedControllers}
+                onSettingsChange={setSettings}
+                onRefreshControllers={refreshControllers}
+              />
+            ) : null}
           </TabsContent>
         </main>
       </Tabs>
