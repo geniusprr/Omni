@@ -49,11 +49,7 @@ export const desktop = {
     toggleMaximize: async () => {
       if (!isTauriRuntime()) return
       const win = getCurrentWindow()
-      if (await win.isMaximized()) {
-        await win.unmaximize()
-      } else {
-        await win.maximize()
-      }
+      await win.toggleMaximize()
     },
     isMaximized: async () => {
       if (!isTauriRuntime()) return false

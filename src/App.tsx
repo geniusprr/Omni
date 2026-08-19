@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import AlarmClock from 'lucide-react/dist/esm/icons/alarm-clock.js'
-import BookOpen from 'lucide-react/dist/esm/icons/book-open.js'
-import Power from 'lucide-react/dist/esm/icons/power.js'
-import Settings from 'lucide-react/dist/esm/icons/settings.js'
-import Share2 from 'lucide-react/dist/esm/icons/share-2.js'
+import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
-import { CompactTitlebar } from '@/components/layout/CompactTitlebar'
+import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
+import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
 import { RingingOverlay } from '@/components/RingingOverlay'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
+import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
+import { YouTubeMusicWidget } from '@/features/home/widgets/YouTubeMusicWidget'
 import { LocalSendPage } from '@/features/localsend/LocalSendPage'
 import { NotesPage } from '@/features/notes/NotesPage'
+import { QuickSwitcherModal } from '@/features/notes/search/QuickSwitcherModal'
 import { PowerPage } from '@/features/power/PowerPage'
 import { RemoteControllerView } from '@/features/remote/RemoteControllerView'
 import {
@@ -31,8 +30,6 @@ import type {
   TimerState,
 } from '@/types'
 
-type AppMode = 'power' | 'alarms' | 'notes' | 'localsend' | 'settings'
-
 export default function App() {
   const [isRemoteView] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -40,7 +37,20 @@ export default function App() {
     return !isTauriRuntime() || params.get('mode') === 'remote' || params.has('pair')
   })
 
-  const [mode, setMode] = useState<AppMode>('power')
+  const [mode, setMode] = useState<MiniOsMode>('home')
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light')
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
+  const [isSubscreenMusicOpen, setIsSubscreenMusicOpen] = useState<boolean>(() => {
+    return localStorage.getItem('minios_subscreen_music_open') !== 'false'
+  })
+
+  function handleToggleSubscreenMusic(open?: boolean) {
+    const next = open !== undefined ? open : !isSubscreenMusicOpen
+    setIsSubscreenMusicOpen(next)
+    localStorage.setItem('minios_subscreen_music_open', next.toString())
+  }
+
+  // Power & Alarm states
   const [timer, setTimer] = useState<TimerState | null>(null)
   const [alarms, setAlarms] = useState<Alarm[]>([])
   const [ringingAlarm, setRingingAlarm] = useState<Alarm | null>(null)
@@ -64,6 +74,20 @@ export default function App() {
     void getEffectiveSettings().then(setSettings).catch(() => undefined)
   }, [])
 
+  // Keyboard shortcut (Ctrl+K for Quick Switcher)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setQuickSwitcherOpen((prev) => !prev)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // Initial Data & Tauri Event Listeners
   useEffect(() => {
     let mounted = true
     void Promise.all([
@@ -253,56 +277,175 @@ export default function App() {
     }
   }
 
+  function handleExecuteCommand(cmd: string) {
+    const lower = cmd.toLowerCase().trim()
+    if (lower.startsWith('/kapat') || lower.startsWith('kapat')) {
+      setMode('power')
+    } else if (lower.startsWith('/alarm') || lower.startsWith('alarm')) {
+      setMode('alarms')
+    } else if (lower.startsWith('/not') || lower.startsWith('not')) {
+      setMode('notes')
+    } else if (lower.startsWith('/paylas') || lower.startsWith('paylaş')) {
+      setMode('localsend')
+    } else {
+      window.open(`https://www.google.com/search?q=${encodeURIComponent(cmd)}`, '_blank')
+    }
+  }
+
   if (isRemoteView) {
     return <RemoteControllerView />
   }
 
   return (
-    <div className={`utility-window ${mode === 'notes' ? 'utility-window--notes' : ''}`}>
-      <CompactTitlebar />
-      <Tabs className="app-tabs" value={mode} onValueChange={(value) => setMode(value as AppMode)}>
-        <nav className="modebar" aria-label="Ana bölümler">
-          <TabsList>
-            <TabsTrigger value="power"><Power aria-hidden="true" size={16} />Kapat</TabsTrigger>
-            <TabsTrigger value="alarms"><AlarmClock aria-hidden="true" size={16} />Alarm{alarms.length > 0 ? <span>{alarms.length}</span> : null}</TabsTrigger>
-            <TabsTrigger value="notes"><BookOpen aria-hidden="true" size={16} />Defter</TabsTrigger>
-            <TabsTrigger value="localsend"><Share2 aria-hidden="true" size={16} />Paylaş</TabsTrigger>
-            <TabsTrigger value="settings"><Settings aria-hidden="true" size={16} />Ayarlar</TabsTrigger>
-          </TabsList>
-          <div className="modebar__runtime">
-            <span className={`runtime-dot ${connectionStatus === 'connected' ? 'runtime-dot--online' : ''}`} />
-            {connectionStatus === 'connected' ? 'çevrim içi' : 'yerel'}
-          </div>
-        </nav>
-        <main className="utility-content">
-          <TabsContent value="power">
-            <PowerPage timer={timer} now={now} busy={powerBusy} error={powerError} onSchedule={schedulePower} onCancel={cancelPower} />
-          </TabsContent>
-          <TabsContent value="alarms">
-            <AlarmsPage alarms={alarms} busy={alarmBusy} error={alarmError} onCreate={createAlarm} onCancel={cancelAlarm} />
-          </TabsContent>
-          <TabsContent value="notes">
-            <NotesPage />
-          </TabsContent>
-          <TabsContent value="localsend">
-            <LocalSendPage />
-          </TabsContent>
-          <TabsContent value="settings">
-            {settings ? (
-              <SettingsPage
-                settings={settings}
+    <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'}`}>
+      {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
+      <div className="minios-wallpaper-backdrop" />
+
+      {/* Main Mini-OS Shell Layout */}
+      <div className="minios-shell">
+        {/* Left Floating Vertical Dock */}
+        <MiniOsDock
+          activeMode={mode}
+          onSelectMode={setMode}
+          alarmsCount={alarms.length}
+          connectionStatus={connectionStatus}
+          onQuickAction={() => setQuickSwitcherOpen(true)}
+        />
+
+        {/* Right Main Working Area */}
+        <div className="minios-main-area">
+          {/* Top Header with Clock on Home, or Compact Bar on Other Screens */}
+          <MiniOsHeader
+            userName={settings?.deviceName || 'Genius'}
+            activeMode={mode}
+            onSelectMode={(m) => setMode(m)}
+            onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
+            onNavigateSettings={() => setMode('settings')}
+            themeMode={themeMode}
+            onToggleTheme={() => setThemeMode((m) => (m === 'dark' ? 'light' : 'dark'))}
+            onExecuteCommand={handleExecuteCommand}
+          />
+
+          {/* Central Working Screen / Widgets Area */}
+          <main className={`minios-viewport ${mode === 'notes' ? 'minios-viewport--notes' : ''}`}>
+            {mode === 'home' && (
+              <MiniOsDashboard
+                onNavigate={(targetMode) => setMode(targetMode)}
+                timer={timer}
+                now={now}
+                onSchedulePower={schedulePower}
+                onCancelPower={cancelPower}
+                deviceName={settings?.deviceName || 'Windows PC'}
+                pairingCode={settings?.pairingCode || 'KAP-XXXX'}
                 connectionStatus={connectionStatus}
-                lastHeartbeat={lastHeartbeat}
                 pairedControllers={pairedControllers}
-                onSettingsChange={setSettings}
                 onRefreshControllers={refreshControllers}
               />
-            ) : null}
-          </TabsContent>
-        </main>
-      </Tabs>
-      {appError ? <div className="app-error" role="alert"><X aria-hidden="true" size={14} />{appError}<button type="button" aria-label="Hatayı kapat" onClick={() => setAppError(null)}><X aria-hidden="true" size={13} /></button></div> : null}
-      {ringingAlarm ? <RingingOverlay alarm={ringingAlarm} onDismiss={() => void dismissAlarm()} onSnooze={() => void snoozeAlarm()} /> : null}
+            )}
+
+            {mode === 'power' && (
+              <div className="minios-subscreen">
+                <PowerPage
+                  timer={timer}
+                  now={now}
+                  busy={powerBusy}
+                  error={powerError}
+                  onSchedule={schedulePower}
+                  onCancel={cancelPower}
+                />
+              </div>
+            )}
+
+            {mode === 'alarms' && (
+              <div className="minios-subscreen">
+                <AlarmsPage
+                  alarms={alarms}
+                  busy={alarmBusy}
+                  error={alarmError}
+                  onCreate={createAlarm}
+                  onCancel={cancelAlarm}
+                />
+              </div>
+            )}
+
+            {mode === 'notes' && <NotesPage />}
+
+            {mode === 'localsend' && (
+              <div className="minios-subscreen minios-subscreen--full">
+                <LocalSendPage />
+              </div>
+            )}
+
+            {mode === 'remote' && (
+              <div className="minios-subscreen minios-subscreen--full">
+                <RemoteControllerView />
+              </div>
+            )}
+
+            {mode === 'settings' && settings && (
+              <div className="minios-subscreen">
+                <SettingsPage
+                  settings={settings}
+                  connectionStatus={connectionStatus}
+                  lastHeartbeat={lastHeartbeat}
+                  pairedControllers={pairedControllers}
+                  onSettingsChange={setSettings}
+                  onRefreshControllers={refreshControllers}
+                />
+              </div>
+            )}
+          </main>
+
+          {/* Bottom Mini Player for all non-home screens (Notes, Alarms, Power, LocalSend, Remote, Settings) */}
+          {mode !== 'home' && isSubscreenMusicOpen && (
+            <div className="minios-subscreen-music-dock">
+              <YouTubeMusicWidget
+                variant="bottom-bar"
+                onHide={() => handleToggleSubscreenMusic(false)}
+              />
+            </div>
+          )}
+
+          {/* Floating Re-Open Button when Music is Hidden on Subscreens */}
+          {mode !== 'home' && !isSubscreenMusicOpen && (
+            <button
+              type="button"
+              className="minios-music-reopen-float-btn"
+              onClick={() => handleToggleSubscreenMusic(true)}
+              title="Müzik Çaları Aç"
+            >
+              <Music2 size={13} />
+              <span>Müzik</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Global Quick Switcher Launcher (Ctrl+K) */}
+      <QuickSwitcherModal
+        isOpen={quickSwitcherOpen}
+        onClose={() => setQuickSwitcherOpen(false)}
+      />
+
+      {/* Global Error Toast */}
+      {appError ? (
+        <div className="app-error" role="alert">
+          <X aria-hidden="true" size={14} />
+          {appError}
+          <button type="button" aria-label="Hatayı kapat" onClick={() => setAppError(null)}>
+            <X aria-hidden="true" size={13} />
+          </button>
+        </div>
+      ) : null}
+
+      {/* Ringing Alarm Overlay */}
+      {ringingAlarm ? (
+        <RingingOverlay
+          alarm={ringingAlarm}
+          onDismiss={() => void dismissAlarm()}
+          onSnooze={() => void snoozeAlarm()}
+        />
+      ) : null}
     </div>
   )
 }

@@ -10,10 +10,9 @@ import Link2 from 'lucide-react/dist/esm/icons/link-2.js'
 import ListTree from 'lucide-react/dist/esm/icons/list-tree.js'
 import Network from 'lucide-react/dist/esm/icons/network.js'
 import PanelLeftClose from 'lucide-react/dist/esm/icons/panel-left-close.js'
-import PanelLeftOpen from 'lucide-react/dist/esm/icons/panel-left-open.js'
 import PanelRightClose from 'lucide-react/dist/esm/icons/panel-right-close.js'
-import PanelRightOpen from 'lucide-react/dist/esm/icons/panel-right-open.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
 import Tag from 'lucide-react/dist/esm/icons/tag.js'
 import { desktop } from '@/lib/desktop'
 import { BacklinksPanel } from './backlinks/BacklinksPanel'
@@ -42,7 +41,7 @@ export function NotesPage() {
   const [leftNav, setLeftNav] = useState<LeftNavTab>('explorer')
   const [rightNav, setRightNav] = useState<RightNavTab>('backlinks')
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
 
   // Editor states
   const [editorMode, setEditorMode] = useState<EditorMode>('live')
@@ -76,7 +75,16 @@ export function NotesPage() {
     }
   }, [])
 
-  // 2. Daily Note helper
+  // 2. Create Note Helper
+  function handleCreateNewNote() {
+    const name = `Not ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/:/g, '-')}.md`
+    void (async () => {
+      await vaultStore.createNote(name)
+      tabStore.openTab(name)
+    })()
+  }
+
+  // 3. Daily Note helper
   function handleOpenDailyNote() {
     const today = new Date().toISOString().split('T')[0]
     const dailyPath = `Günlük/${today}.md`
@@ -107,7 +115,7 @@ created: ${today}
     }
   }
 
-  // 3. Central Command Registry for Command Palette and Shortcuts
+  // 4. Central Command Registry for Command Palette and Shortcuts
   const commands: NoteCommand[] = useMemo(() => {
     return [
       {
@@ -115,13 +123,7 @@ created: ${today}
         label: 'Yeni Not Oluştur',
         shortcut: 'Ctrl + N',
         category: 'Dosya',
-        execute: () => {
-          const name = `Not ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/:/g, '-')}.md`
-          void (async () => {
-            await vaultStore.createNote(name)
-            tabStore.openTab(name)
-          })()
-        },
+        execute: handleCreateNewNote,
       },
       {
         id: 'daily-note',
@@ -216,9 +218,23 @@ created: ${today}
     ]
   }, [activeTab, entries])
 
-  // 4. Global Keyboard Shortcuts Listener
+  // 5. Global Keyboard Shortcuts Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl + N: New Note
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n' && !e.shiftKey) {
+        e.preventDefault()
+        handleCreateNewNote()
+        return
+      }
+
+      // Ctrl + G: Graph View
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault()
+        tabStore.openTab('graph', 'graph')
+        return
+      }
+
       // Ctrl + O: Quick Switcher
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault()
@@ -267,289 +283,370 @@ created: ${today}
   }, [entries])
 
   return (
-    <div className="notes-workspace-screen">
-      {/* 3-Column Layout */}
-      <div className="notes-workspace-body">
-        {/* LEFT SIDEBAR */}
-        {leftSidebarOpen && (
-          <aside className="notes-sidebar notes-sidebar--left">
-            {/* Sidebar Sub-nav Icons */}
-            <div className="sidebar-nav-header">
-              <div className="sidebar-nav-tabs">
+    <div className="dashboard-wrapper notes-dashboard-wrapper">
+      {/* 2-SECTION LAYOUT: LEFT NOTES WORKSPACE + RIGHT STICKY YOUTUBE MUSIC (EXACT HOMEPAGE PARITY) */}
+      <div className="dashboard-main-layout notes-dashboard-main-layout">
+        {/* LEFT / CENTER: NOTES WORKSPACE FROSTED GLASS CARD */}
+        <div className="dashboard-widgets-area notes-dashboard-widgets-area">
+          <div className="notes-workspace-glass-card">
+            {/* Card Top Header & Tab Strip */}
+            <div className="notes-card-top-bar">
+              {/* Left Sub-nav Chip Selector (Explorer, Search, Tags) */}
+              <div className="notes-card-nav-group">
                 <button
                   type="button"
-                  className={`sidebar-nav-btn ${leftNav === 'explorer' ? 'sidebar-nav-btn--active' : ''}`}
-                  onClick={() => setLeftNav('explorer')}
+                  className={`notes-nav-chip ${leftSidebarOpen && leftNav === 'explorer' ? 'notes-nav-chip--active' : ''}`}
+                  onClick={() => {
+                    if (leftSidebarOpen && leftNav === 'explorer') {
+                      setLeftSidebarOpen(false)
+                    } else {
+                      setLeftNav('explorer')
+                      setLeftSidebarOpen(true)
+                    }
+                  }}
                   title="Dosya Gezgini"
                 >
-                  <Folder size={14} />
+                  <Folder size={13} />
                   <span>Dosyalar</span>
+                  <span className="notes-count-badge">{totalNotesCount}</span>
                 </button>
+
                 <button
                   type="button"
-                  className={`sidebar-nav-btn ${leftNav === 'search' ? 'sidebar-nav-btn--active' : ''}`}
-                  onClick={() => setLeftNav('search')}
+                  className={`notes-nav-chip ${leftSidebarOpen && leftNav === 'search' ? 'notes-nav-chip--active' : ''}`}
+                  onClick={() => {
+                    if (leftSidebarOpen && leftNav === 'search') {
+                      setLeftSidebarOpen(false)
+                    } else {
+                      setLeftNav('search')
+                      setLeftSidebarOpen(true)
+                    }
+                  }}
                   title="Notlarda Ara"
                 >
-                  <Search size={14} />
+                  <Search size={13} />
                   <span>Ara</span>
                 </button>
+
                 <button
                   type="button"
-                  className={`sidebar-nav-btn ${leftNav === 'tags' ? 'sidebar-nav-btn--active' : ''}`}
-                  onClick={() => setLeftNav('tags')}
+                  className={`notes-nav-chip ${leftSidebarOpen && leftNav === 'tags' ? 'notes-nav-chip--active' : ''}`}
+                  onClick={() => {
+                    if (leftSidebarOpen && leftNav === 'tags') {
+                      setLeftSidebarOpen(false)
+                    } else {
+                      setLeftNav('tags')
+                      setLeftSidebarOpen(true)
+                    }
+                  }}
                   title="Etiketler"
                 >
-                  <Tag size={14} />
+                  <Tag size={13} />
                   <span>Etiketler</span>
                 </button>
               </div>
 
-              <button
-                type="button"
-                className="sidebar-collapse-btn"
-                onClick={() => setLeftSidebarOpen(false)}
-                title="Sol Paneli Gizle"
-              >
-                <PanelLeftClose size={14} />
-              </button>
-            </div>
+              <div className="notes-card-divider" />
 
-            {/* Sidebar Content */}
-            <div className="sidebar-content-area">
-              {leftNav === 'explorer' && <FileExplorer />}
-              {leftNav === 'search' && <VaultSearchPanel />}
-              {leftNav === 'tags' && (
-                <TagsPanel
-                  onSelectTag={(tag) => {
-                    setLeftNav('search')
-                  }}
-                />
-              )}
-            </div>
-          </aside>
-        )}
+              {/* Note Tabs Strip */}
+              <TabBar onNewNote={handleCreateNewNote} />
 
-        {/* CENTER MAIN WORKSPACE */}
-        <section className="notes-center-workspace">
-          {/* Tab Bar & Top Control Strip */}
-          <div className="notes-top-bar">
-            {!leftSidebarOpen && (
-              <button
-                type="button"
-                className="panel-toggle-btn"
-                onClick={() => setLeftSidebarOpen(true)}
-                title="Sol Paneli Aç"
-              >
-                <PanelLeftOpen size={14} />
-              </button>
-            )}
-
-            <TabBar
-              onNewNote={() => {
-                const name = `Not ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }).replace(/:/g, '-')}.md`
-                void (async () => {
-                  await vaultStore.createNote(name)
-                  tabStore.openTab(name)
-                })()
-              }}
-            />
-
-            {/* Editor Mode Switcher & Right panel toggle */}
-            <div className="notes-center-controls">
-              {activeTab && activeTab.viewType !== 'graph' && (
-                <div className="editor-mode-toggle-group">
-                  <button
-                    type="button"
-                    className={`mode-toggle-btn ${editorMode === 'live' ? 'mode-toggle-btn--active' : ''}`}
-                    onClick={() => setEditorMode('live')}
-                    title="Canlı Önizleme"
-                  >
-                    <BookOpen size={13} />
-                    <span>Canlı</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`mode-toggle-btn ${editorMode === 'source' ? 'mode-toggle-btn--active' : ''}`}
-                    onClick={() => setEditorMode('source')}
-                    title="Kaynak Kodu"
-                  >
-                    <Code2 size={13} />
-                    <span>Kaynak</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`mode-toggle-btn ${editorMode === 'reading' ? 'mode-toggle-btn--active' : ''}`}
-                    onClick={() => setEditorMode('reading')}
-                    title="Okuma Modu"
-                  >
-                    <Eye size={13} />
-                    <span>Okuma</span>
-                  </button>
-                </div>
-              )}
-
-              {!rightSidebarOpen && (
-                <button
-                  type="button"
-                  className="panel-toggle-btn"
-                  onClick={() => setRightSidebarOpen(true)}
-                  title="Sağ Paneli Aç"
-                >
-                  <PanelRightOpen size={14} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Tab Content: Editor or Graph View or Empty State */}
-          <div className="notes-editor-viewport">
-            {activeTab ? (
-              activeTab.viewType === 'graph' ? (
-                <GraphView />
-              ) : vaultPath ? (
-                <CodeMirrorEditor
-                  key={activeTab.id}
-                  tab={activeTab}
-                  vaultPath={vaultPath}
-                  mode={editorMode}
-                  onSaveStatusChange={setSaveStatus}
-                  onStatsChange={setStats}
-                />
-              ) : null
-            ) : (
-              <div className="notes-empty-workspace">
-                <div className="notes-empty-card">
-                  <FileText size={36} className="text-slate-500 mb-3" />
-                  <h3>Bir Not Seçin veya Oluşturun</h3>
-                  <p>Sol menüden bir dosya seçebilir ya da hızlı kısayolları kullanabilirsiniz.</p>
-
-                  <div className="empty-quick-actions">
+              {/* Right View Modes & Inspector Toggle */}
+              <div className="notes-card-controls-group">
+                {activeTab && activeTab.viewType !== 'graph' && (
+                  <div className="editor-mode-toggle-group">
                     <button
                       type="button"
-                      className="quick-action-btn"
-                      onClick={() => setQuickSwitcherOpen(true)}
+                      className={`mode-toggle-btn ${editorMode === 'live' ? 'mode-toggle-btn--active' : ''}`}
+                      onClick={() => setEditorMode('live')}
+                      title="Canlı Önizleme"
                     >
-                      <Search size={14} />
-                      <span>Not Aç (Ctrl + O)</span>
+                      <BookOpen size={12} />
+                      <span>Canlı</span>
                     </button>
                     <button
                       type="button"
-                      className="quick-action-btn"
-                      onClick={handleOpenDailyNote}
+                      className={`mode-toggle-btn ${editorMode === 'source' ? 'mode-toggle-btn--active' : ''}`}
+                      onClick={() => setEditorMode('source')}
+                      title="Kaynak Kodu"
                     >
-                      <Calendar size={14} />
-                      <span>Bugünün Notu (Ctrl + D)</span>
+                      <Code2 size={12} />
+                      <span>Kaynak</span>
                     </button>
                     <button
                       type="button"
-                      className="quick-action-btn"
-                      onClick={() => tabStore.openTab('graph', 'graph')}
+                      className={`mode-toggle-btn ${editorMode === 'reading' ? 'mode-toggle-btn--active' : ''}`}
+                      onClick={() => setEditorMode('reading')}
+                      title="Okuma Modu"
                     >
-                      <Network size={14} />
-                      <span>İlişki Grafiği</span>
+                      <Eye size={12} />
+                      <span>Okuma</span>
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
-          </div>
+                )}
 
-          {/* Bottom Status Bar */}
-          <footer className="notes-status-bar">
-            <div className="status-bar-left">
-              <span className="status-item">
-                <FileText size={11} className="mr-1 inline" />
-                {totalNotesCount} not
-              </span>
-              {activeTab && activeTab.viewType !== 'graph' && (
-                <>
-                  <span className="status-dot">•</span>
-                  <span className="status-item">
-                    {stats.wordCount} kelime
-                  </span>
-                  <span className="status-dot">•</span>
-                  <span className="status-item">
-                    {stats.charCount} karakter
-                  </span>
-                </>
-              )}
-            </div>
-
-            <div className="status-bar-right">
-              {activeTab && activeTab.viewType !== 'graph' && (
-                <span className="status-item status-save-indicator">
-                  <span
-                    className={`save-dot ${saveStatus === 'saving' ? 'save-dot--saving' : 'save-dot--saved'}`}
-                  />
-                  {saveStatus === 'saving' ? 'kaydediliyor...' : 'kaydedildi'}
-                </span>
-              )}
-              <span className="status-dot">•</span>
-              <span className="status-item status-vault-path" title={vaultPath || ''}>
-                {vaultPath ? vaultPath.split(/[/\\]/).pop() : 'Yerel Vault'}
-              </span>
-            </div>
-          </footer>
-        </section>
-
-        {/* RIGHT SIDEBAR */}
-        {rightSidebarOpen && (
-          <aside className="notes-sidebar notes-sidebar--right">
-            <div className="sidebar-nav-header">
-              <div className="sidebar-nav-tabs">
                 <button
                   type="button"
-                  className={`sidebar-nav-btn ${rightNav === 'backlinks' ? 'sidebar-nav-btn--active' : ''}`}
-                  onClick={() => setRightNav('backlinks')}
-                  title="Geri Bağlantılar"
+                  className={`notes-inspector-toggle-btn ${rightSidebarOpen ? 'notes-inspector-toggle-btn--active' : ''}`}
+                  onClick={() => setRightSidebarOpen((prev) => !prev)}
+                  title={rightSidebarOpen ? 'Sağ Paneli Gizle' : 'Bağlantılar & İçindekiler Panelini Aç'}
                 >
-                  <Link2 size={14} />
+                  <Link2 size={13} />
                   <span>Bağlantılar</span>
                 </button>
-                <button
-                  type="button"
-                  className={`sidebar-nav-btn ${rightNav === 'outline' ? 'sidebar-nav-btn--active' : ''}`}
-                  onClick={() => setRightNav('outline')}
-                  title="İçindekiler"
-                >
-                  <ListTree size={14} />
-                  <span>İçindekiler</span>
-                </button>
-                <button
-                  type="button"
-                  className={`sidebar-nav-btn ${rightNav === 'localGraph' ? 'sidebar-nav-btn--active' : ''}`}
-                  onClick={() => setRightNav('localGraph')}
-                  title="Yerel Grafik"
-                >
-                  <Network size={14} />
-                  <span>Grafik</span>
-                </button>
+              </div>
+            </div>
+
+            {/* Card Workspace Body (Sidebars + Main Viewport) */}
+            <div className="notes-card-body">
+              {/* Left Drawer */}
+              {leftSidebarOpen && (
+                <aside className="notes-card-sidebar notes-card-sidebar--left">
+                  <div className="sidebar-drawer-header">
+                    <span className="sidebar-drawer-title">
+                      {leftNav === 'explorer' && 'Dosya Gezgini'}
+                      {leftNav === 'search' && 'Notlarda Ara'}
+                      {leftNav === 'tags' && 'Etiket Listesi'}
+                    </span>
+                    <button
+                      type="button"
+                      className="sidebar-collapse-btn"
+                      onClick={() => setLeftSidebarOpen(false)}
+                      title="Paneli Kapat"
+                    >
+                      <PanelLeftClose size={13} />
+                    </button>
+                  </div>
+                  <div className="sidebar-content-area">
+                    {leftNav === 'explorer' && <FileExplorer />}
+                    {leftNav === 'search' && <VaultSearchPanel />}
+                    {leftNav === 'tags' && (
+                      <TagsPanel
+                        onSelectTag={() => {
+                          setLeftNav('search')
+                        }}
+                      />
+                    )}
+                  </div>
+                </aside>
+              )}
+
+              {/* Center Editor / Graph View / Empty State Viewport */}
+              <section className="notes-card-center-viewport">
+                {activeTab ? (
+                  activeTab.viewType === 'graph' ? (
+                    <GraphView />
+                  ) : vaultPath ? (
+                    <CodeMirrorEditor
+                      key={activeTab.id}
+                      tab={activeTab}
+                      vaultPath={vaultPath}
+                      mode={editorMode}
+                      onSaveStatusChange={setSaveStatus}
+                      onStatsChange={setStats}
+                    />
+                  ) : null
+                ) : (
+                  <div className="notes-empty-workspace">
+                    <div className="notes-empty-card">
+                      <FileText size={38} className="notes-empty-icon" />
+                      <h3>Bir Not Seçin veya Oluşturun</h3>
+                      <p>Sol menüden bir dosya seçebilir ya da aşağıdaki hızlı araçları kullanabilirsiniz.</p>
+
+                      <div className="empty-quick-actions">
+                        <button
+                          type="button"
+                          className="quick-action-btn"
+                          onClick={handleCreateNewNote}
+                        >
+                          <FilePlus size={14} />
+                          <span>Yeni Not (Ctrl + N)</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="quick-action-btn"
+                          onClick={() => setQuickSwitcherOpen(true)}
+                        >
+                          <Search size={14} />
+                          <span>Hızlı Not Aç (Ctrl + O)</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="quick-action-btn"
+                          onClick={handleOpenDailyNote}
+                        >
+                          <Calendar size={14} />
+                          <span>Bugünün Notu (Ctrl + D)</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="quick-action-btn"
+                          onClick={() => tabStore.openTab('graph', 'graph')}
+                        >
+                          <Network size={14} />
+                          <span>İlişki Grafiği (Ctrl + G)</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* Right Inspector Drawer */}
+              {rightSidebarOpen && (
+                <aside className="notes-card-sidebar notes-card-sidebar--right">
+                  <div className="sidebar-drawer-header">
+                    <div className="sidebar-drawer-subtabs">
+                      <button
+                        type="button"
+                        className={`drawer-subtab-btn ${rightNav === 'backlinks' ? 'drawer-subtab-btn--active' : ''}`}
+                        onClick={() => setRightNav('backlinks')}
+                        title="Geri Bağlantılar"
+                      >
+                        <Link2 size={13} />
+                        <span>Bağlantılar</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`drawer-subtab-btn ${rightNav === 'outline' ? 'drawer-subtab-btn--active' : ''}`}
+                        onClick={() => setRightNav('outline')}
+                        title="İçindekiler"
+                      >
+                        <ListTree size={13} />
+                        <span>İçindekiler</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`drawer-subtab-btn ${rightNav === 'localGraph' ? 'drawer-subtab-btn--active' : ''}`}
+                        onClick={() => setRightNav('localGraph')}
+                        title="Yerel Grafik"
+                      >
+                        <Network size={13} />
+                        <span>Grafik</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="sidebar-collapse-btn"
+                      onClick={() => setRightSidebarOpen(false)}
+                      title="Paneli Kapat"
+                    >
+                      <PanelRightClose size={13} />
+                    </button>
+                  </div>
+
+                  <div className="sidebar-content-area">
+                    {rightNav === 'backlinks' && (
+                      <BacklinksPanel activePath={activeTab?.path || null} />
+                    )}
+                    {rightNav === 'outline' && (
+                      <OutlinePanel activePath={activeTab?.path || null} />
+                    )}
+                    {rightNav === 'localGraph' && (
+                      <GraphView isLocal localPath={activeTab?.path || undefined} />
+                    )}
+                  </div>
+                </aside>
+              )}
+            </div>
+
+            {/* Card Bottom Status Strip */}
+            <footer className="notes-card-status-strip">
+              <div className="status-bar-left">
+                <span className="status-item">
+                  <FileText size={11} className="mr-1 inline text-slate-400" />
+                  {totalNotesCount} not
+                </span>
+                {activeTab && activeTab.viewType !== 'graph' && (
+                  <>
+                    <span className="status-dot">•</span>
+                    <span className="status-item">
+                      {stats.wordCount} kelime
+                    </span>
+                    <span className="status-dot">•</span>
+                    <span className="status-item">
+                      {stats.charCount} karakter
+                    </span>
+                  </>
+                )}
               </div>
 
-              <button
-                type="button"
-                className="sidebar-collapse-btn"
-                onClick={() => setRightSidebarOpen(false)}
-                title="Sağ Paneli Gizle"
-              >
-                <PanelRightClose size={14} />
-              </button>
-            </div>
+              <div className="status-bar-right">
+                {activeTab && activeTab.viewType !== 'graph' && (
+                  <span className="status-item status-save-indicator">
+                    <span
+                      className={`save-dot ${saveStatus === 'saving' ? 'save-dot--saving' : 'save-dot--saved'}`}
+                    />
+                    {saveStatus === 'saving' ? 'kaydediliyor...' : 'kaydedildi'}
+                  </span>
+                )}
+                <span className="status-dot">•</span>
+                <span
+                  className="status-item status-vault-path"
+                  title={vaultPath || ''}
+                  onClick={() => void vaultStore.selectNewVault()}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {vaultPath ? vaultPath.split(/[/\\]/).pop() : 'Yerel Vault'}
+                </span>
+              </div>
+            </footer>
+          </div>
+        </div>
+      </div>
 
-            <div className="sidebar-content-area">
-              {rightNav === 'backlinks' && (
-                <BacklinksPanel activePath={activeTab?.path || null} />
-              )}
-              {rightNav === 'outline' && (
-                <OutlinePanel activePath={activeTab?.path || null} />
-              )}
-              {rightNav === 'localGraph' && (
-                <GraphView isLocal localPath={activeTab?.path || undefined} />
-              )}
-            </div>
-          </aside>
-        )}
+      {/* BOTTOM ACTION & MOTTO BAR (MATCHING HOMEPAGE) */}
+      <div className="dashboard-footer-bar">
+        <div className="bottom-motto-pill">
+          <Sparkles size={13} className="motto-star-icon" />
+          <span>
+            {stats.wordCount > 0
+              ? `Aktif notta ${stats.wordCount} kelime yazıldı • Zihnini serbest bırak.`
+              : `Vault içerisinde ${totalNotesCount} not mevcut • Düşüncelerini not al, zihnini özgürleştir.`}
+          </span>
+        </div>
+
+        <div className="notes-footer-actions-group">
+          <button
+            type="button"
+            className="dashboard-customize-btn"
+            onClick={handleCreateNewNote}
+            title="Yeni Not Oluştur (Ctrl+N)"
+          >
+            <FilePlus size={13} />
+            <span>Yeni Not</span>
+          </button>
+
+          <button
+            type="button"
+            className="dashboard-customize-btn"
+            onClick={() => setQuickSwitcherOpen(true)}
+            title="Hızlı Not Bul / Aç (Ctrl+O)"
+          >
+            <Search size={13} />
+            <span>Not Bul</span>
+          </button>
+
+          <button
+            type="button"
+            className="dashboard-customize-btn"
+            onClick={handleOpenDailyNote}
+            title="Bugünün Notu (Ctrl+D)"
+          >
+            <Calendar size={13} />
+            <span>Günlük</span>
+          </button>
+
+          <button
+            type="button"
+            className="dashboard-customize-btn"
+            onClick={() => tabStore.openTab('graph', 'graph')}
+            title="İlişki Grafiği (Ctrl+G)"
+          >
+            <Network size={13} />
+            <span>Grafik</span>
+          </button>
+        </div>
       </div>
 
       {/* Modals */}
