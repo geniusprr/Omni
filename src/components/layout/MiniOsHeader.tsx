@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
 import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
+import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
 import Minus from 'lucide-react/dist/esm/icons/minus.js'
 import Power from 'lucide-react/dist/esm/icons/power.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
@@ -13,6 +14,7 @@ import Sun from 'lucide-react/dist/esm/icons/sun.js'
 import Moon from 'lucide-react/dist/esm/icons/moon.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { TitlebarMiniPlayer } from '@/features/home/widgets/TitlebarMiniPlayer'
 import { getWeatherIcon } from '@/features/home/widgets/WeatherWidget'
 import { desktop } from '@/lib/desktop'
 import { useLiveWeather } from '@/lib/weather'
@@ -24,6 +26,7 @@ interface MiniOsHeaderProps {
   onSelectMode?: (mode: MiniOsMode) => void
   onOpenQuickSwitcher: () => void
   onNavigateSettings: () => void
+  onOpenCustomizeWidgets?: () => void
   themeMode: 'dark' | 'light'
   onToggleTheme: () => void
   onExecuteCommand?: (query: string) => void
@@ -48,6 +51,7 @@ export function MiniOsHeader({
   onSelectMode,
   onOpenQuickSwitcher,
   onNavigateSettings,
+  onOpenCustomizeWidgets,
   themeMode,
   onToggleTheme,
   onExecuteCommand,
@@ -111,6 +115,23 @@ export function MiniOsHeader({
   const actionCapsule = (
     <div className="top-action-capsule">
       <TooltipProvider delayDuration={400}>
+        {activeMode === 'home' && onOpenCustomizeWidgets && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="capsule-icon-btn"
+                onClick={onOpenCustomizeWidgets}
+                aria-label="Widgetları Düzenle"
+                title="Widgetları Düzenle"
+              >
+                <LayoutTemplate size={15} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Widgetları Düzenle & Sıfırla</TooltipContent>
+          </Tooltip>
+        )}
+
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -120,7 +141,7 @@ export function MiniOsHeader({
               aria-label="Komut Paleti (Ctrl+K)"
               title="Komut Paleti (Ctrl+K)"
             >
-              <Search size={13} />
+              <Search size={15} />
             </button>
           </TooltipTrigger>
           <TooltipContent>Hızlı Arama & Komutlar (Ctrl+K)</TooltipContent>
@@ -134,7 +155,7 @@ export function MiniOsHeader({
               onClick={onToggleTheme}
               aria-label="Tema Değiştir"
             >
-              {themeMode === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+              {themeMode === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
             </button>
           </TooltipTrigger>
           <TooltipContent>Açık / Koyu Tema</TooltipContent>
@@ -149,7 +170,7 @@ export function MiniOsHeader({
                 onClick={onNavigateSettings}
                 aria-label="Ayarlar"
               >
-                <Settings size={13} />
+                <Settings size={15} />
               </button>
             </TooltipTrigger>
             <TooltipContent>Ayarlar</TooltipContent>
@@ -166,7 +187,7 @@ export function MiniOsHeader({
               onClick={() => void desktop.window.minimize()}
               aria-label="Küçült"
             >
-              <Minus size={13} />
+              <Minus size={14} />
             </button>
           </TooltipTrigger>
           <TooltipContent>Küçült</TooltipContent>
@@ -180,7 +201,7 @@ export function MiniOsHeader({
               onClick={() => void desktop.window.toggleMaximize()}
               aria-label="Ekranı Kapla"
             >
-              <Square size={11} />
+              <Square size={12} />
             </button>
           </TooltipTrigger>
           <TooltipContent>Ekranı Kapla</TooltipContent>
@@ -194,7 +215,7 @@ export function MiniOsHeader({
               onClick={() => void desktop.window.close()}
               aria-label="Kapat"
             >
-              <X size={13} />
+              <X size={14} />
             </button>
           </TooltipTrigger>
           <TooltipContent>Kapat / Tepsiye Küçült</TooltipContent>
@@ -203,7 +224,7 @@ export function MiniOsHeader({
     </div>
   )
 
-  // 1. NON-HOME SCREENS: SLEEK COMPACT HEADER (NO BIG CLOCK, NO SEARCH BAR)
+  // 1. NON-HOME SCREENS: SLEEK COMPACT HEADER (NO BIG CLOCK, WITH MINI MUSIC PLAYER IN TITLEBAR)
   if (activeMode !== 'home') {
     const screenInfo = SCREEN_TITLES[activeMode] || SCREEN_TITLES.home
     const IconComponent = screenInfo.icon
@@ -232,8 +253,10 @@ export function MiniOsHeader({
           </div>
         </div>
 
-        {/* Center: Draggable Spacer */}
-        <div className="header-compact-center" data-tauri-drag-region />
+        {/* Center: Compact Titlebar Mini Music Player */}
+        <div className="header-compact-center" data-tauri-drag-region>
+          <TitlebarMiniPlayer />
+        </div>
 
         {/* Right: Window Controls Capsule */}
         <div className="header-compact-right" data-tauri-drag-region>

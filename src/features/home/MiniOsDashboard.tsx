@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
 import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
-import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
 import { useVault } from '@/features/notes/stores/vaultStore'
 import type {
@@ -38,6 +37,8 @@ interface MiniOsDashboardProps {
   connectionStatus?: RemoteConnectionStatus
   pairedControllers?: PairedController[]
   onRefreshControllers?: () => void
+  isCustomizeOpen?: boolean
+  onToggleCustomizeOpen?: (open: boolean) => void
 }
 
 export function MiniOsDashboard({
@@ -51,12 +52,24 @@ export function MiniOsDashboard({
   connectionStatus = 'disconnected',
   pairedControllers = [],
   onRefreshControllers,
+  isCustomizeOpen,
+  onToggleCustomizeOpen,
 }: MiniOsDashboardProps) {
   const { entries } = useVault()
 
   // Widget Layout State with persistence
   const [layout, setLayout] = useState<WidgetLayoutState>(() => loadWidgetLayout())
-  const [isCustomizeModalOpen, setIsCustomizeModalOpen] = useState(false)
+  const [localCustomizeOpen, setLocalCustomizeOpen] = useState(false)
+  const isCustomizeModalOpen = isCustomizeOpen !== undefined ? isCustomizeOpen : localCustomizeOpen
+
+  function setCustomizeModalOpen(open: boolean) {
+    if (onToggleCustomizeOpen) {
+      onToggleCustomizeOpen(open)
+    } else {
+      setLocalCustomizeOpen(open)
+    }
+  }
+
   const [isMusicPlayerOpen, setIsMusicPlayerOpen] = useState<boolean>(() => {
     return localStorage.getItem('minios_music_player_open') !== 'false'
   })
@@ -110,10 +123,10 @@ export function MiniOsDashboard({
       }
     }
     return [
-      { id: '1', text: 'Finish project proposal', completed: false },
-      { id: '2', text: 'Review pull request', completed: true },
-      { id: '3', text: 'Buy groceries', completed: false },
-      { id: '4', text: "Read 'Atomic Habits'", completed: false },
+      { id: '1', text: 'Proje taslağını tamamla', completed: false },
+      { id: '2', text: 'Kod incelemesini yap', completed: true },
+      { id: '3', text: 'Günlük hedefleri kontrol et', completed: false },
+      { id: '4', text: 'Yeni notlar ekle', completed: false },
     ]
   })
 
@@ -142,7 +155,7 @@ export function MiniOsDashboard({
     { name: 'Reddit', domain: 'reddit.com', url: 'https://reddit.com', bg: '#ff4500', icon: '●' },
     { name: 'GitHub', domain: 'github.com', url: 'https://github.com', bg: '#24292e', icon: '⌨' },
     { name: 'Hacker News', domain: 'news.ycombinator.com', url: 'https://news.ycombinator.com', bg: '#ff6600', icon: 'Y' },
-    { name: 'Twitter', domain: 'x.com', url: 'https://x.com', bg: '#000000', icon: '𝕏' },
+    { name: 'Twitter / X', domain: 'x.com', url: 'https://x.com', bg: '#000000', icon: '𝕏' },
     { name: 'Netflix', domain: 'netflix.com', url: 'https://netflix.com', bg: '#e50914', icon: 'N' },
   ]
 
@@ -154,14 +167,14 @@ export function MiniOsDashboard({
     { name: 'Drive', url: 'https://drive.google.com', bg: '#34a853', iconText: '▲' },
     { name: 'Notion', url: 'https://notion.so', bg: '#000000', iconText: 'N' },
     { name: 'ChatGPT', url: 'https://chatgpt.com', bg: '#10a37f', iconText: '⌘' },
-    { name: 'Twitter', url: 'https://x.com', bg: '#000000', iconText: '𝕏' },
+    { name: 'Twitter / X', url: 'https://x.com', bg: '#000000', iconText: '𝕏' },
   ]
 
   // Recently Closed
   const [recentList, setRecentList] = useState<RecentPageItem[]>([
-    { id: '1', title: 'Design Inspiration – Dribbble', domain: 'dribbble.com', time: '2m ago', url: 'https://dribbble.com', dotBg: '#ea4c89' },
-    { id: '2', title: 'Build beautiful products faster', domain: 'linear.app', time: '15m ago', url: 'https://linear.app', dotBg: '#5e6ad2' },
-    { id: '3', title: 'Dashboard – Red Library', domain: 'localhost:5173', time: '1h ago', url: 'http://localhost:5173', dotBg: '#ef4444' },
+    { id: '1', title: 'Design Inspiration – Dribbble', domain: 'dribbble.com', time: '2 dk önce', url: 'https://dribbble.com', dotBg: '#ea4c89' },
+    { id: '2', title: 'Linear – Issue Tracking', domain: 'linear.app', time: '15 dk önce', url: 'https://linear.app', dotBg: '#5e6ad2' },
+    { id: '3', title: 'GitHub – Repository', domain: 'github.com', time: '1 saat önce', url: 'https://github.com', dotBg: '#24292e' },
   ])
 
   // Get most recent note from Vault
@@ -214,42 +227,23 @@ export function MiniOsDashboard({
         )}
       </div>
 
-      {/* BOTTOM ACTION & MOTTO BAR */}
-      <div className="dashboard-footer-bar">
-        <div className="bottom-motto-pill">
-          <Sparkles size={13} className="motto-star-icon" />
-          <span>Stay curious, keep learning.</span>
-        </div>
-
-        <div className="dashboard-footer-actions-group">
-          {!isMusicPlayerOpen && (
-            <button
-              type="button"
-              className="dashboard-customize-btn"
-              onClick={() => handleToggleMusicPlayer(true)}
-              title="Müzik Çaları Aç"
-            >
-              <Music2 size={13} />
-              <span>Müzik Çalar</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            className="dashboard-customize-btn"
-            onClick={() => setIsCustomizeModalOpen(true)}
-            title="Widgetları Aç/Kapat & Sıfırla"
-          >
-            <LayoutTemplate size={13} />
-            <span>Widgetları Düzenle</span>
-          </button>
-        </div>
-      </div>
+      {/* Floating Reopen Music Button when closed on Home */}
+      {!isMusicPlayerOpen && (
+        <button
+          type="button"
+          className="dashboard-reopen-music-float-btn"
+          onClick={() => handleToggleMusicPlayer(true)}
+          title="Müzik Çaları Aç"
+        >
+          <Music2 size={13} />
+          <span>Müzik Çalar</span>
+        </button>
+      )}
 
       {/* Customize Widgets Modal */}
       <CustomizeWidgetsModal
         isOpen={isCustomizeModalOpen}
-        onClose={() => setIsCustomizeModalOpen(false)}
+        onClose={() => setCustomizeModalOpen(false)}
         layout={layout}
         onToggleWidget={handleToggleWidget}
         onResetLayout={handleResetLayout}

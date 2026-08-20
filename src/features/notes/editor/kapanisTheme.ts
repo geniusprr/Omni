@@ -12,11 +12,11 @@ export const kapanisEditorTheme = EditorView.theme({
     lineHeight: '1.75',
   },
   '.cm-content': {
-    padding: '2rem 3rem 10rem 3rem',
+    padding: '1.75rem 2.5rem 10rem 2.5rem',
     caretColor: 'var(--k-accent)',
     fontFamily: 'inherit',
-    maxWidth: '820px',
-    margin: '0 auto',
+    maxWidth: '100%',
+    margin: '0',
   },
   '.cm-cursor, .cm-dropCursor': {
     borderLeftColor: 'var(--k-accent)',

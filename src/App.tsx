@@ -5,8 +5,8 @@ import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
 import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
 import { RingingOverlay } from '@/components/RingingOverlay'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
+import { GlobalMusicEngine } from '@/features/home/widgets/GlobalMusicEngine'
 import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
-import { YouTubeMusicWidget } from '@/features/home/widgets/YouTubeMusicWidget'
 import { LocalSendPage } from '@/features/localsend/LocalSendPage'
 import { NotesPage } from '@/features/notes/NotesPage'
 import { QuickSwitcherModal } from '@/features/notes/search/QuickSwitcherModal'
@@ -40,15 +40,7 @@ export default function App() {
   const [mode, setMode] = useState<MiniOsMode>('home')
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light')
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
-  const [isSubscreenMusicOpen, setIsSubscreenMusicOpen] = useState<boolean>(() => {
-    return localStorage.getItem('minios_subscreen_music_open') !== 'false'
-  })
-
-  function handleToggleSubscreenMusic(open?: boolean) {
-    const next = open !== undefined ? open : !isSubscreenMusicOpen
-    setIsSubscreenMusicOpen(next)
-    localStorage.setItem('minios_subscreen_music_open', next.toString())
-  }
+  const [isCustomizeWidgetsOpen, setIsCustomizeWidgetsOpen] = useState(false)
 
   // Power & Alarm states
   const [timer, setTimer] = useState<TimerState | null>(null)
@@ -314,13 +306,14 @@ export default function App() {
 
         {/* Right Main Working Area */}
         <div className="minios-main-area">
-          {/* Top Header with Clock on Home, or Compact Bar on Other Screens */}
+          {/* Top Header with Clock on Home, or Compact Bar with Mini Player on Other Screens */}
           <MiniOsHeader
             userName={settings?.deviceName || 'Genius'}
             activeMode={mode}
             onSelectMode={(m) => setMode(m)}
             onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
             onNavigateSettings={() => setMode('settings')}
+            onOpenCustomizeWidgets={() => setIsCustomizeWidgetsOpen(true)}
             themeMode={themeMode}
             onToggleTheme={() => setThemeMode((m) => (m === 'dark' ? 'light' : 'dark'))}
             onExecuteCommand={handleExecuteCommand}
@@ -330,7 +323,7 @@ export default function App() {
           <main className={`minios-viewport ${mode === 'notes' ? 'minios-viewport--notes' : ''}`}>
             {mode === 'home' && (
               <MiniOsDashboard
-                onNavigate={(targetMode) => setMode(targetMode)}
+                onNavigate={(targetMode: MiniOsMode) => setMode(targetMode)}
                 timer={timer}
                 now={now}
                 onSchedulePower={schedulePower}
@@ -340,6 +333,8 @@ export default function App() {
                 connectionStatus={connectionStatus}
                 pairedControllers={pairedControllers}
                 onRefreshControllers={refreshControllers}
+                isCustomizeOpen={isCustomizeWidgetsOpen}
+                onToggleCustomizeOpen={setIsCustomizeWidgetsOpen}
               />
             )}
 
@@ -395,31 +390,11 @@ export default function App() {
               </div>
             )}
           </main>
-
-          {/* Bottom Mini Player for all non-home screens (Notes, Alarms, Power, LocalSend, Remote, Settings) */}
-          {mode !== 'home' && isSubscreenMusicOpen && (
-            <div className="minios-subscreen-music-dock">
-              <YouTubeMusicWidget
-                variant="bottom-bar"
-                onHide={() => handleToggleSubscreenMusic(false)}
-              />
-            </div>
-          )}
-
-          {/* Floating Re-Open Button when Music is Hidden on Subscreens */}
-          {mode !== 'home' && !isSubscreenMusicOpen && (
-            <button
-              type="button"
-              className="minios-music-reopen-float-btn"
-              onClick={() => handleToggleSubscreenMusic(true)}
-              title="Müzik Çaları Aç"
-            >
-              <Music2 size={13} />
-              <span>Müzik</span>
-            </button>
-          )}
         </div>
       </div>
+
+      {/* Global Background Music Engine */}
+      <GlobalMusicEngine />
 
       {/* Global Quick Switcher Launcher (Ctrl+K) */}
       <QuickSwitcherModal

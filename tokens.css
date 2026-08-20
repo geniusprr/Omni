@@ -7,6 +7,7 @@
 
 :root {
   --font-display: "Bricolage Grotesque", "Aptos Display", "Segoe UI Variable", sans-serif;
+  --font-clock: "Outfit Variable", "Outfit", "Plus Jakarta Sans Variable", "Plus Jakarta Sans", "SF Pro Display", "Segoe UI Variable Display", system-ui, sans-serif;
   --font-body: "Geist", "Segoe UI Variable", "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", "Cascadia Mono", "Consolas", monospace;
 

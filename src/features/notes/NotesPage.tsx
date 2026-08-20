@@ -595,60 +595,6 @@ created: ${today}
         </div>
       </div>
 
-      {/* BOTTOM ACTION & MOTTO BAR (MATCHING HOMEPAGE) */}
-      <div className="dashboard-footer-bar">
-        <div className="bottom-motto-pill">
-          <Sparkles size={13} className="motto-star-icon" />
-          <span>
-            {stats.wordCount > 0
-              ? `Aktif notta ${stats.wordCount} kelime yazıldı • Zihnini serbest bırak.`
-              : `Vault içerisinde ${totalNotesCount} not mevcut • Düşüncelerini not al, zihnini özgürleştir.`}
-          </span>
-        </div>
-
-        <div className="notes-footer-actions-group">
-          <button
-            type="button"
-            className="dashboard-customize-btn"
-            onClick={handleCreateNewNote}
-            title="Yeni Not Oluştur (Ctrl+N)"
-          >
-            <FilePlus size={13} />
-            <span>Yeni Not</span>
-          </button>
-
-          <button
-            type="button"
-            className="dashboard-customize-btn"
-            onClick={() => setQuickSwitcherOpen(true)}
-            title="Hızlı Not Bul / Aç (Ctrl+O)"
-          >
-            <Search size={13} />
-            <span>Not Bul</span>
-          </button>
-
-          <button
-            type="button"
-            className="dashboard-customize-btn"
-            onClick={handleOpenDailyNote}
-            title="Bugünün Notu (Ctrl+D)"
-          >
-            <Calendar size={13} />
-            <span>Günlük</span>
-          </button>
-
-          <button
-            type="button"
-            className="dashboard-customize-btn"
-            onClick={() => tabStore.openTab('graph', 'graph')}
-            title="İlişki Grafiği (Ctrl+G)"
-          >
-            <Network size={13} />
-            <span>Grafik</span>
-          </button>
-        </div>
-      </div>
-
       {/* Modals */}
       <QuickSwitcherModal
         isOpen={quickSwitcherOpen}
