@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,21 +52,21 @@ fun BottomNavBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 8.dp),
+            .padding(horizontal = 24.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(24.dp),
             color = colors.surfaceGlass,
-            border = BorderStroke(1.dp, colors.borderStrong),
-            shadowElevation = if (colors.isDark) 10.dp else 14.dp,
+            border = BorderStroke(1.dp, colors.border),
+            shadowElevation = if (colors.isDark) 4.dp else 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(60.dp)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .height(58.dp)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -73,19 +74,19 @@ fun BottomNavBar(
                     val isSelected = tab == selectedTab
                     val iconColor by animateColorAsState(
                         targetValue = if (isSelected) colors.accent else colors.textFaint,
-                        animationSpec = tween(140),
+                        animationSpec = tween(50),
                         label = "iconColor"
                     )
                     val bgColor by animateColorAsState(
-                        targetValue = if (isSelected) colors.accent.copy(alpha = if (colors.isDark) 0.16f else 0.12f) else colors.surfaceGlass.copy(alpha = 0f),
-                        animationSpec = tween(140),
+                        targetValue = if (isSelected) colors.accent.copy(alpha = if (colors.isDark) 0.14f else 0.10f) else Color.Transparent,
+                        animationSpec = tween(50),
                         label = "bgColor"
                     )
 
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(16.dp))
                             .background(bgColor)
                             .clickable { onTabSelected(tab) }
                             .padding(vertical = 4.dp),
@@ -105,7 +106,7 @@ fun BottomNavBar(
                             Text(
                                 text = tab.title,
                                 fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = if (isSelected) colors.textPrimary else colors.textMuted,
                                 maxLines = 1
                             )

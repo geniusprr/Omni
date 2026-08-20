@@ -117,4 +117,30 @@
   --z-modal: 400;
   --z-toast: 500;
   --z-tooltip: 600;
+
+  /* Notes workspace semantic layer. The compact stylesheet overrides these
+     values per window theme so editor, explorer and inspector stay legible. */
+  --notes-surface: oklch(18% 0.014 235 / 0.78);
+  --notes-surface-raised: oklch(15% 0.014 235 / 0.68);
+  --notes-surface-hover: oklch(26% 0.016 235 / 0.82);
+  --notes-editor-surface: oklch(12.5% 0.012 235);
+  --notes-ink: var(--k-ink);
+  --notes-ink-soft: var(--k-ink-soft);
+  --notes-muted: var(--k-muted);
+  --notes-faint: var(--k-faint);
+  --notes-rule: var(--k-rule);
+  --notes-rule-strong: var(--k-rule-strong);
+  --notes-accent: var(--k-accent);
+  --notes-accent-soft: oklch(78% 0.12 215 / 0.12);
+  --notes-on-accent: var(--k-accent-ink);
+  --notes-focus: var(--k-focus);
+  --notes-success: var(--k-success);
+  --notes-danger: var(--k-danger);
+  --notes-popup: oklch(18% 0.014 235 / 0.98);
+  --notes-shadow: 0 18px 42px oklch(5% 0.012 235 / 0.22);
+  --notes-editor-selection: oklch(78% 0.12 215 / 0.22);
+  --notes-editor-match: oklch(82% 0.14 80 / 0.24);
+  --notes-editor-active-line: oklch(96% 0.01 235 / 0.035);
+  --notes-syntax-atom: oklch(78% 0.14 350);
+  --notes-syntax-number: oklch(80% 0.14 70);
 }

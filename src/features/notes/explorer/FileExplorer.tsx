@@ -165,7 +165,7 @@ export function FileExplorer() {
     return (
       <div className="explorer-tree-level">
         {nodes.map((node) => {
-          const isExpanded = expandedFolders.has(node.path)
+          const isExpanded = filterQuery.trim().length > 0 || expandedFolders.has(node.path)
           const isSelected = activeTab?.path === node.path
           const isRenaming = renamingPath === node.path
 
@@ -176,6 +176,16 @@ export function FileExplorer() {
                   className={`explorer-item explorer-item--folder ${isSelected ? 'explorer-item--active' : ''}`}
                   style={{ paddingLeft: `${depth * 14 + 10}px` }}
                   onClick={() => toggleFolder(node.path)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      toggleFolder(node.path)
+                    }
+                  }}
+                  role="treeitem"
+                  tabIndex={0}
+                  aria-expanded={isExpanded}
+                  aria-label={`${node.name} klasörü`}
                   onContextMenu={(e) => {
                     e.preventDefault()
                     setContextMenu({ x: e.clientX, y: e.clientY, path: node.path, isDir: true })
@@ -193,7 +203,7 @@ export function FileExplorer() {
                     const draggedPath = e.dataTransfer.getData('text/plain')
                     if (draggedPath && draggedPath !== node.path) {
                       const fileName = draggedPath.split('/').pop() || ''
-                      const newPath = `${node.path}/${fileName}`
+                      const newPath = node.path ? `${node.path}/${fileName}` : fileName
                       void vaultStore.renameEntry(draggedPath, newPath)
                     }
                   }}
@@ -249,6 +259,16 @@ export function FileExplorer() {
               className={`explorer-item explorer-item--file ${isSelected ? 'explorer-item--active' : ''}`}
               style={{ paddingLeft: `${depth * 14 + 28}px` }}
               onClick={() => tabStore.openTab(node.path)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  tabStore.openTab(node.path)
+                }
+              }}
+              role="treeitem"
+              tabIndex={0}
+              aria-selected={isSelected}
+              aria-label={`${cleanTitle} notunu aç`}
               onContextMenu={(e) => {
                 e.preventDefault()
                 setContextMenu({ x: e.clientX, y: e.clientY, path: node.path, isDir: false })
@@ -368,7 +388,7 @@ export function FileExplorer() {
       )}
 
       {/* Tree view */}
-      <div className="explorer-scroll-area">
+      <div className="explorer-scroll-area" role="tree" aria-label="Vault dosyaları">
         {loading ? (
           <div className="explorer-loading">Yükleniyor...</div>
         ) : tree.children.length === 0 ? (

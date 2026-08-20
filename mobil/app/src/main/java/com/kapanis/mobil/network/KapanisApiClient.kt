@@ -394,6 +394,136 @@ class KapanisApiClient {
         }
     }
 
+    suspend fun fetchVaultList(
+        host: String,
+        port: Int
+    ): Result<List<com.kapanis.mobil.data.vault.VaultNote>> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/vault/list"
+            val request = Request.Builder().url(url).get().build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string().orEmpty()
+                    val array = JSONArray(respBody)
+                    val list = mutableListOf<com.kapanis.mobil.data.vault.VaultNote>()
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val isDir = obj.optBoolean("isDir", false)
+                        if (!isDir) {
+                            val path = obj.optString("path", "")
+                            val name = obj.optString("name", "")
+                            val modifiedAt = obj.optLong("modifiedAt", System.currentTimeMillis())
+                            val size = obj.optLong("size", 0L)
+                            list.add(
+                                com.kapanis.mobil.data.vault.VaultNote(
+                                    path = path,
+                                    name = name,
+                                    title = name.removeSuffix(".md"),
+                                    content = "",
+                                    modifiedAt = modifiedAt,
+                                    size = size
+                                )
+                            )
+                        }
+                    }
+                    Result.success(list)
+                } else {
+                    Result.failure(Exception("PC Vault listelenemedi (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun readVaultNote(
+        host: String,
+        port: Int,
+        path: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val encoded = URLEncoder.encode(path, "UTF-8")
+            val url = "http://$host:$port/api/vault/read?path=$encoded"
+            val request = Request.Builder().url(url).get().build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    Result.success(response.body?.string().orEmpty())
+                } else {
+                    Result.failure(Exception("PC notu okunamadı (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun writeVaultNote(
+        host: String,
+        port: Int,
+        path: String,
+        content: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/vault/write"
+            val json = JSONObject().apply {
+                put("path", path)
+                put("content", content)
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) Result.success(true)
+                else Result.failure(Exception("PC notu kaydedilemedi (${response.code})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createVaultNote(
+        host: String,
+        port: Int,
+        path: String,
+        content: String = ""
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/vault/create"
+            val json = JSONObject().apply {
+                put("path", path)
+                put("content", content)
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) Result.success(true)
+                else Result.failure(Exception("PC notu oluşturulamadı (${response.code})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteVaultNote(
+        host: String,
+        port: Int,
+        path: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/vault/delete"
+            val json = JSONObject().apply {
+                put("path", path)
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) Result.success(true)
+                else Result.failure(Exception("PC notu silinemedi (${response.code})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun sendClipboard(
         host: String,
         port: Int,

@@ -10,9 +10,10 @@
   },
   "type": "module",
   "scripts": {
+    "dev": "tauri dev",
     "dev:ui": "vite",
     "build": "tsc -b && vite build",
-    "test": "npx tsx src/features/notes/lib/markdownParser.test.ts && npx tsx src/features/notes/lib/vaultEngine.test.ts",
+    "test": "npx tsx src/features/notes/lib/markdownParser.test.ts && npx tsx src/features/notes/lib/vaultEngine.test.ts && npx tsx src/features/music/providers/youtube/youtubeUrl.test.ts && npx tsx src/features/music/core/queue.test.ts && npx tsx src/features/music/core/persistence.test.ts && npx tsx src/features/music/core/musicStore.test.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

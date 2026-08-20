@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
@@ -8,6 +8,39 @@ import { desktop } from '@/lib/desktop'
 import { tabStore } from '../stores/tabStore'
 import { useVault } from '../stores/vaultStore'
 import type { SearchResultItem } from '../types'
+
+function createSearchSnippet(line: string, query: string) {
+  const matchIndex = line.toLowerCase().indexOf(query)
+  if (line.length <= 120 || matchIndex < 80) {
+    return {
+      content: line.length > 120 ? `${line.substring(0, 120)}...` : line,
+      highlightIndices: [matchIndex, matchIndex + query.length] as [number, number],
+    }
+  }
+
+  const start = Math.max(0, matchIndex - 44)
+  const end = Math.min(line.length, start + 120)
+  const content = `${start > 0 ? '…' : ''}${line.slice(start, end)}${end < line.length ? '…' : ''}`
+  const prefixLength = start > 0 ? 1 : 0
+
+  return {
+    content,
+    highlightIndices: [prefixLength + matchIndex - start, prefixLength + matchIndex - start + query.length] as [number, number],
+  }
+}
+
+function renderHighlightedSnippet(content: string, indices: [number, number]): ReactNode {
+  const [start, end] = indices
+  if (start < 0 || start >= content.length) return content
+
+  return (
+    <>
+      {content.slice(0, start)}
+      <mark className="search-highlight">{content.slice(start, end)}</mark>
+      {content.slice(end)}
+    </>
+  )
+}
 
 export function VaultSearchPanel() {
   const { vaultPath, entries } = useVault()
@@ -57,10 +90,11 @@ export function VaultSearchPanel() {
             const matchIdx = lowerLine.indexOf(q)
 
             if (matchIdx !== -1) {
+              const snippet = createSearchSnippet(line, q)
               fileMatches.push({
                 line: i + 1,
-                content: line.length > 120 ? line.substring(0, 120) + '...' : line,
-                highlightIndices: [matchIdx, matchIdx + q.length],
+                content: snippet.content,
+                highlightIndices: snippet.highlightIndices,
               })
             }
           }
@@ -132,6 +166,11 @@ export function VaultSearchPanel() {
 
       {/* Results area */}
       <div className="search-panel-results">
+        {searchQuery && !isSearching && (
+          <div className="search-panel-summary" aria-live="polite">
+            {results.length > 0 ? `${results.length} notta eşleşme` : 'Eşleşme yok'}
+          </div>
+        )}
         {isSearching && <div className="search-panel-status">Aranıyor...</div>}
 
         {!isSearching && searchQuery && results.length === 0 && (
@@ -150,6 +189,15 @@ export function VaultSearchPanel() {
               <div
                 className="search-result-file-header"
                 onClick={() => toggleFileCollapse(res.path)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    toggleFileCollapse(res.path)
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-expanded={!isCollapsed}
               >
                 {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                 <FileText size={13} className="text-slate-400" />
@@ -164,10 +212,20 @@ export function VaultSearchPanel() {
                       key={idx}
                       className="search-result-match-item"
                       onClick={() => handleJumpToMatch(res.path, m.line)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleJumpToMatch(res.path, m.line)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                       title={`Satır ${m.line}`}
                     >
                       <span className="search-result-line-num">{m.line}:</span>
-                      <span className="search-result-snippet">{m.content}</span>
+                      <span className="search-result-snippet">
+                        {renderHighlightedSnippet(m.content, m.highlightIndices)}
+                      </span>
                     </div>
                   ))}
                 </div>

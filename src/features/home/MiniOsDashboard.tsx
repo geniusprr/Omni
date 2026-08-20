@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
-import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
 import { useVault } from '@/features/notes/stores/vaultStore'
 import type {
@@ -10,6 +9,7 @@ import type {
   TimerState,
 } from '@/types'
 import { CustomizeWidgetsModal } from './widgets/CustomizeWidgetsModal'
+import { YouTubeMusicStatusWidget } from './widgets/YouTubeMusicStatusWidget'
 import {
   type BookmarkItem,
   DraggableWidgetGrid,
@@ -24,7 +24,6 @@ import {
   type WidgetId,
   type WidgetLayoutState,
 } from './widgets/widgetRegistry'
-import { YouTubeMusicWidget } from './widgets/YouTubeMusicWidget'
 
 interface MiniOsDashboardProps {
   onNavigate: (mode: MiniOsMode) => void
@@ -68,16 +67,6 @@ export function MiniOsDashboard({
     } else {
       setLocalCustomizeOpen(open)
     }
-  }
-
-  const [isMusicPlayerOpen, setIsMusicPlayerOpen] = useState<boolean>(() => {
-    return localStorage.getItem('minios_music_player_open') !== 'false'
-  })
-
-  function handleToggleMusicPlayer(open?: boolean) {
-    const next = open !== undefined ? open : !isMusicPlayerOpen
-    setIsMusicPlayerOpen(next)
-    localStorage.setItem('minios_music_player_open', next.toString())
   }
 
   // Persist layout changes
@@ -186,9 +175,7 @@ export function MiniOsDashboard({
 
   return (
     <div className="dashboard-wrapper">
-      {/* 2-SECTION LAYOUT: LEFT DRAGGABLE WIDGETS + RIGHT STICKY TALL YOUTUBE MUSIC */}
-      <div className={`dashboard-main-layout ${!isMusicPlayerOpen ? 'dashboard-main-layout--single-col' : ''}`}>
-        {/* LEFT / CENTER: DRAGGABLE & CUSTOMIZABLE WIDGETS */}
+      <div className="dashboard-main-layout">
         <div className="dashboard-widgets-area">
           <DraggableWidgetGrid
             layout={layout}
@@ -216,30 +203,11 @@ export function MiniOsDashboard({
           />
         </div>
 
-        {/* RIGHT: STICKY VERTICAL YOUTUBE MUSIC PLAYER */}
-        {isMusicPlayerOpen && (
-          <div className="dashboard-music-sticky-col">
-            <YouTubeMusicWidget
-              variant="tall"
-              onHide={() => handleToggleMusicPlayer(false)}
-              onOpenStudio={() => onNavigate('music')}
-            />
-          </div>
-        )}
-      </div>
+        <div className="dashboard-music-sticky-col">
+          <YouTubeMusicStatusWidget />
+        </div>
 
-      {/* Floating Reopen Music Button when closed on Home */}
-      {!isMusicPlayerOpen && (
-        <button
-          type="button"
-          className="dashboard-reopen-music-float-btn"
-          onClick={() => handleToggleMusicPlayer(true)}
-          title="Müzik Çaları Aç"
-        >
-          <Music2 size={13} />
-          <span>Müzik Çalar</span>
-        </button>
-      )}
+      </div>
 
       {/* Customize Widgets Modal */}
       <CustomizeWidgetsModal

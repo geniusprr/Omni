@@ -26,6 +26,7 @@ pub const MAX_TIMER_SECONDS: u64 = 315_360_000;
 pub const MAX_INTERVAL_SECONDS: u64 = 31_536_000;
 pub const MAX_ALARMS: usize = 64;
 pub const ALARM_SLEEP_CHUNK_MS: i64 = 60_000;
+const YOUTUBE_MUSIC_WEBVIEW_LABEL: &str = "youtube-music";
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -555,6 +556,160 @@ fn get_system_info() -> Result<SystemInfo, String> {
     })
 }
 
+#[tauri::command]
+fn youtube_music_control(app: AppHandle, action: String) -> Result<(), String> {
+    let script = match action.as_str() {
+        "toggle-play" => r#"
+          (() => {
+            const player = document.querySelector('ytmusic-player-bar') || document;
+            const button = player.querySelector('.play-pause-button')
+              || player.querySelector('button[aria-label*="Oynat"]')
+              || player.querySelector('button[aria-label*="Duraklat"]')
+              || player.querySelector('button[aria-label*="Play"]')
+              || player.querySelector('button[aria-label*="Pause"]');
+            if (button && !button.disabled) button.click();
+          })();
+        "#,
+        "next" => r#"
+          (() => {
+            const player = document.querySelector('ytmusic-player-bar') || document;
+            const button = player.querySelector('.next-button')
+              || player.querySelector('button[aria-label*="Sonraki"]')
+              || player.querySelector('button[aria-label*="Next"]');
+            if (button && !button.disabled) button.click();
+          })();
+        "#,
+        "previous" => r#"
+          (() => {
+            const player = document.querySelector('ytmusic-player-bar') || document;
+            const button = player.querySelector('.previous-button')
+              || player.querySelector('button[aria-label*="Önceki"]')
+              || player.querySelector('button[aria-label*="Previous"]');
+            if (button && !button.disabled) button.click();
+          })();
+        "#,
+        "toggle-mute" => r#"
+          (() => {
+            const player = document.querySelector('ytmusic-player-bar') || document;
+            const button = player.querySelector('.mute-button')
+              || player.querySelector('#volume-button')
+              || Array.from(player.querySelectorAll('button, tp-yt-paper-icon-button')).find((candidate) => {
+                const label = candidate.getAttribute('aria-label')?.toLowerCase() || '';
+                return label.includes('mute') || label.includes('unmute') || label.includes('ses');
+              });
+            if (button && !button.disabled) button.click();
+          })();
+        "#,
+        _ => return Err("Geçersiz YouTube Music komutu.".to_string()),
+    };
+
+    let webview = app
+        .get_webview(YOUTUBE_MUSIC_WEBVIEW_LABEL)
+        .ok_or_else(|| "YouTube Music webview henüz hazır değil.".to_string())?;
+    webview
+        .eval(script)
+        .map_err(|error| format!("YouTube Music komutu gönderilemedi: {error}"))
+}
+
+#[tauri::command]
+fn youtube_music_sync_state(app: AppHandle) -> Result<(), String> {
+    let webview = app
+        .get_webview(YOUTUBE_MUSIC_WEBVIEW_LABEL)
+        .ok_or_else(|| "YouTube Music webview henüz hazır değil.".to_string())?;
+    let app_handle = app.clone();
+    let script = r#"
+      (() => {
+        const player = document.querySelector('ytmusic-player-bar');
+        const media = document.querySelector('video, audio');
+        const title = player?.querySelector('.title')?.textContent?.trim() || '';
+        const artist = player?.querySelector('.byline')?.textContent?.trim() || '';
+        const button = player?.querySelector('.play-pause-button');
+        const ariaLabel = button?.getAttribute('aria-label')?.toLowerCase() || '';
+        const timeText = player?.querySelector('.time-info')?.textContent?.trim()
+          || player?.querySelector('.time-info')?.getAttribute('aria-label')
+          || '';
+        const timeMatches = timeText.match(/\d+(?::\d{2}){1,2}/g) || [];
+        const parseTime = (value) => {
+          const parts = value.split(':').map(Number);
+          return parts.reduce((total, part) => (total * 60) + part, 0);
+        };
+        const parsedCurrentTime = timeMatches[0] ? parseTime(timeMatches[0]) : null;
+        const parsedDuration = timeMatches[1] ? parseTime(timeMatches[1]) : null;
+        const mediaCurrentTime = Number(media?.currentTime);
+        const mediaDuration = Number(media?.duration);
+        const currentTime = Number.isFinite(mediaCurrentTime) ? mediaCurrentTime : parsedCurrentTime;
+        const duration = Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : parsedDuration;
+        const volumeControl = player?.querySelector('#volume-slider')
+          || player?.querySelector('.volume-slider')
+          || player?.querySelector('input[type="range"][aria-label*="Volume"]')
+          || player?.querySelector('input[type="range"][aria-label*="Ses"]');
+        let volume = Number(volumeControl?.value);
+        if (!Number.isFinite(volume) && media) volume = Number(media.volume) * 100;
+        if (Number.isFinite(volume) && volume >= 0 && volume <= 1) volume *= 100;
+        const artworkSource = player?.querySelector('#song-image img, .image img, img')?.currentSrc
+          || player?.querySelector('#song-image img, .image img, img')?.src
+          || '';
+        const artworkUrl = artworkSource.replace(/=w\d+-h\d+.*$/, '=w800-h800-l90-rj');
+        const volumeButton = player?.querySelector('.mute-button')
+          || player?.querySelector('#volume-button');
+        const volumeLabel = volumeButton?.getAttribute('aria-label')?.toLowerCase() || '';
+        let muted = media?.muted === true;
+        if (volumeLabel.includes('unmute') || volumeLabel.includes('sesi aç')) muted = true;
+        else if (volumeLabel.includes('mute') || volumeLabel.includes('sesi kapat')) muted = false;
+        return JSON.stringify({
+          title,
+          artist,
+          isPlaying: media ? !media.paused && !media.ended : ariaLabel.includes('duraklat') || ariaLabel.includes('pause'),
+          currentTime: Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0,
+          duration: Number.isFinite(duration) ? Math.max(0, duration) : 0,
+          volume: Number.isFinite(volume) ? Math.min(100, Math.max(0, volume)) : null,
+          muted,
+          artworkUrl,
+        });
+      })();
+    "#;
+    webview
+        .eval_with_callback(script, move |payload| {
+            let _ = app_handle.emit("youtube-music-state", payload);
+        })
+        .map_err(|error| format!("YouTube Music durumu okunamadı: {error}"))
+}
+
+#[tauri::command]
+fn youtube_music_set_volume(app: AppHandle, volume: f64) -> Result<(), String> {
+    let normalized_volume = if volume.is_finite() {
+        volume.clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+    let script = format!(
+        r#"
+          (() => {{
+            const player = document.querySelector('ytmusic-player-bar') || document;
+            const value = {:.2};
+            const slider = player.querySelector('#volume-slider')
+              || player.querySelector('.volume-slider')
+              || player.querySelector('input[type="range"][aria-label*="Volume"]')
+              || player.querySelector('input[type="range"][aria-label*="Ses"]');
+            const media = document.querySelector('video, audio');
+            if (slider) {{
+              slider.value = value;
+              slider.dispatchEvent(new Event('input', {{ bubbles: true }}));
+              slider.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            }}
+            if (media) media.volume = value / 100;
+          }})();
+        "#,
+        normalized_volume
+    );
+    let webview = app
+        .get_webview(YOUTUBE_MUSIC_WEBVIEW_LABEL)
+        .ok_or_else(|| "YouTube Music webview henüz hazır değil.".to_string())?;
+    webview
+        .eval(&script)
+        .map_err(|error| format!("YouTube Music ses seviyesi ayarlanamadı: {error}"))
+}
+
 // ----------------- SCHEDULER & RUN -----------------
 
 fn schedule_alarm(app: AppHandle, state: Arc<AppStateInner>, initial_alarm: Alarm) {
@@ -638,7 +793,7 @@ fn schedule_alarm(app: AppHandle, state: Arc<AppStateInner>, initial_alarm: Alar
             if triggered.sound_enabled {
                 play_alarm_sound(state.clone(), triggered.sound_profile);
             }
-            show_main_window(&app);
+            let _ = show_main_window(&app);
             let _ = app.emit("alarm:triggered", &triggered);
 
             let Some(next) = next_alarm else {
@@ -688,12 +843,20 @@ fn system_beep(profile: SoundProfile) {
     }
 }
 
-fn show_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+fn show_main_window(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Ana pencere henüz oluşturulmadı.".to_string())?;
+    window
+        .unminimize()
+        .map_err(|error| format!("Ana pencere küçültülmüş durumdan çıkarılamadı: {error}"))?;
+    window
+        .show()
+        .map_err(|error| format!("Ana pencere gösterilemedi: {error}"))?;
+    window
+        .set_focus()
+        .map_err(|error| format!("Ana pencereye odaklanılamadı: {error}"))?;
+    Ok(())
 }
 
 fn configure_tray(app: &mut tauri::App) -> tauri::Result<()> {
@@ -707,7 +870,9 @@ fn configure_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "open" => show_main_window(app),
+            "open" => {
+                let _ = show_main_window(app);
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -718,7 +883,7 @@ fn configure_tray(app: &mut tauri::App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                show_main_window(tray.app_handle());
+                let _ = show_main_window(tray.app_handle());
             }
         });
 
@@ -750,12 +915,27 @@ fn configure_splash(app: &mut tauri::App, start_hidden: bool) {
         return;
     }
 
+    // The main window is configured hidden so background autostart does not flash it.
+    // For a normal launch, show it immediately; the splash only covers the first
+    // moment while the frontend finishes loading.
+    if let Err(error) = show_main_window(&handle) {
+        eprintln!("[startup] Ana pencere hemen gösterilemedi: {error}");
+    }
+
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(900));
         if let Some(splash) = handle.get_webview_window("splash") {
             let _ = splash.close();
         }
-        show_main_window(&handle);
+        for _ in 0..12 {
+            match show_main_window(&handle) {
+                Ok(()) => break,
+                Err(error) => {
+                    eprintln!("[startup] Ana pencere bekleniyor: {error}");
+                    thread::sleep(Duration::from_millis(150));
+                }
+            }
+        }
     });
 }
 
@@ -772,7 +952,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if !args.iter().any(|argument| argument == "--background") {
-                show_main_window(app);
+                let _ = show_main_window(app);
             }
         }))
         .plugin(tauri_plugin_autostart::init(
@@ -838,6 +1018,9 @@ pub fn run() {
             get_app_settings,
             save_app_settings,
             get_system_info,
+            youtube_music_control,
+            youtube_music_set_volume,
+            youtube_music_sync_state,
             localsend::localsend_get_status,
             localsend::localsend_get_devices,
             localsend::localsend_scan_network,

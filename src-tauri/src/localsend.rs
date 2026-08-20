@@ -950,6 +950,103 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 continue;
             }
 
+            // GET /api/vault/list (Mobile Obsidian Vault List)
+            if method == "GET" && url.starts_with("/api/vault/list") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let vault_dir = data_dir.join("vault");
+                let _ = fs::create_dir_all(&vault_dir);
+                let entries = crate::notes::vault_list_entries(vault_dir.to_string_lossy().to_string()).unwrap_or_default();
+                let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string());
+                let mut response = Response::from_string(json);
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // GET /api/vault/read?path=... (Mobile Obsidian Read Note)
+            if method == "GET" && url.starts_with("/api/vault/read") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let vault_dir = data_dir.join("vault");
+                let rel_path = url.split("path=")
+                    .nth(1)
+                    .map(|p| p.split('&').next().unwrap_or(p))
+                    .map(|p| percent_decode_filename(p))
+                    .unwrap_or_default();
+
+                let content = crate::notes::vault_read_file(vault_dir.to_string_lossy().to_string(), rel_path).unwrap_or_default();
+                let mut response = Response::from_string(content);
+                response.add_header(cors_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // POST /api/vault/write (Mobile Obsidian Save Note)
+            if method == "POST" && url.starts_with("/api/vault/write") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let vault_dir = data_dir.join("vault");
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+
+                #[derive(Deserialize)]
+                struct WriteReq { path: String, content: String }
+
+                let mut ok = false;
+                if let Ok(req) = serde_json::from_str::<WriteReq>(&body) {
+                    ok = crate::notes::vault_write_file(vault_dir.to_string_lossy().to_string(), req.path, req.content).is_ok();
+                }
+
+                let mut response = Response::from_string(format!(r#"{{"success":{ok}}}"#));
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // POST /api/vault/create (Mobile Obsidian Create Note)
+            if method == "POST" && url.starts_with("/api/vault/create") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let vault_dir = data_dir.join("vault");
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+
+                #[derive(Deserialize)]
+                struct CreateReq { path: String, content: Option<String> }
+
+                let mut ok = false;
+                if let Ok(req) = serde_json::from_str::<CreateReq>(&body) {
+                    ok = crate::notes::vault_create_file(vault_dir.to_string_lossy().to_string(), req.path, req.content).is_ok();
+                }
+
+                let mut response = Response::from_string(format!(r#"{{"success":{ok}}}"#));
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            // POST /api/vault/delete (Mobile Obsidian Delete Note)
+            if method == "POST" && url.starts_with("/api/vault/delete") {
+                state.register_or_touch_sender(&sender_ip, None, None);
+                let vault_dir = data_dir.join("vault");
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+
+                #[derive(Deserialize)]
+                struct DeleteReq { path: String }
+
+                let mut ok = false;
+                if let Ok(req) = serde_json::from_str::<DeleteReq>(&body) {
+                    ok = crate::notes::vault_delete_entry(vault_dir.to_string_lossy().to_string(), req.path).is_ok();
+                }
+
+                let mut response = Response::from_string(format!(r#"{{"success":{ok}}}"#));
+                response.add_header(cors_header);
+                response.add_header(json_header);
+                let _ = request.respond(response);
+                continue;
+            }
+
             // GET /api/localsend/v2/info or /api/localsend/v1/info
             if method == "GET" && (url.starts_with("/api/localsend/v2/info") || url.starts_with("/api/localsend/v1/info")) {
                 let info = state.get_device_info();

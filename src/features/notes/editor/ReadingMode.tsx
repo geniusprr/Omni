@@ -162,7 +162,9 @@ export function ReadingMode({ content, onNavigate }: ReadingModeProps) {
 
   return (
     <div className="reading-mode-container">
-      <div className="reading-mode-article">{elements}</div>
+      <article className="reading-mode-article" aria-label="Not okuma görünümü">
+        <div className="reading-document-body">{elements}</div>
+      </article>
     </div>
   )
 }

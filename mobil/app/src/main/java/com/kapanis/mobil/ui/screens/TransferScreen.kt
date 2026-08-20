@@ -250,6 +250,7 @@ fun TransferScreen(
         // Recent Transfers List
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 90.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(transfers, key = { it.id }) { item ->

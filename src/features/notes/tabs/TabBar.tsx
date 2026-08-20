@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Network from 'lucide-react/dist/esm/icons/network.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import { tabStore, useTabs } from '../stores/tabStore'
-import { vaultStore } from '../stores/vaultStore'
+import { useVault, vaultStore } from '../stores/vaultStore'
 import type { NoteTab } from '../types'
 
 interface TabBarProps {
@@ -13,6 +13,7 @@ interface TabBarProps {
 
 export function TabBar({ onNewNote }: TabBarProps) {
   const { tabs, activeTabId } = useTabs()
+  const { index } = useVault()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tab: NoteTab } | null>(
     null,
   )
@@ -30,18 +31,42 @@ export function TabBar({ onNewNote }: TabBarProps) {
     tabStore.openTab('graph', 'graph')
   }
 
+  function handleTabKeyDown(event: KeyboardEvent<HTMLDivElement>, indexInTabs: number) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+
+    let nextIndex = indexInTabs
+    if (event.key === 'ArrowLeft') nextIndex = Math.max(0, indexInTabs - 1)
+    if (event.key === 'ArrowRight') nextIndex = Math.min(tabs.length - 1, indexInTabs + 1)
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = Math.max(0, tabs.length - 1)
+
+    const nextTab = tabs[nextIndex]
+    if (!nextTab) return
+    tabStore.setActiveTab(nextTab.id)
+    window.requestAnimationFrame(() => {
+      const tabNodes = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')
+      tabNodes?.[nextIndex]?.focus({ preventScroll: true })
+    })
+  }
+
   return (
     <div className="notes-tab-bar" onClick={() => setContextMenu(null)}>
-      <div className="notes-tab-scroll">
-        {tabs.map((tab) => {
+      <div className="notes-tab-scroll" role="tablist" aria-label="Açık notlar">
+        {tabs.map((tab, indexInTabs) => {
           const isActive = tab.id === activeTabId
           const isGraph = tab.viewType === 'graph'
+          const displayTitle = isGraph ? tab.title : index.files.get(tab.path)?.title || tab.title
 
           return (
             <div
               key={tab.id}
               className={`note-tab-item ${isActive ? 'note-tab-item--active' : ''}`}
               onClick={() => handleTabClick(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, indexInTabs)}
+              role="tab"
+              tabIndex={isActive ? 0 : -1}
+              aria-selected={isActive}
               onContextMenu={(e) => {
                 e.preventDefault()
                 setContextMenu({ x: e.clientX, y: e.clientY, tab })
@@ -53,13 +78,14 @@ export function TabBar({ onNewNote }: TabBarProps) {
               ) : (
                 <FileText size={13} className="text-slate-400" />
               )}
-              <span className="note-tab-title">{tab.title}</span>
+              <span className="note-tab-title">{displayTitle}</span>
               {tab.isDirty && <span className="note-tab-dirty-dot" title="Kaydedilmemiş değişiklikler" />}
               <button
                 type="button"
                 className="note-tab-close-btn"
                 onClick={(e) => handleTabClose(e, tab.id)}
                 title="Sekmeyi Kapat"
+                aria-label={`${displayTitle} sekmesini kapat`}
               >
                 <X size={12} />
               </button>

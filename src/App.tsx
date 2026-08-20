@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
 import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
 import { RingingOverlay } from '@/components/RingingOverlay'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
-import { GlobalMusicEngine } from '@/features/home/widgets/GlobalMusicEngine'
 import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
 import { YouTubeMusicPage } from '@/features/music/YouTubeMusicPage'
 import { LocalSendPage } from '@/features/localsend/LocalSendPage'
@@ -339,12 +337,6 @@ export default function App() {
               />
             )}
 
-            {mode === 'music' && (
-              <div className="minios-subscreen minios-subscreen--full">
-                <YouTubeMusicPage />
-              </div>
-            )}
-
             {mode === 'power' && (
               <div className="minios-subscreen">
                 <PowerPage
@@ -396,12 +388,16 @@ export default function App() {
                 />
               </div>
             )}
+
+            <div
+              className={`minios-subscreen minios-subscreen--full youtube-music-persistent-screen ${mode === 'music' ? '' : 'youtube-music-persistent-screen--hidden'}`}
+              aria-hidden={mode !== 'music'}
+            >
+              <YouTubeMusicPage isVisible={mode === 'music'} />
+            </div>
           </main>
         </div>
       </div>
-
-      {/* Global Background Music Engine */}
-      <GlobalMusicEngine />
 
       {/* Global Quick Switcher Launcher (Ctrl+K) */}
       <QuickSwitcherModal

@@ -38,7 +38,7 @@ const SCREEN_TITLES: Record<
   { label: string; icon: React.ComponentType<any>; color: string }
 > = {
   home: { label: 'Anasayfa', icon: Clock, color: 'text-sky-400' },
-  music: { label: 'YouTube Music Studio', icon: Music2, color: 'text-rose-400' },
+  music: { label: 'YouTube Music', icon: Music2, color: 'text-rose-400' },
   power: { label: 'Güç & Sayaç', icon: Power, color: 'text-amber-400' },
   alarms: { label: 'Alarmlar & Zamanlayıcı', icon: Clock, color: 'text-sky-400' },
   notes: { label: 'Notlar / Obsidian Vault', icon: FileText, color: 'text-emerald-400' },
@@ -255,9 +255,9 @@ export function MiniOsHeader({
           </div>
         </div>
 
-        {/* Center: Compact Titlebar Mini Music Player */}
+        {/* Center: persistent YouTube Music status and controls */}
         <div className="header-compact-center" data-tauri-drag-region>
-          <TitlebarMiniPlayer onOpenStudio={() => onSelectMode && onSelectMode('music')} />
+          <TitlebarMiniPlayer onOpenStudio={() => onSelectMode?.('music')} />
         </div>
 
         {/* Right: Window Controls Capsule */}

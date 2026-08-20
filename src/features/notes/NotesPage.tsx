@@ -8,6 +8,8 @@ import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
 import Link2 from 'lucide-react/dist/esm/icons/link-2.js'
 import ListTree from 'lucide-react/dist/esm/icons/list-tree.js'
+import Maximize2 from 'lucide-react/dist/esm/icons/maximize-2.js'
+import Minimize2 from 'lucide-react/dist/esm/icons/minimize-2.js'
 import Network from 'lucide-react/dist/esm/icons/network.js'
 import PanelLeftClose from 'lucide-react/dist/esm/icons/panel-left-close.js'
 import PanelRightClose from 'lucide-react/dist/esm/icons/panel-right-close.js'
@@ -32,10 +34,25 @@ import type { EditorMode, NoteCommand } from './types'
 type LeftNavTab = 'explorer' | 'search' | 'tags'
 type RightNavTab = 'backlinks' | 'outline' | 'localGraph'
 
+function getLocalDateKey() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export function NotesPage() {
-  const { vaultPath, entries } = useVault()
+  const { vaultPath, entries, index } = useVault()
   const { tabs, activeTabId } = useTabs()
   const activeTab = tabs.find((t) => t.id === activeTabId) || null
+  const activeNoteMetadata = activeTab && activeTab.viewType !== 'graph'
+    ? index.files.get(activeTab.path) || null
+    : null
+  const activeNoteTitle = activeNoteMetadata?.title || activeTab?.title || 'Yeni Not'
+  const activeNoteDirectory = activeTab?.path.includes('/')
+    ? activeTab.path.slice(0, activeTab.path.lastIndexOf('/'))
+    : 'Vault kökü'
 
   // Layout toggles
   const [leftNav, setLeftNav] = useState<LeftNavTab>('explorer')
@@ -86,7 +103,7 @@ export function NotesPage() {
 
   // 3. Daily Note helper
   function handleOpenDailyNote() {
-    const today = new Date().toISOString().split('T')[0]
+    const today = getLocalDateKey()
     const dailyPath = `Günlük/${today}.md`
 
     const existing = entries.find((e) => e.path === dailyPath)
@@ -282,6 +299,17 @@ created: ${today}
     return entries.filter((e) => !e.isDir && e.path.toLowerCase().endsWith('.md')).length
   }, [entries])
 
+  const focusMode = !leftSidebarOpen && !rightSidebarOpen
+
+  function toggleFocusMode() {
+    if (focusMode) {
+      setLeftSidebarOpen(true)
+      return
+    }
+    setLeftSidebarOpen(false)
+    setRightSidebarOpen(false)
+  }
+
   return (
     <div className="dashboard-wrapper notes-dashboard-wrapper">
       {/* 2-SECTION LAYOUT: LEFT NOTES WORKSPACE + RIGHT STICKY YOUTUBE MUSIC (EXACT HOMEPAGE PARITY) */}
@@ -305,6 +333,7 @@ created: ${today}
                     }
                   }}
                   title="Dosya Gezgini"
+                  aria-pressed={leftSidebarOpen && leftNav === 'explorer'}
                 >
                   <Folder size={13} />
                   <span>Dosyalar</span>
@@ -323,6 +352,7 @@ created: ${today}
                     }
                   }}
                   title="Notlarda Ara"
+                  aria-pressed={leftSidebarOpen && leftNav === 'search'}
                 >
                   <Search size={13} />
                   <span>Ara</span>
@@ -340,6 +370,7 @@ created: ${today}
                     }
                   }}
                   title="Etiketler"
+                  aria-pressed={leftSidebarOpen && leftNav === 'tags'}
                 >
                   <Tag size={13} />
                   <span>Etiketler</span>
@@ -360,6 +391,7 @@ created: ${today}
                       className={`mode-toggle-btn ${editorMode === 'live' ? 'mode-toggle-btn--active' : ''}`}
                       onClick={() => setEditorMode('live')}
                       title="Canlı Önizleme"
+                      aria-pressed={editorMode === 'live'}
                     >
                       <BookOpen size={12} />
                       <span>Canlı</span>
@@ -369,6 +401,7 @@ created: ${today}
                       className={`mode-toggle-btn ${editorMode === 'source' ? 'mode-toggle-btn--active' : ''}`}
                       onClick={() => setEditorMode('source')}
                       title="Kaynak Kodu"
+                      aria-pressed={editorMode === 'source'}
                     >
                       <Code2 size={12} />
                       <span>Kaynak</span>
@@ -378,6 +411,7 @@ created: ${today}
                       className={`mode-toggle-btn ${editorMode === 'reading' ? 'mode-toggle-btn--active' : ''}`}
                       onClick={() => setEditorMode('reading')}
                       title="Okuma Modu"
+                      aria-pressed={editorMode === 'reading'}
                     >
                       <Eye size={12} />
                       <span>Okuma</span>
@@ -390,6 +424,7 @@ created: ${today}
                   className={`notes-inspector-toggle-btn ${rightSidebarOpen ? 'notes-inspector-toggle-btn--active' : ''}`}
                   onClick={() => setRightSidebarOpen((prev) => !prev)}
                   title={rightSidebarOpen ? 'Sağ Paneli Gizle' : 'Bağlantılar & İçindekiler Panelini Aç'}
+                  aria-pressed={rightSidebarOpen}
                 >
                   <Link2 size={13} />
                   <span>Bağlantılar</span>
@@ -433,6 +468,44 @@ created: ${today}
 
               {/* Center Editor / Graph View / Empty State Viewport */}
               <section className="notes-card-center-viewport">
+                {activeTab && activeTab.viewType !== 'graph' && (
+                  <header className="notes-editor-context-bar">
+                    <div className="notes-editor-context-copy">
+                      <div className="notes-editor-context-title-row">
+                        <span className="notes-editor-context-eyebrow">Not</span>
+                        <h1 className="notes-editor-context-title" title={activeTab.path}>
+                          {activeNoteTitle}
+                        </h1>
+                        {activeTab.isDirty && <span className="notes-editor-dirty-mark" title="Kaydedilmemiş değişiklikler" />}
+                      </div>
+                      <div className="notes-editor-context-meta">
+                        <span className="notes-editor-context-path" title={activeTab.path}>
+                          {activeNoteDirectory}
+                        </span>
+                        {activeNoteMetadata?.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className="notes-editor-context-tag">#{tag}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="notes-editor-context-actions">
+                      {activeNoteMetadata && (
+                        <span className="notes-editor-context-stat">
+                          {activeNoteMetadata.headings.length} başlık
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className={`notes-editor-context-action ${focusMode ? 'notes-editor-context-action--active' : ''}`}
+                        onClick={toggleFocusMode}
+                        title={focusMode ? 'Panelleri geri aç' : 'Odak moduna geç'}
+                        aria-pressed={focusMode}
+                      >
+                        {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                        <span>Odak</span>
+                      </button>
+                    </div>
+                  </header>
+                )}
                 {activeTab ? (
                   activeTab.viewType === 'graph' ? (
                     <GraphView />
@@ -573,7 +646,7 @@ created: ${today}
 
               <div className="status-bar-right">
                 {activeTab && activeTab.viewType !== 'graph' && (
-                  <span className="status-item status-save-indicator">
+                  <span className="status-item status-save-indicator" aria-live="polite">
                     <span
                       className={`save-dot ${saveStatus === 'saving' ? 'save-dot--saving' : 'save-dot--saved'}`}
                     />

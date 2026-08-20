@@ -21,7 +21,7 @@ fun GlassCard(
     modifier: Modifier = Modifier,
     backgroundColor: Color = KapanisTheme.colors.surfaceGlass,
     borderColor: Color = KapanisTheme.colors.border,
-    shape: Shape = RoundedCornerShape(16.dp),
+    shape: Shape = RoundedCornerShape(18.dp),
     contentPadding: Dp = 16.dp,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
@@ -39,8 +39,8 @@ fun GlassCard(
         shape = shape,
         color = backgroundColor,
         border = BorderStroke(1.dp, borderColor),
-        tonalElevation = if (KapanisTheme.colors.isDark) 0.dp else 1.dp,
-        shadowElevation = if (KapanisTheme.colors.isDark) 0.dp else 2.dp
+        tonalElevation = 0.dp,
+        shadowElevation = if (KapanisTheme.colors.isDark) 0.dp else 1.dp
     ) {
         Column(
             modifier = Modifier.padding(contentPadding),

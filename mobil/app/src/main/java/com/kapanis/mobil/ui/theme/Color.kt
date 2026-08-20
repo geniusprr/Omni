@@ -4,56 +4,56 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 // ==========================================
-// DARK THEME PALETTE (studied-DNA Dark Glass)
+// DARK THEME PALETTE (Elegant Midnight Titanium & Indigo)
 // ==========================================
-val DarkPaper = Color(0xFF0A0E16)
-val DarkPaperDeep = Color(0xFF06090F)
-val DarkSurface = Color(0xFF121824)
-val DarkSurfaceRaised = Color(0xFF182030)
-val DarkSurfaceHover = Color(0xFF1E283C)
-val DarkSurfaceGlass = Color(0xDC121824)
+val DarkPaper = Color(0xFF0B0D14)
+val DarkPaperDeep = Color(0xFF07080D)
+val DarkSurface = Color(0xFF121622)
+val DarkSurfaceRaised = Color(0xFF181F2E)
+val DarkSurfaceHover = Color(0xFF20293D)
+val DarkSurfaceGlass = Color(0xEA121622)
 
-val DarkBorder = Color(0x1FFFFFFF)
-val DarkBorderStrong = Color(0x33FFFFFF)
+val DarkBorder = Color(0x14FFFFFF)
+val DarkBorderStrong = Color(0x26FFFFFF)
 
 val DarkInkPrimary = Color(0xFFF8FAFC)
-val DarkInkSecondary = Color(0xFFE2E8F0)
+val DarkInkSecondary = Color(0xFFCBD5E1)
 val DarkTextMuted = Color(0xFF94A3B8)
 val DarkTextFaint = Color(0xFF64748B)
 
-val DarkAccent = Color(0xFF38BDF8)
-val DarkAccentVariant = Color(0xFF60A5FA)
-val DarkAccentInk = Color(0xFF081028)
+val DarkAccent = Color(0xFF6366F1)
+val DarkAccentVariant = Color(0xFF818CF8)
+val DarkAccentInk = Color(0xFFFFFFFF)
 
-val DarkSuccess = Color(0xFF34D399)
-val DarkDanger = Color(0xFFF87171)
-val DarkWarning = Color(0xFFFBBF24)
+val DarkSuccess = Color(0xFF10B981)
+val DarkDanger = Color(0xFFF43F5E)
+val DarkWarning = Color(0xFFF59E0B)
 
 // ==========================================
-// LIGHT THEME PALETTE (studied-DNA Light Glass)
+// LIGHT THEME PALETTE (Elegant Porcelain & Sapphire)
 // ==========================================
-val LightPaper = Color(0xFFF1F5F9)
-val LightPaperDeep = Color(0xFFE2E8F0)
+val LightPaper = Color(0xFFF8FAFC)
+val LightPaperDeep = Color(0xFFF1F5F9)
 val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceRaised = Color(0xFFF8FAFC)
-val LightSurfaceHover = Color(0xFFEDF2F7)
-val LightSurfaceGlass = Color(0xEEFFFFFF)
+val LightSurfaceRaised = Color(0xFFF1F5F9)
+val LightSurfaceHover = Color(0xFFE2E8F0)
+val LightSurfaceGlass = Color(0xF4FFFFFF)
 
-val LightBorder = Color(0x140F172A)
-val LightBorderStrong = Color(0x290F172A)
+val LightBorder = Color(0x0F0F172A)
+val LightBorderStrong = Color(0x1F0F172A)
 
 val LightInkPrimary = Color(0xFF0F172A)
 val LightInkSecondary = Color(0xFF334155)
 val LightTextMuted = Color(0xFF64748B)
 val LightTextFaint = Color(0xFF94A3B8)
 
-val LightAccent = Color(0xFF2563EB)
-val LightAccentVariant = Color(0xFF3B82F6)
+val LightAccent = Color(0xFF4F46E5)
+val LightAccentVariant = Color(0xFF6366F1)
 val LightAccentInk = Color(0xFFFFFFFF)
 
-val LightSuccess = Color(0xFF10B981)
-val LightDanger = Color(0xFFEF4444)
-val LightWarning = Color(0xFFF59E0B)
+val LightSuccess = Color(0xFF059669)
+val LightDanger = Color(0xFFE11D48)
+val LightWarning = Color(0xFFD97706)
 
 // Backward compatibility aliases
 val AccentBlue = DarkAccentVariant
