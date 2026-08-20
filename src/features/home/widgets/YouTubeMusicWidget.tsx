@@ -20,6 +20,7 @@ import {
   type MusicTheme,
 } from '@/features/music/core/musicStore'
 import { trackDurationLabel, type MusicTrack } from '@/features/music/core/types'
+import { desktop } from '@/lib/desktop'
 
 export type { MusicTrack }
 
@@ -87,6 +88,7 @@ export function YouTubeMusicWidget({
   }
 
   const isCurrentFavorite = isFavorite(activeTrack)
+  const externalUrl = activeTrack.externalUrl
   const style = {
     '--yt-accent': themeConfig.accent,
     '--yt-glow': themeConfig.glow,
@@ -285,8 +287,18 @@ export function YouTubeMusicWidget({
               <button type="button" className="yt-icon-btn-small" onClick={() => toggleFavorite(activeTrack)} title="Favori">
                 <Heart size={11} className={isCurrentFavorite ? 'fill-rose-500 text-rose-500' : ''} />
               </button>
-              {activeTrack.externalUrl ? (
-                <a href={activeTrack.externalUrl} target="_blank" rel="noopener noreferrer" className="yt-open-link" title="YouTube’da aç">
+              {externalUrl ? (
+                <a
+                  href={externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="yt-open-link"
+                  title="YouTube’da aç"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    void desktop.openExternal(externalUrl).catch(() => undefined)
+                  }}
+                >
                   <ExternalLink size={12} />
                 </a>
               ) : null}

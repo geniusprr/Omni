@@ -41,6 +41,16 @@ function listenWithoutBlocking<T>(
 
 export const desktop = {
   isTauri: isTauriRuntime,
+  openExternal: async (url: string): Promise<void> => {
+    if (!/^https?:\/\//i.test(url.trim())) {
+      throw new Error('Yalnızca http veya https bağlantıları açılabilir.')
+    }
+    if (!isTauriRuntime()) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    await invoke<void>('open_external_url', { url })
+  },
   window: {
     minimize: async () => {
       if (!isTauriRuntime()) return
@@ -339,4 +349,3 @@ export const desktop = {
     },
   },
 }
-

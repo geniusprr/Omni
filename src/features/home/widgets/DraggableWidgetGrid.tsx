@@ -18,6 +18,7 @@ import Wifi from 'lucide-react/dist/esm/icons/wifi.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
 import { tabStore } from '@/features/notes/stores/tabStore'
+import { desktop } from '@/lib/desktop'
 import { durationLabel, targetLabel } from '@/lib/format'
 import type {
   PairedController,
@@ -137,7 +138,7 @@ export function DraggableWidgetGrid({
   const completedCount = todos.filter((t) => t.completed).length
 
   function handleOpenUrl(url: string) {
-    window.open(url, '_blank')
+    void desktop.openExternal(url).catch(() => undefined)
   }
 
   function handleTodoSubmit(e: React.FormEvent) {

@@ -1,6 +1,7 @@
 import { ExternalLink, FastForward, Music2, RotateCcw, X } from 'lucide-react'
 import { useMusicPlayer } from '@/features/music/core/musicStore'
 import { YouTubePlayer } from '@/features/music/providers/youtube/YouTubePlayer'
+import { desktop } from '@/lib/desktop'
 
 export interface GlobalMusicEngineProps {
   screenMode?: string
@@ -24,6 +25,7 @@ export function GlobalMusicEngine({ screenMode = 'home' }: GlobalMusicEngineProp
   const shouldSkipTrack = error
     ? ['embedding-disabled', 'video-unavailable', 'age-restricted', 'region-restricted'].includes(error.code)
     : false
+  const externalUrl = activeTrack?.externalUrl
 
   return (
     <aside
@@ -52,8 +54,16 @@ export function GlobalMusicEngine({ screenMode = 'home' }: GlobalMusicEngineProp
 
       <div className="global-music-engine__footer">
         <span>{activeTrack?.artist || 'YouTube içeriği'}</span>
-        {activeTrack?.externalUrl ? (
-          <a href={activeTrack.externalUrl} target="_blank" rel="noopener noreferrer">
+        {externalUrl ? (
+          <a
+            href={externalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => {
+              event.preventDefault()
+              void desktop.openExternal(externalUrl).catch(() => undefined)
+            }}
+          >
             YouTube’da aç <ExternalLink size={11} aria-hidden="true" />
           </a>
         ) : null}

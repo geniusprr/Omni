@@ -5,7 +5,12 @@ import Play from 'lucide-react/dist/esm/icons/play.js'
 import Rewind from 'lucide-react/dist/esm/icons/rewind.js'
 import Youtube from 'lucide-react/dist/esm/icons/youtube.js'
 import { useMusicPlayer } from '@/features/music/core/musicStore'
-import { controlYouTubeMusic, useYouTubeMusicSession } from '@/features/music/youtubeMusicSession'
+import {
+  controlYouTubeMusic,
+  syncYouTubeMusicState,
+  useYouTubeMusicSession,
+} from '@/features/music/youtubeMusicSession'
+import { desktop } from '@/lib/desktop'
 
 export interface TitlebarMiniPlayerProps {
   onOpenStudio?: () => void
@@ -20,20 +25,33 @@ export function TitlebarMiniPlayer({ onOpenStudio }: TitlebarMiniPlayerProps = {
   const displayTitle = youtubeMusic.trackTitle || activeTrack?.title || 'YouTube Music'
   const displayArtist = youtubeMusic.artist || (youtubeMusic.ready ? 'YouTube Music' : activeTrack?.artist || 'Müzik')
   const displayIsPlaying = youtubeMusic.ready ? youtubeMusic.isPlaying : isPlaying
+  const externalUrl = activeTrack?.externalUrl
 
   async function handleTogglePlay() {
+    if (!youtubeMusic.ready) {
+      togglePlay()
+      return
+    }
     await controlYouTubeMusic('toggle-play').catch(() => undefined)
-    togglePlay()
+    void syncYouTubeMusicState().catch(() => undefined)
   }
 
   async function handleNextTrack() {
+    if (!youtubeMusic.ready) {
+      nextTrack()
+      return
+    }
     await controlYouTubeMusic('next').catch(() => undefined)
-    nextTrack()
+    void syncYouTubeMusicState().catch(() => undefined)
   }
 
   async function handlePreviousTrack() {
+    if (!youtubeMusic.ready) {
+      prevTrack()
+      return
+    }
     await controlYouTubeMusic('previous').catch(() => undefined)
-    prevTrack()
+    void syncYouTubeMusicState().catch(() => undefined)
   }
 
   return (
@@ -85,15 +103,19 @@ export function TitlebarMiniPlayer({ onOpenStudio }: TitlebarMiniPlayerProps = {
         </button>
       </div>
 
-      {activeTrack?.externalUrl ? (
+      {externalUrl ? (
         <a
-          href={activeTrack.externalUrl}
+          href={externalUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="titlebar-player-btn"
           title="YouTube’da aç"
           aria-label="YouTube’da aç"
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            void desktop.openExternal(externalUrl).catch(() => undefined)
+          }}
         >
           <ExternalLink size={12} />
         </a>

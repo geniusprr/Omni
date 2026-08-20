@@ -226,7 +226,7 @@ export function MiniOsHeader({
     </div>
   )
 
-  // 1. NON-HOME SCREENS: SLEEK COMPACT HEADER (NO BIG CLOCK, WITH MINI MUSIC PLAYER IN TITLEBAR)
+  // 1. NON-HOME SCREENS: SLEEK COMPACT HEADER (NO MINI PLAYER ON THE MUSIC SCREEN)
   if (activeMode !== 'home') {
     const screenInfo = SCREEN_TITLES[activeMode] || SCREEN_TITLES.home
     const IconComponent = screenInfo.icon
@@ -249,16 +249,20 @@ export function MiniOsHeader({
             <span>Anasayfa</span>
           </button>
 
-          <div className="header-subscreen-title-pill">
-            <IconComponent size={14} className={screenInfo.color} />
-            <span>{screenInfo.label}</span>
-          </div>
+          {activeMode !== 'music' ? (
+            <div className="header-subscreen-title-pill">
+              <IconComponent size={14} className={screenInfo.color} />
+              <span>{screenInfo.label}</span>
+            </div>
+          ) : null}
         </div>
 
-        {/* Center: persistent YouTube Music status and controls */}
-        <div className="header-compact-center" data-tauri-drag-region>
-          <TitlebarMiniPlayer onOpenStudio={() => onSelectMode?.('music')} />
-        </div>
+        {/* Center: keep the music mini player out of its own full-screen view */}
+        {activeMode !== 'music' ? (
+          <div className="header-compact-center" data-tauri-drag-region>
+            <TitlebarMiniPlayer onOpenStudio={() => onSelectMode?.('music')} />
+          </div>
+        ) : null}
 
         {/* Right: Window Controls Capsule */}
         <div className="header-compact-right" data-tauri-drag-region>

@@ -9,6 +9,7 @@ import {
   controlYouTubeMusic,
   setYouTubeMusicSession,
   setYouTubeMusicVolume,
+  syncYouTubeMusicState,
   useYouTubeMusicSession,
 } from '@/features/music/youtubeMusicSession'
 
@@ -26,14 +27,13 @@ export function YouTubeMusicStatusWidget() {
   } = useYouTubeMusicSession()
 
   const progress = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0
-  const volumeValue = volume === null ? 0 : Math.min(100, Math.max(0, volume))
-  const displayTitle = trackTitle || (ready ? 'YouTube Music' : 'Müzik ekranı hazırlanıyor')
+  const volumeValue = volume === null ? 70 : Math.min(100, Math.max(0, volume))
+  const displayTitle = trackTitle || (ready ? 'Bir parça seçilmedi' : 'Müzik ekranı hazırlanıyor')
   const displayArtist = artist || 'Sanatçı bilgisi bekleniyor'
 
   async function handleControl(action: 'toggle-play' | 'next' | 'previous' | 'toggle-mute') {
     await controlYouTubeMusic(action).catch(() => undefined)
-    if (action === 'toggle-play') setYouTubeMusicSession({ isPlaying: !isPlaying })
-    if (action === 'toggle-mute') setYouTubeMusicSession({ muted: !muted })
+    void syncYouTubeMusicState().catch(() => undefined)
   }
 
   function handleVolumeChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -44,18 +44,6 @@ export function YouTubeMusicStatusWidget() {
 
   return (
     <aside className="dashboard-music-status-card" aria-label="YouTube Music oynatıcı">
-      <div className="dashboard-music-status-card__topline">
-        <span className="dashboard-music-status-card__icon" aria-hidden="true">
-          <Music2 size={17} />
-        </span>
-        <span className="dashboard-music-status-card__provider">YouTube Music</span>
-        <span
-          className={`dashboard-music-status-card__status-dot ${ready ? 'dashboard-music-status-card__status-dot--ready' : ''}`}
-          title={ready ? 'Bağlı' : 'Hazırlanıyor'}
-          aria-label={ready ? 'Bağlı' : 'Hazırlanıyor'}
-        />
-      </div>
-
       <div className="dashboard-music-status-card__artwork" aria-label="Çalan parçanın kapağı">
         <div className="dashboard-music-status-card__artwork-fallback" aria-hidden="true">
           <Music2 size={42} strokeWidth={1.5} />
@@ -138,11 +126,11 @@ export function YouTubeMusicStatusWidget() {
           max="100"
           step="1"
           value={volumeValue}
-          disabled={!ready || volume === null}
+          disabled={!ready}
           onChange={handleVolumeChange}
           aria-label="Ses seviyesi"
         />
-        <span className="dashboard-music-status-card__volume-value">{volume === null ? '—' : `${Math.round(volumeValue)}%`}</span>
+        <span className="dashboard-music-status-card__volume-value">{ready ? `${Math.round(volumeValue)}%` : '—'}</span>
       </div>
     </aside>
   )

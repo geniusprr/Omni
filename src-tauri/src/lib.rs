@@ -557,12 +557,44 @@ fn get_system_info() -> Result<SystemInfo, String> {
 }
 
 #[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let url = url.trim();
+    let is_http_url = url
+        .get(..7)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
+        || url
+            .get(..8)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"));
+    if !is_http_url
+        || url
+            .chars()
+            .any(|character| character.is_whitespace() || character.is_control())
+    {
+        return Err("Yalnızca geçerli bir http veya https bağlantısı açılabilir.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let launcher = "explorer.exe";
+    #[cfg(target_os = "macos")]
+    let launcher = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let launcher = "xdg-open";
+
+    Command::new(launcher)
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Varsayılan tarayıcı açılamadı: {error}"))
+}
+
+#[tauri::command]
 fn youtube_music_control(app: AppHandle, action: String) -> Result<(), String> {
     let script = match action.as_str() {
         "toggle-play" => r#"
           (() => {
             const player = document.querySelector('ytmusic-player-bar') || document;
-            const button = player.querySelector('.play-pause-button')
+            const button = player.querySelector('#play-pause-button')
+              || player.querySelector('.play-pause-button')
               || player.querySelector('button[aria-label*="Oynat"]')
               || player.querySelector('button[aria-label*="Duraklat"]')
               || player.querySelector('button[aria-label*="Play"]')
@@ -619,11 +651,43 @@ fn youtube_music_sync_state(app: AppHandle) -> Result<(), String> {
     let app_handle = app.clone();
     let script = r#"
       (() => {
+        const surfaceStyleId = 'kapanis-youtube-music-surface-style';
+        const surfaceCss = `
+          html {
+            background: transparent !important;
+          }
+          body {
+            border-radius: 16px !important;
+            overflow: hidden !important;
+          }
+          ::-webkit-scrollbar {
+            width: 6px !important;
+            height: 6px !important;
+          }
+          ::-webkit-scrollbar-track {
+            background: transparent !important;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2) !important;
+            border-radius: 9999px !important;
+          }
+          ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4) !important;
+          }
+        `;
+        let surfaceStyle = document.getElementById(surfaceStyleId);
+        if (!surfaceStyle) {
+          surfaceStyle = document.createElement('style');
+          surfaceStyle.id = surfaceStyleId;
+          (document.head || document.documentElement).appendChild(surfaceStyle);
+        }
+        if (surfaceStyle.textContent !== surfaceCss) surfaceStyle.textContent = surfaceCss;
+
         const player = document.querySelector('ytmusic-player-bar');
-        const media = document.querySelector('video, audio');
+        const media = player?.querySelector('audio, video') || document.querySelector('audio, video');
         const title = player?.querySelector('.title')?.textContent?.trim() || '';
         const artist = player?.querySelector('.byline')?.textContent?.trim() || '';
-        const button = player?.querySelector('.play-pause-button');
+        const button = player?.querySelector('#play-pause-button') || player?.querySelector('.play-pause-button');
         const ariaLabel = button?.getAttribute('aria-label')?.toLowerCase() || '';
         const timeText = player?.querySelector('.time-info')?.textContent?.trim()
           || player?.querySelector('.time-info')?.getAttribute('aria-label')
@@ -656,10 +720,17 @@ fn youtube_music_sync_state(app: AppHandle) -> Result<(), String> {
         let muted = media?.muted === true;
         if (volumeLabel.includes('unmute') || volumeLabel.includes('sesi aç')) muted = true;
         else if (volumeLabel.includes('mute') || volumeLabel.includes('sesi kapat')) muted = false;
+        const labelSaysPlaying = ariaLabel.includes('duraklat') || ariaLabel.includes('pause');
+        const labelSaysPaused = ariaLabel.includes('oynat') || ariaLabel.includes('play');
+        const isPlaying = labelSaysPlaying
+          ? true
+          : labelSaysPaused
+            ? false
+            : media ? !media.paused && !media.ended : false;
         return JSON.stringify({
           title,
           artist,
-          isPlaying: media ? !media.paused && !media.ended : ariaLabel.includes('duraklat') || ariaLabel.includes('pause'),
+          isPlaying,
           currentTime: Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0,
           duration: Number.isFinite(duration) ? Math.max(0, duration) : 0,
           volume: Number.isFinite(volume) ? Math.min(100, Math.max(0, volume)) : null,
@@ -691,13 +762,16 @@ fn youtube_music_set_volume(app: AppHandle, volume: f64) -> Result<(), String> {
               || player.querySelector('.volume-slider')
               || player.querySelector('input[type="range"][aria-label*="Volume"]')
               || player.querySelector('input[type="range"][aria-label*="Ses"]');
-            const media = document.querySelector('video, audio');
+            const media = player.querySelector('audio, video') || document.querySelector('audio, video');
             if (slider) {{
               slider.value = value;
               slider.dispatchEvent(new Event('input', {{ bubbles: true }}));
               slider.dispatchEvent(new Event('change', {{ bubbles: true }}));
             }}
-            if (media) media.volume = value / 100;
+            if (media) {{
+              media.volume = value / 100;
+              media.muted = value <= 0;
+            }}
           }})();
         "#,
         normalized_volume
@@ -1018,6 +1092,7 @@ pub fn run() {
             get_app_settings,
             save_app_settings,
             get_system_info,
+            open_external_url,
             youtube_music_control,
             youtube_music_set_volume,
             youtube_music_sync_state,

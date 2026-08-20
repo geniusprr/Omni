@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi'
 import { Webview, getCurrentWebview } from '@tauri-apps/api/webview'
-import { isTauriRuntime } from '@/lib/desktop'
+import { desktop, isTauriRuntime } from '@/lib/desktop'
 import { setYouTubeMusicSession, syncYouTubeMusicState } from './youtubeMusicSession'
 
 const YOUTUBE_MUSIC_URL = 'https://music.youtube.com/'
@@ -43,7 +43,22 @@ export function YouTubeMusicPage({ isVisible = true }: YouTubeMusicPageProps) {
 
     void visibilityTask
       .then(() => {
-        if (isVisible) updateHostBounds(hostRef.current, childWebview)
+        if (isVisible && hostRef.current) {
+          updateHostBounds(hostRef.current, childWebview)
+          void syncYouTubeMusicState().catch(() => undefined)
+          window.requestAnimationFrame(() => {
+            if (hostRef.current) {
+              updateHostBounds(hostRef.current, childWebview)
+              void syncYouTubeMusicState().catch(() => undefined)
+            }
+          })
+          window.setTimeout(() => {
+            if (hostRef.current) updateHostBounds(hostRef.current, childWebview)
+          }, 80)
+          window.setTimeout(() => {
+            if (hostRef.current) updateHostBounds(hostRef.current, childWebview)
+          }, 250)
+        }
       })
       .catch((cause) => {
         console.error('[youtube-music] webview visibility update failed', cause)
@@ -127,6 +142,7 @@ export function YouTubeMusicPage({ isVisible = true }: YouTubeMusicPageProps) {
       boundsFrame = window.requestAnimationFrame(() => {
         if (disposed || !childWebview) return
         const { x, y, width, height } = getHostBounds()
+        if (width < 10 || height < 10) return
         void Promise.all([
           childWebview.setPosition(new LogicalPosition(x, y)),
           childWebview.setSize(new LogicalSize(width, height)),
@@ -155,6 +171,7 @@ export function YouTubeMusicPage({ isVisible = true }: YouTubeMusicPageProps) {
         width,
         height,
         focus: false,
+        transparent: true,
       })
       webviewRef.current = childWebview
 
@@ -165,6 +182,7 @@ export function YouTubeMusicPage({ isVisible = true }: YouTubeMusicPageProps) {
         setWebviewState('ready')
         setYouTubeMusicSession({ ready: true, error: null })
         updateBounds()
+        void syncYouTubeMusicState().catch(() => undefined)
         const visibilityTask = isVisibleRef.current
           ? childWebview?.show()
           : childWebview?.hide()
@@ -213,7 +231,15 @@ export function YouTubeMusicPage({ isVisible = true }: YouTubeMusicPageProps) {
       {!isTauriRuntime() ? (
         <div className="youtube-music-browser-fallback">
           <p>YouTube Music, masaüstü uygulamasının gömülü tarayıcısında açılır.</p>
-          <a href={YOUTUBE_MUSIC_URL} target="_blank" rel="noreferrer">
+          <a
+            href={YOUTUBE_MUSIC_URL}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => {
+              event.preventDefault()
+              void desktop.openExternal(YOUTUBE_MUSIC_URL).catch(() => undefined)
+            }}
+          >
             YouTube Music’i tarayıcıda aç
           </a>
         </div>
@@ -222,7 +248,15 @@ export function YouTubeMusicPage({ isVisible = true }: YouTubeMusicPageProps) {
       {webviewState === 'error' ? (
         <div className="youtube-music-browser-fallback" role="alert">
           <p>{error || 'YouTube Music açılamadı.'}</p>
-          <a href={YOUTUBE_MUSIC_URL} target="_blank" rel="noreferrer">
+          <a
+            href={YOUTUBE_MUSIC_URL}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => {
+              event.preventDefault()
+              void desktop.openExternal(YOUTUBE_MUSIC_URL).catch(() => undefined)
+            }}
+          >
             Tarayıcıda aç
           </a>
         </div>
@@ -238,9 +272,14 @@ function readFiniteNumber(value: unknown): number | null {
 function updateHostBounds(hostNode: HTMLDivElement | null, childWebview: Webview) {
   if (!hostNode) return
   const rect = hostNode.getBoundingClientRect()
+  if (rect.width < 10 || rect.height < 10) return
+  const x = Math.max(0, Math.round(rect.left))
+  const y = Math.max(0, Math.round(rect.top))
+  const width = Math.max(1, Math.round(rect.width))
+  const height = Math.max(1, Math.round(rect.height))
   void Promise.all([
-    childWebview.setPosition(new LogicalPosition(Math.max(0, Math.round(rect.left)), Math.max(0, Math.round(rect.top)))),
-    childWebview.setSize(new LogicalSize(Math.max(1, Math.round(rect.width)), Math.max(1, Math.round(rect.height)))),
+    childWebview.setPosition(new LogicalPosition(x, y)),
+    childWebview.setSize(new LogicalSize(width, height)),
   ]).catch((cause) => {
     console.error('[youtube-music] webview bounds update failed', cause)
   })

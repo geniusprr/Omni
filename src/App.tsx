@@ -279,7 +279,7 @@ export default function App() {
     } else if (lower.startsWith('/paylas') || lower.startsWith('paylaş')) {
       setMode('localsend')
     } else {
-      window.open(`https://www.google.com/search?q=${encodeURIComponent(cmd)}`, '_blank')
+      void desktop.openExternal(`https://www.google.com/search?q=${encodeURIComponent(cmd)}`).catch(() => undefined)
     }
   }
 
