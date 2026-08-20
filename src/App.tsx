@@ -3,9 +3,11 @@ import X from 'lucide-react/dist/esm/icons/x.js'
 import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
 import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
 import { RingingOverlay } from '@/components/RingingOverlay'
+import { QuickActionsPanel } from '@/components/QuickActionsPanel'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
+import { BrowserPage } from '@/features/browser/BrowserPage'
+import { requestBrowserNavigation } from '@/features/browser/browserData'
 import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
-import { YouTubeMusicPage } from '@/features/music/YouTubeMusicPage'
 import { LocalSendPage } from '@/features/localsend/LocalSendPage'
 import { NotesPage } from '@/features/notes/NotesPage'
 import { QuickSwitcherModal } from '@/features/notes/search/QuickSwitcherModal'
@@ -33,12 +35,14 @@ export default function App() {
   const [isRemoteView] = useState(() => {
     if (typeof window === 'undefined') return false
     const params = new URLSearchParams(window.location.search)
-    return !isTauriRuntime() || params.get('mode') === 'remote' || params.has('pair')
+    const desktopPreview = params.get('preview') === 'desktop'
+    return (!isTauriRuntime() && !desktopPreview) || params.get('mode') === 'remote' || params.has('pair')
   })
 
   const [mode, setMode] = useState<MiniOsMode>('home')
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light')
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false)
   const [isCustomizeWidgetsOpen, setIsCustomizeWidgetsOpen] = useState(false)
 
   // Power & Alarm states
@@ -142,6 +146,20 @@ export default function App() {
   useEffect(() => {
     if (timer && timer.targetAt <= now) setTimer(null)
   }, [now, timer])
+
+  const browserSurfaceVisible = mode === 'browser'
+    && !quickActionsOpen
+    && !quickSwitcherOpen
+    && !ringingAlarm
+
+  useEffect(() => {
+    if (!browserSurfaceVisible) void desktop.browser.setVisible(false).catch(() => undefined)
+    const restoreOnFocus = () => {
+      if (browserSurfaceVisible) void desktop.browser.setVisible(true).catch(() => undefined)
+    }
+    window.addEventListener('focus', restoreOnFocus)
+    return () => window.removeEventListener('focus', restoreOnFocus)
+  }, [browserSurfaceVisible])
 
   // Start Remote Engine with Supabase heartbeat and command listener
   useEffect(() => {
@@ -279,7 +297,8 @@ export default function App() {
     } else if (lower.startsWith('/paylas') || lower.startsWith('paylaş')) {
       setMode('localsend')
     } else {
-      void desktop.openExternal(`https://www.google.com/search?q=${encodeURIComponent(cmd)}`).catch(() => undefined)
+      requestBrowserNavigation(cmd)
+      setMode('browser')
     }
   }
 
@@ -300,7 +319,7 @@ export default function App() {
           onSelectMode={setMode}
           alarmsCount={alarms.length}
           connectionStatus={connectionStatus}
-          onQuickAction={() => setQuickSwitcherOpen(true)}
+          onQuickAction={() => setQuickActionsOpen(true)}
         />
 
         {/* Right Main Working Area */}
@@ -390,10 +409,10 @@ export default function App() {
             )}
 
             <div
-              className={`minios-subscreen minios-subscreen--full youtube-music-persistent-screen ${mode === 'music' ? '' : 'youtube-music-persistent-screen--hidden'}`}
-              aria-hidden={mode !== 'music'}
+              className={`minios-subscreen minios-subscreen--full edge-browser-persistent-screen ${mode === 'browser' ? '' : 'edge-browser-persistent-screen--hidden'}`}
+              aria-hidden={mode !== 'browser'}
             >
-              <YouTubeMusicPage isVisible={mode === 'music'} />
+              <BrowserPage isVisible={browserSurfaceVisible} theme={themeMode} />
             </div>
           </main>
         </div>
@@ -403,6 +422,14 @@ export default function App() {
       <QuickSwitcherModal
         isOpen={quickSwitcherOpen}
         onClose={() => setQuickSwitcherOpen(false)}
+      />
+
+      <QuickActionsPanel
+        isOpen={quickActionsOpen}
+        busy={powerBusy}
+        onClose={() => setQuickActionsOpen(false)}
+        onNavigate={setMode}
+        onSchedulePower={schedulePower}
       />
 
       {/* Global Error Toast */}

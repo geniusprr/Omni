@@ -4,13 +4,12 @@ import Download from 'lucide-react/dist/esm/icons/download.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
-import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import Star from 'lucide-react/dist/esm/icons/star.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { RemoteConnectionStatus } from '@/types'
 
-export type MiniOsMode = 'home' | 'music' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
+export type MiniOsMode = 'home' | 'browser' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
 
 interface MiniOsDockProps {
   activeMode: MiniOsMode
@@ -46,34 +45,19 @@ export function MiniOsDock({
             <TooltipContent side="right">Anasayfa</TooltipContent>
           </Tooltip>
 
-          {/* 2. YouTube Music Studio (Dedicated Full Screen) */}
+          {/* Browser / Bookmarks / Favorites */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className={`dock-btn ${activeMode === 'music' ? 'dock-btn--active' : ''}`}
-                onClick={() => onSelectMode('music')}
-                aria-label="YouTube Music"
-              >
-                <Music2 size={18} strokeWidth={2} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">YouTube Music</TooltipContent>
-          </Tooltip>
-
-          {/* 2. Star / Bookmarks / Favorites */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={`dock-btn ${activeMode === 'remote' ? 'dock-btn--active' : ''}`}
-                onClick={() => onSelectMode('home')}
-                aria-label="Favoriler & Kısayollar"
+                className={`dock-btn ${activeMode === 'browser' ? 'dock-btn--active' : ''}`}
+                onClick={() => onSelectMode('browser')}
+                aria-label="Edge Tarayıcı, Favoriler ve Kısayollar"
               >
                 <Star size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Favoriler & Kısayollar</TooltipContent>
+            <TooltipContent side="right">Edge Tarayıcı & Favoriler</TooltipContent>
           </Tooltip>
 
           {/* 3. Clock / Time & Power Management */}
@@ -146,12 +130,12 @@ export function MiniOsDock({
                 type="button"
                 className="dock-btn dock-btn--plus"
                 onClick={onQuickAction}
-                aria-label="Hızlı Eylem (Ctrl+K)"
+                aria-label="Hızlı Eylemler"
               >
                 <Plus size={18} strokeWidth={2.4} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Hızlı Başlatıcı (Ctrl+K)</TooltipContent>
+            <TooltipContent side="right">Kapatma, Alarm & Hızlı Eylemler</TooltipContent>
           </Tooltip>
         </div>
       </TooltipProvider>

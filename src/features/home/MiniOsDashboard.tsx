@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
+import {
+  BROWSER_DATA_EVENT,
+  loadFavorites,
+  loadRecentlyClosed,
+  loadShortcuts,
+  relativeTime,
+  saveRecentlyClosed,
+  type BrowserShortcut,
+} from '@/features/browser/browserData'
 import { useVault } from '@/features/notes/stores/vaultStore'
 import type {
   PairedController,
@@ -9,7 +18,7 @@ import type {
   TimerState,
 } from '@/types'
 import { CustomizeWidgetsModal } from './widgets/CustomizeWidgetsModal'
-import { YouTubeMusicStatusWidget } from './widgets/YouTubeMusicStatusWidget'
+import { SystemMediaStatusWidget } from './widgets/YouTubeMusicStatusWidget'
 import {
   type BookmarkItem,
   DraggableWidgetGrid,
@@ -138,33 +147,45 @@ export function MiniOsDashboard({
     setTodos((prev) => prev.filter((t) => t.id !== id))
   }
 
-  // Bookmarks List
-  const bookmarks: BookmarkItem[] = [
-    { name: 'YouTube', domain: 'youtube.com', url: 'https://youtube.com', bg: '#ef4444', icon: '▶' },
-    { name: 'Reddit', domain: 'reddit.com', url: 'https://reddit.com', bg: '#ff4500', icon: '●' },
-    { name: 'GitHub', domain: 'github.com', url: 'https://github.com', bg: '#24292e', icon: '⌨' },
-    { name: 'Hacker News', domain: 'news.ycombinator.com', url: 'https://news.ycombinator.com', bg: '#ff6600', icon: 'Y' },
-    { name: 'Twitter / X', domain: 'x.com', url: 'https://x.com', bg: '#000000', icon: '𝕏' },
-    { name: 'Netflix', domain: 'netflix.com', url: 'https://netflix.com', bg: '#e50914', icon: 'N' },
-  ]
+  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(() => loadFavorites().map((item) => ({
+    name: item.name,
+    domain: new URL(item.url).hostname.replace(/^www\./, ''),
+    url: item.url,
+    bg: item.color,
+    icon: item.iconText,
+  })))
+  const [quickAccessApps, setQuickAccessApps] = useState<QuickAppItem[]>(() => loadShortcuts().map(toQuickApp))
+  const [recentList, setRecentList] = useState<RecentPageItem[]>(() => loadRecentlyClosed().map((item) => ({
+    id: item.id,
+    title: item.title,
+    domain: new URL(item.url).hostname.replace(/^www\./, ''),
+    time: relativeTime(item.closedAt),
+    url: item.url,
+    dotBg: 'var(--color-browser-blue)',
+  })))
 
-  // Quick Access 8-Grid
-  const quickAccessApps: QuickAppItem[] = [
-    { name: 'YouTube', url: 'https://youtube.com', bg: '#ef4444', iconText: '▶' },
-    { name: 'GitHub', url: 'https://github.com', bg: '#181d28', iconText: '⌨' },
-    { name: 'Gmail', url: 'https://mail.google.com', bg: '#ea4335', iconText: 'M' },
-    { name: 'Drive', url: 'https://drive.google.com', bg: '#34a853', iconText: '▲' },
-    { name: 'Notion', url: 'https://notion.so', bg: '#000000', iconText: 'N' },
-    { name: 'ChatGPT', url: 'https://chatgpt.com', bg: '#10a37f', iconText: '⌘' },
-    { name: 'Twitter / X', url: 'https://x.com', bg: '#000000', iconText: '𝕏' },
-  ]
-
-  // Recently Closed
-  const [recentList, setRecentList] = useState<RecentPageItem[]>([
-    { id: '1', title: 'Design Inspiration – Dribbble', domain: 'dribbble.com', time: '2 dk önce', url: 'https://dribbble.com', dotBg: '#ea4c89' },
-    { id: '2', title: 'Linear – Issue Tracking', domain: 'linear.app', time: '15 dk önce', url: 'https://linear.app', dotBg: '#5e6ad2' },
-    { id: '3', title: 'GitHub – Repository', domain: 'github.com', time: '1 saat önce', url: 'https://github.com', dotBg: '#24292e' },
-  ])
+  useEffect(() => {
+    const syncBrowserData = () => {
+      setBookmarks(loadFavorites().map((item) => ({
+        name: item.name,
+        domain: new URL(item.url).hostname.replace(/^www\./, ''),
+        url: item.url,
+        bg: item.color,
+        icon: item.iconText,
+      })))
+      setQuickAccessApps(loadShortcuts().map(toQuickApp))
+      setRecentList(loadRecentlyClosed().map((item) => ({
+        id: item.id,
+        title: item.title,
+        domain: new URL(item.url).hostname.replace(/^www\./, ''),
+        time: relativeTime(item.closedAt),
+        url: item.url,
+        dotBg: 'var(--color-browser-blue)',
+      })))
+    }
+    window.addEventListener(BROWSER_DATA_EVENT, syncBrowserData)
+    return () => window.removeEventListener(BROWSER_DATA_EVENT, syncBrowserData)
+  }, [])
 
   // Get most recent note from Vault
   const latestNote = useMemo(() => {
@@ -188,8 +209,12 @@ export function MiniOsDashboard({
             onDeleteTodo={handleDeleteTodo}
             bookmarks={bookmarks}
             quickAccessApps={quickAccessApps}
+            onQuickAccessChange={setQuickAccessApps}
             recentList={recentList}
-            onClearRecent={() => setRecentList([])}
+            onClearRecent={() => {
+              saveRecentlyClosed([])
+              setRecentList([])
+            }}
             latestNote={latestNote}
             timer={timer}
             now={now}
@@ -204,7 +229,7 @@ export function MiniOsDashboard({
         </div>
 
         <div className="dashboard-music-sticky-col">
-          <YouTubeMusicStatusWidget />
+          <SystemMediaStatusWidget />
         </div>
 
       </div>
@@ -219,4 +244,15 @@ export function MiniOsDashboard({
       />
     </div>
   )
+}
+
+function toQuickApp(item: BrowserShortcut): QuickAppItem {
+  return {
+    id: item.id,
+    name: item.name,
+    kind: item.kind,
+    target: item.target,
+    bg: item.color,
+    iconText: item.iconText,
+  }
 }

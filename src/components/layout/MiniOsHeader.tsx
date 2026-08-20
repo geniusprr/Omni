@@ -1,21 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
-import Clock from 'lucide-react/dist/esm/icons/clock.js'
-import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
 import Minus from 'lucide-react/dist/esm/icons/minus.js'
-import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
-import Power from 'lucide-react/dist/esm/icons/power.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
-import Share2 from 'lucide-react/dist/esm/icons/share-2.js'
-import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js'
 import Square from 'lucide-react/dist/esm/icons/square.js'
 import Sun from 'lucide-react/dist/esm/icons/sun.js'
 import Moon from 'lucide-react/dist/esm/icons/moon.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { TitlebarMiniPlayer } from '@/features/home/widgets/TitlebarMiniPlayer'
 import { getWeatherIcon } from '@/features/home/widgets/WeatherWidget'
 import { desktop } from '@/lib/desktop'
 import { useLiveWeather } from '@/lib/weather'
@@ -31,20 +23,6 @@ interface MiniOsHeaderProps {
   themeMode: 'dark' | 'light'
   onToggleTheme: () => void
   onExecuteCommand?: (query: string) => void
-}
-
-const SCREEN_TITLES: Record<
-  MiniOsMode,
-  { label: string; icon: React.ComponentType<any>; color: string }
-> = {
-  home: { label: 'Anasayfa', icon: Clock, color: 'text-sky-400' },
-  music: { label: 'YouTube Music', icon: Music2, color: 'text-rose-400' },
-  power: { label: 'Güç & Sayaç', icon: Power, color: 'text-amber-400' },
-  alarms: { label: 'Alarmlar & Zamanlayıcı', icon: Clock, color: 'text-sky-400' },
-  notes: { label: 'Notlar / Obsidian Vault', icon: FileText, color: 'text-emerald-400' },
-  localsend: { label: 'LocalSend Ağ Paylaşımı', icon: Share2, color: 'text-cyan-400' },
-  remote: { label: 'Uzaktan Kontrol', icon: Smartphone, color: 'text-purple-400' },
-  settings: { label: 'Sistem Ayarları', icon: Settings, color: 'text-slate-400' },
 }
 
 export function MiniOsHeader({
@@ -226,43 +204,16 @@ export function MiniOsHeader({
     </div>
   )
 
-  // 1. NON-HOME SCREENS: SLEEK COMPACT HEADER (NO MINI PLAYER ON THE MUSIC SCREEN)
+  // 1. NON-HOME SCREENS: compact, distraction-free workspace header.
   if (activeMode !== 'home') {
-    const screenInfo = SCREEN_TITLES[activeMode] || SCREEN_TITLES.home
-    const IconComponent = screenInfo.icon
-
     return (
       <header
         className="header-compact-subscreen-bar"
         data-tauri-drag-region
         onDoubleClick={handleDoubleClick}
       >
-        {/* Left: Back Button & Screen Title Pill */}
-        <div className="header-compact-left" data-tauri-drag-region>
-          <button
-            type="button"
-            className="header-back-home-btn"
-            onClick={() => onSelectMode && onSelectMode('home')}
-            title="Anasayfaya Dön"
-          >
-            <ArrowLeft size={13} />
-            <span>Anasayfa</span>
-          </button>
-
-          {activeMode !== 'music' ? (
-            <div className="header-subscreen-title-pill">
-              <IconComponent size={14} className={screenInfo.color} />
-              <span>{screenInfo.label}</span>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Center: keep the music mini player out of its own full-screen view */}
-        {activeMode !== 'music' ? (
-          <div className="header-compact-center" data-tauri-drag-region>
-            <TitlebarMiniPlayer onOpenStudio={() => onSelectMode?.('music')} />
-          </div>
-        ) : null}
+        <div className="header-compact-left" data-tauri-drag-region />
+        <div className="header-compact-center" data-tauri-drag-region />
 
         {/* Right: Window Controls Capsule */}
         <div className="header-compact-right" data-tauri-drag-region>
@@ -304,7 +255,7 @@ export function MiniOsHeader({
           <input
             type="text"
             className="spotlight-glass-input"
-            placeholder="Program içinde ara: Notlar, Alarmlar, Güç, Ayarlar veya Kısayol... (Ctrl+K)"
+            placeholder="Web'de ara veya adres yaz; /alarm, /kapat ve /not komutlarını kullan..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onClick={() => {
@@ -317,7 +268,7 @@ export function MiniOsHeader({
             type="button"
             className="spotlight-key-badge"
             onClick={onOpenQuickSwitcher}
-            title="Hızlı Komut & Not Arama (Ctrl+K)"
+            title="Komut paletini aç (Ctrl+K)"
           >
             ⌘K
           </button>

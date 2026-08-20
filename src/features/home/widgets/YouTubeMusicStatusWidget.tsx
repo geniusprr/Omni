@@ -1,67 +1,89 @@
+import { useCallback, useEffect, useState } from 'react'
+import AudioLines from 'lucide-react/dist/esm/icons/audio-lines.js'
 import FastForward from 'lucide-react/dist/esm/icons/fast-forward.js'
-import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import Pause from 'lucide-react/dist/esm/icons/pause.js'
 import Play from 'lucide-react/dist/esm/icons/play.js'
 import Rewind from 'lucide-react/dist/esm/icons/rewind.js'
-import Volume2 from 'lucide-react/dist/esm/icons/volume-2.js'
-import VolumeX from 'lucide-react/dist/esm/icons/volume-x.js'
-import {
-  controlYouTubeMusic,
-  setYouTubeMusicSession,
-  setYouTubeMusicVolume,
-  syncYouTubeMusicState,
-  useYouTubeMusicSession,
-} from '@/features/music/youtubeMusicSession'
+import Radio from 'lucide-react/dist/esm/icons/radio.js'
+import { BROWSER_EVENTS, desktop, type BrowserMediaProjection, type SystemMediaSession } from '@/lib/desktop'
 
-export function YouTubeMusicStatusWidget() {
-  const {
-    ready,
-    trackTitle,
-    artist,
-    isPlaying,
-    currentTime,
-    duration,
-    volume,
-    muted,
-    artworkUrl,
-  } = useYouTubeMusicSession()
+export function SystemMediaStatusWidget() {
+  const [session, setSession] = useState<SystemMediaSession | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [available, setAvailable] = useState(true)
+  const [browserMedia, setBrowserMedia] = useState<Record<string, BrowserMediaProjection>>({})
 
+  const refresh = useCallback(async () => {
+    try {
+      setSession(await desktop.media.getCurrent())
+      setAvailable(true)
+    } catch {
+      setSession(null)
+      setAvailable(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+    const interval = window.setInterval(() => void refresh(), 1200)
+    const handleFocus = () => void refresh()
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [refresh])
+
+  useEffect(() => {
+    const stopMedia = desktop.browser.on<BrowserMediaProjection>(BROWSER_EVENTS.mediaUpdated, (media) => setBrowserMedia((current) => ({ ...current, [media.tabId]: media })))
+    const stopDestroyed = desktop.browser.on<{ id: string }>(BROWSER_EVENTS.tabDestroyed, (tab) => setBrowserMedia((current) => { const { [tab.id]: _closed, ...remaining } = current; return remaining }))
+    return () => { stopMedia(); stopDestroyed() }
+  }, [])
+
+  const activeBrowserMedia = Object.values(browserMedia)
+    .filter((item) => item.playing)
+    .sort((a, b) => b.lastPlayingAt - a.lastPlayingAt)[0] ?? null
+
+  const isPlaying = activeBrowserMedia?.playing ?? session?.playbackStatus === 'playing'
+  const duration = session?.durationSeconds || 0
+  const currentTime = session?.positionSeconds || 0
   const progress = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0
-  const volumeValue = volume === null ? 70 : Math.min(100, Math.max(0, volume))
-  const displayTitle = trackTitle || (ready ? 'Bir parça seçilmedi' : 'Müzik ekranı hazırlanıyor')
-  const displayArtist = artist || 'Sanatçı bilgisi bekleniyor'
+  const appName = activeBrowserMedia?.source || formatAppName(session?.sourceAppId || '')
+  const displayTitle = activeBrowserMedia?.title || session?.title || (available ? 'Arka planda medya yok' : 'Medya servisine ulaşılamadı')
+  const displayArtist = activeBrowserMedia?.artist || (session
+    ? [session.artist, session.albumTitle].filter(Boolean).join(' · ') || appName
+    : 'Spotify, Edge veya başka bir oynatıcı başlattığında burada görünür.')
 
-  async function handleControl(action: 'toggle-play' | 'next' | 'previous' | 'toggle-mute') {
-    await controlYouTubeMusic(action).catch(() => undefined)
-    void syncYouTubeMusicState().catch(() => undefined)
-  }
-
-  function handleVolumeChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const nextVolume = Number(event.currentTarget.value)
-    setYouTubeMusicSession({ volume: nextVolume, muted: nextVolume === 0 })
-    void setYouTubeMusicVolume(nextVolume).catch(() => undefined)
+  async function handleControl(action: 'toggle-play-pause' | 'next' | 'previous') {
+    setBusy(true)
+    try {
+      if (activeBrowserMedia && action === 'toggle-play-pause') await desktop.browser.toggleMedia(activeBrowserMedia.tabId)
+      else await desktop.media.control(action)
+      window.setTimeout(() => void refresh(), 180)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
-    <aside className="dashboard-music-status-card" aria-label="YouTube Music oynatıcı">
-      <div className="dashboard-music-status-card__artwork" aria-label="Çalan parçanın kapağı">
+    <aside className="dashboard-music-status-card" data-media-active={activeBrowserMedia || session ? 'true' : 'false'} aria-label="Windows sistem medya denetimi">
+      <div className="dashboard-music-status-card__topline">
+        <span className="dashboard-music-status-card__provider"><Radio size={13} /> {activeBrowserMedia ? 'Tarayıcı medyası' : 'Sistem medyası'}</span>
+        <span className={`dashboard-music-status-card__state ${isPlaying ? 'dashboard-music-status-card__state--ready' : ''}`}>
+          <span aria-hidden="true" /> {activeBrowserMedia ? (isPlaying ? 'Oynatılıyor' : 'Duraklatıldı') : session ? (isPlaying ? 'Oynatılıyor' : 'Duraklatıldı') : 'Beklemede'}
+        </span>
+      </div>
+
+      <div className="dashboard-music-status-card__artwork" aria-label="Sistem medya oturumu">
         <div className="dashboard-music-status-card__artwork-fallback" aria-hidden="true">
-          <Music2 size={42} strokeWidth={1.5} />
+          <AudioLines size={42} strokeWidth={1.5} />
         </div>
-        {artworkUrl ? (
-          <img
-            src={artworkUrl}
-            alt=""
-            className="dashboard-music-status-card__artwork-image"
-            onError={(event) => {
-              event.currentTarget.hidden = true
-            }}
-          />
-        ) : null}
+        {activeBrowserMedia?.artwork || activeBrowserMedia?.favicon ? <img src={activeBrowserMedia.artwork || activeBrowserMedia.favicon || ''} alt="" className="dashboard-music-status-card__artwork-image" /> : null}
+        {isPlaying ? <div className="dashboard-music-status-card__artwork-eq" aria-hidden="true"><span /><span /><span /><span /></div> : null}
       </div>
 
       <div className="dashboard-music-status-card__track" aria-live="polite">
-        <span className="dashboard-music-status-card__eyebrow">Şarkı adı</span>
+        <span className="dashboard-music-status-card__eyebrow">{activeBrowserMedia ? activeBrowserMedia.source : session ? appName : 'Windows medya oturumu'}</span>
         <strong title={displayTitle}>{displayTitle}</strong>
         <span className="dashboard-music-status-card__artist" title={displayArtist}>{displayArtist}</span>
       </div>
@@ -81,7 +103,7 @@ export function YouTubeMusicStatusWidget() {
           type="button"
           className="dashboard-music-status-card__control"
           onClick={() => void handleControl('previous')}
-          disabled={!ready}
+          disabled={busy || !session?.canSkipPrevious}
           title="Önceki parça"
           aria-label="Önceki parça"
         >
@@ -90,8 +112,8 @@ export function YouTubeMusicStatusWidget() {
         <button
           type="button"
           className="dashboard-music-status-card__control dashboard-music-status-card__control--play"
-          onClick={() => void handleControl('toggle-play')}
-          disabled={!ready}
+          onClick={() => void handleControl('toggle-play-pause')}
+          disabled={busy || (!activeBrowserMedia && (!session || (!session.canPlay && !session.canPause)))}
           title={isPlaying ? 'Duraklat' : 'Oynat'}
           aria-label={isPlaying ? 'Duraklat' : 'Oynat'}
         >
@@ -101,7 +123,7 @@ export function YouTubeMusicStatusWidget() {
           type="button"
           className="dashboard-music-status-card__control"
           onClick={() => void handleControl('next')}
-          disabled={!ready}
+          disabled={busy || !session?.canSkipNext}
           title="Sonraki parça"
           aria-label="Sonraki parça"
         >
@@ -109,31 +131,18 @@ export function YouTubeMusicStatusWidget() {
         </button>
       </div>
 
-      <div className="dashboard-music-status-card__volume">
-        <button
-          type="button"
-          className="dashboard-music-status-card__volume-mute"
-          onClick={() => void handleControl('toggle-mute')}
-          disabled={!ready}
-          title={muted ? 'Sesi aç' : 'Sesi kapat'}
-          aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
-        >
-          {muted || volumeValue === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
-        </button>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          value={volumeValue}
-          disabled={!ready}
-          onChange={handleVolumeChange}
-          aria-label="Ses seviyesi"
-        />
-        <span className="dashboard-music-status-card__volume-value">{ready ? `${Math.round(volumeValue)}%` : '—'}</span>
+      <div className="dashboard-music-status-card__session-meta">
+        <span>{activeBrowserMedia?.source || (session ? appName : 'Otomatik algılama açık')}</span>
+        <span>{activeBrowserMedia?.playing || session?.playbackStatus === 'playing' ? 'Canlı' : 'Hazır'}</span>
       </div>
     </aside>
   )
+}
+
+function formatAppName(sourceAppId: string) {
+  if (!sourceAppId) return 'Medya oynatıcı'
+  const lastPart = sourceAppId.split(/[.!\\/]/).filter(Boolean).at(-1) || sourceAppId
+  return lastPart.replace(/\.exe$/i, '').replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function formatTime(seconds: number) {

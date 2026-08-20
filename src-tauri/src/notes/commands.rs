@@ -32,7 +32,9 @@ fn resolve_safe_path(vault_root: &Path, rel_path: &str) -> Result<PathBuf, Strin
         candidate.canonicalize()
     } else if let Some(parent) = candidate.parent() {
         if parent.exists() {
-            parent.canonicalize().map(|p| p.join(candidate.file_name().unwrap_or_default()))
+            parent
+                .canonicalize()
+                .map(|p| p.join(candidate.file_name().unwrap_or_default()))
         } else {
             Ok(candidate.clone())
         }
@@ -210,8 +212,7 @@ pub fn vault_write_file(
 
     if let Some(parent) = target.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Üst klasör oluşturulamadı: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Üst klasör oluşturulamadı: {e}"))?;
         }
     }
 
@@ -238,8 +239,7 @@ pub fn vault_create_file(
 
     if let Some(parent) = target.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Klasör oluşturulamadı: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Klasör oluşturulamadı: {e}"))?;
         }
     }
 
@@ -279,8 +279,7 @@ pub fn vault_rename_entry(
 
     if let Some(parent) = new_target.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Hedef klasör oluşturulamadı: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Hedef klasör oluşturulamadı: {e}"))?;
         }
     }
 

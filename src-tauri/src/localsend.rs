@@ -1,4 +1,4 @@
-use crate::{AppState, CreateAlarmInput, SoundProfile, TimerState, Alarm};
+use crate::{Alarm, AppState, CreateAlarmInput, SoundProfile, TimerState};
 use serde::{Deserialize, Serialize};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
@@ -206,7 +206,10 @@ impl LocalSendState {
     fn persist_received_files(&self, data_dir: &Path) {
         if let Ok(files) = self.received_files.lock() {
             let path = data_dir.join("received-files.json");
-            let _ = fs::write(path, serde_json::to_string_pretty(&*files).unwrap_or_default());
+            let _ = fs::write(
+                path,
+                serde_json::to_string_pretty(&*files).unwrap_or_default(),
+            );
         }
     }
 
@@ -239,7 +242,11 @@ impl LocalSendState {
             dev.port = LOCALSEND_DEFAULT_PORT;
         }
         if dev.alias.trim().is_empty() {
-            dev.alias = if dev.device_type == "mobile" { "Android Telefon".to_string() } else { "Yerel Cihaz".to_string() };
+            dev.alias = if dev.device_type == "mobile" {
+                "Android Telefon".to_string()
+            } else {
+                "Yerel Cihaz".to_string()
+            };
         }
         dev.last_seen = now_millis();
 
@@ -252,7 +259,12 @@ impl LocalSendState {
         }
     }
 
-    pub fn register_or_touch_sender(&self, sender_ip: &str, alias_hint: Option<&str>, model_hint: Option<&str>) {
+    pub fn register_or_touch_sender(
+        &self,
+        sender_ip: &str,
+        alias_hint: Option<&str>,
+        model_hint: Option<&str>,
+    ) {
         if sender_ip.is_empty() || sender_ip == "127.0.0.1" || sender_ip == "0.0.0.0" {
             return;
         }
@@ -274,7 +286,9 @@ impl LocalSendState {
                 port: LOCALSEND_DEFAULT_PORT,
                 alias: alias_hint.unwrap_or("Android Telefon").to_string(),
                 version: "2.0".to_string(),
-                device_model: model_hint.map(|s| s.to_string()).or_else(|| Some("Android".to_string())),
+                device_model: model_hint
+                    .map(|s| s.to_string())
+                    .or_else(|| Some("Android".to_string())),
                 device_type: "mobile".to_string(),
                 fingerprint: format!("mobile-{}", sender_ip.replace('.', "-")),
                 protocol: "http".to_string(),
@@ -320,7 +334,9 @@ fn percent_decode_filename(input: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(val) = u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16) {
+            if let Ok(val) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
                 result.push(val);
                 i += 3;
                 continue;
@@ -345,10 +361,9 @@ pub fn broadcast_announcement(state: &LocalSendState) {
         format!("{}:{}", LOCALSEND_MULTICAST_IP, LOCALSEND_DEFAULT_PORT)
             .parse()
             .unwrap();
-    let broadcast_target: SocketAddr =
-        format!("255.255.255.255:{}", LOCALSEND_DEFAULT_PORT)
-            .parse()
-            .unwrap();
+    let broadcast_target: SocketAddr = format!("255.255.255.255:{}", LOCALSEND_DEFAULT_PORT)
+        .parse()
+        .unwrap();
 
     let valid_ips = get_valid_local_ips();
     for ip in &valid_ips {
@@ -361,7 +376,12 @@ pub fn broadcast_announcement(state: &LocalSendState) {
             let _ = socket.send_to(bytes, broadcast_target);
 
             let octets = ip.octets();
-            if let Ok(subnet_bcast) = format!("{}.{}.{}.255:{}", octets[0], octets[1], octets[2], LOCALSEND_DEFAULT_PORT).parse::<SocketAddr>() {
+            if let Ok(subnet_bcast) = format!(
+                "{}.{}.{}.255:{}",
+                octets[0], octets[1], octets[2], LOCALSEND_DEFAULT_PORT
+            )
+            .parse::<SocketAddr>()
+            {
                 let _ = socket.send_to(bytes, subnet_bcast);
             }
         }
@@ -392,7 +412,12 @@ pub fn create_http_agent() -> ureq::Agent {
 }
 
 /// Send direct HTTP/HTTPS register request to a target device so both sides know each other
-pub fn send_http_register(target_ip: &str, target_port: u16, protocol_hint: Option<&str>, state: &LocalSendState) {
+pub fn send_http_register(
+    target_ip: &str,
+    target_port: u16,
+    protocol_hint: Option<&str>,
+    state: &LocalSendState,
+) {
     let my_info = state.get_device_info();
     let json_body = match serde_json::to_string(&my_info) {
         Ok(j) => j,
@@ -415,7 +440,9 @@ pub fn send_http_register(target_ip: &str, target_port: u16, protocol_hint: Opti
             .send_string(&json_body)
         {
             if resp.status() == 200 {
-                if let Ok(mut dev) = serde_json::from_reader::<_, LocalSendDevice>(resp.into_reader()) {
+                if let Ok(mut dev) =
+                    serde_json::from_reader::<_, LocalSendDevice>(resp.into_reader())
+                {
                     dev.ip = target_ip.to_string();
                     dev.port = target_port;
                     dev.protocol = (*proto).to_string();
@@ -454,7 +481,10 @@ pub fn scan_local_subnet(state: Arc<LocalSendState>) {
                         let target_ip = format!("{prefix_clone}.{host}");
 
                         // 1. Try HTTPS POST register (default for modern LocalSend on mobile)
-                        let https_url = format!("https://{target_ip}:{}/api/localsend/v2/register", state_inner.port);
+                        let https_url = format!(
+                            "https://{target_ip}:{}/api/localsend/v2/register",
+                            state_inner.port
+                        );
                         if let Ok(resp) = agent
                             .post(&https_url)
                             .timeout(Duration::from_millis(450))
@@ -462,7 +492,9 @@ pub fn scan_local_subnet(state: Arc<LocalSendState>) {
                             .send_string(&reg_body)
                         {
                             if resp.status() == 200 {
-                                if let Ok(mut dev) = serde_json::from_reader::<_, LocalSendDevice>(resp.into_reader()) {
+                                if let Ok(mut dev) = serde_json::from_reader::<_, LocalSendDevice>(
+                                    resp.into_reader(),
+                                ) {
                                     dev.ip = target_ip.clone();
                                     dev.port = state_inner.port;
                                     dev.protocol = "https".to_string();
@@ -473,7 +505,10 @@ pub fn scan_local_subnet(state: Arc<LocalSendState>) {
                         }
 
                         // 2. Try HTTP POST register
-                        let http_url = format!("http://{target_ip}:{}/api/localsend/v2/register", state_inner.port);
+                        let http_url = format!(
+                            "http://{target_ip}:{}/api/localsend/v2/register",
+                            state_inner.port
+                        );
                         if let Ok(resp) = agent
                             .post(&http_url)
                             .timeout(Duration::from_millis(450))
@@ -481,7 +516,9 @@ pub fn scan_local_subnet(state: Arc<LocalSendState>) {
                             .send_string(&reg_body)
                         {
                             if resp.status() == 200 {
-                                if let Ok(mut dev) = serde_json::from_reader::<_, LocalSendDevice>(resp.into_reader()) {
+                                if let Ok(mut dev) = serde_json::from_reader::<_, LocalSendDevice>(
+                                    resp.into_reader(),
+                                ) {
                                     dev.ip = target_ip.clone();
                                     dev.port = state_inner.port;
                                     dev.protocol = "http".to_string();
@@ -536,11 +573,9 @@ pub fn start_udp_discovery(state: Arc<LocalSendState>) {
         let state_clone = state.clone();
 
         // Background loop: broadcast announcement every 8 seconds
-        thread::spawn(move || {
-            loop {
-                broadcast_announcement(&state_clone);
-                thread::sleep(Duration::from_secs(8));
-            }
+        thread::spawn(move || loop {
+            broadcast_announcement(&state_clone);
+            thread::sleep(Duration::from_secs(8));
         });
 
         // Background initial subnet scan on startup
@@ -559,7 +594,11 @@ pub fn start_udp_discovery(state: Arc<LocalSendState>) {
                     if let Ok(text) = std::str::from_utf8(&buf[..len]) {
                         if let Ok(dev) = serde_json::from_str::<LocalSendDevice>(text) {
                             let should_reply = dev.announce.unwrap_or(true);
-                            let target_port = if dev.port == 0 { LOCALSEND_DEFAULT_PORT } else { dev.port };
+                            let target_port = if dev.port == 0 {
+                                LOCALSEND_DEFAULT_PORT
+                            } else {
+                                dev.port
+                            };
                             let proto = dev.protocol.clone();
                             state.register_device(dev, &sender_ip);
 
@@ -575,7 +614,12 @@ pub fn start_udp_discovery(state: Arc<LocalSendState>) {
                                 let state_reply = state.clone();
                                 let ip_reply = sender_ip.clone();
                                 thread::spawn(move || {
-                                    send_http_register(&ip_reply, target_port, Some(&proto), &state_reply);
+                                    send_http_register(
+                                        &ip_reply,
+                                        target_port,
+                                        Some(&proto),
+                                        &state_reply,
+                                    );
                                 });
                             }
                         }
@@ -609,11 +653,15 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 .map(|a| a.ip().to_string())
                 .unwrap_or_else(|| "127.0.0.1".to_string());
 
-            let cors_header = Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
-            let json_header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+            let cors_header =
+                Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
+            let json_header =
+                Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
 
             // GET /api/status or /api/local/state (Mobile App Ping & Live State)
-            if method == "GET" && (url.starts_with("/api/status") || url.starts_with("/api/local/state")) {
+            if method == "GET"
+                && (url.starts_with("/api/status") || url.starts_with("/api/local/state"))
+            {
                 state.register_or_touch_sender(&sender_ip, None, None);
                 let hostname = state.alias.lock().unwrap().clone();
                 let timer_state = app_state.get_timer_status().ok().flatten();
@@ -648,7 +696,11 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
             }
 
             // POST /api/register or /api/localsend/v2/register
-            if method == "POST" && (url.starts_with("/api/register") || url.starts_with("/api/localsend/v2/register") || url.starts_with("/api/localsend/v1/register")) {
+            if method == "POST"
+                && (url.starts_with("/api/register")
+                    || url.starts_with("/api/localsend/v2/register")
+                    || url.starts_with("/api/localsend/v1/register"))
+            {
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 if let Ok(dev) = serde_json::from_str::<LocalSendDevice>(&body) {
@@ -698,7 +750,10 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 let _ = request.as_reader().read_to_string(&mut body);
 
                 #[derive(Deserialize)]
-                struct CmdReq { command: String, delay_seconds: Option<u64> }
+                struct CmdReq {
+                    command: String,
+                    delay_seconds: Option<u64>,
+                }
 
                 let mut ok = false;
                 if let Ok(cmd) = serde_json::from_str::<CmdReq>(&body) {
@@ -706,7 +761,10 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                     if cmd.command == "cancel" {
                         let _ = app_state.cancel_shutdown();
                         if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
-                            let _ = app.emit("remote:command", serde_json::json!({ "command": "cancel", "delaySeconds": 0 }));
+                            let _ = app.emit(
+                                "remote:command",
+                                serde_json::json!({ "command": "cancel", "delaySeconds": 0 }),
+                            );
                         }
                         ok = true;
                     } else if cmd.command == "shutdown" || cmd.command == "restart" {
@@ -725,7 +783,11 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                     success: bool,
                     timer_state: Option<TimerState>,
                 }
-                let resp_json = serde_json::to_string(&CmdResp { success: ok, timer_state }).unwrap_or_default();
+                let resp_json = serde_json::to_string(&CmdResp {
+                    success: ok,
+                    timer_state,
+                })
+                .unwrap_or_default();
                 let mut response = Response::from_string(resp_json);
                 response.add_header(cors_header);
                 response.add_header(json_header);
@@ -734,7 +796,9 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
             }
 
             // POST /api/alarms/create or /api/alarm (Create Alarm on PC)
-            if method == "POST" && (url.starts_with("/api/alarms/create") || url.starts_with("/api/alarm")) {
+            if method == "POST"
+                && (url.starts_with("/api/alarms/create") || url.starts_with("/api/alarm"))
+            {
                 state.register_or_touch_sender(&sender_ip, None, None);
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
@@ -783,7 +847,8 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 let resp_json = serde_json::to_string(&AlarmResp {
                     success: created_alarm.is_some(),
                     alarm: created_alarm,
-                }).unwrap_or_default();
+                })
+                .unwrap_or_default();
 
                 let mut response = Response::from_string(resp_json);
                 response.add_header(cors_header);
@@ -799,7 +864,9 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 let _ = request.as_reader().read_to_string(&mut body);
 
                 #[derive(Deserialize)]
-                struct CancelReq { id: String }
+                struct CancelReq {
+                    id: String,
+                }
 
                 let mut ok = false;
                 if let Ok(req) = serde_json::from_str::<CancelReq>(&body) {
@@ -849,7 +916,12 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 if let Ok(req) = serde_json::from_str::<NotifyReq>(&body) {
                     if let Some(app) = state.app_handle.lock().unwrap().as_ref() {
                         let title = req.title.as_deref().unwrap_or("kapanış. Mobil Bildirim");
-                        let _ = app.notification().builder().title(title).body(&req.message).show();
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title(title)
+                            .body(&req.message)
+                            .show();
                         let _ = app.emit("remote:notify", &body);
                     }
                 }
@@ -867,7 +939,9 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 #[derive(Deserialize)]
-                struct ClipReq { text: String }
+                struct ClipReq {
+                    text: String,
+                }
                 if let Ok(c) = serde_json::from_str::<ClipReq>(&body) {
                     let record = ReceivedFileRecord {
                         id: Uuid::new_v4().to_string(),
@@ -899,7 +973,9 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
             // POST /api/upload (Mobile File Upload)
             if method == "POST" && url.starts_with("/api/upload") {
                 state.register_or_touch_sender(&sender_ip, None, None);
-                let raw_filename = request.headers().iter()
+                let raw_filename = request
+                    .headers()
+                    .iter()
                     .find(|h| h.field.equiv("x-filename"))
                     .map(|h| h.value.as_str().to_string())
                     .unwrap_or_default();
@@ -942,7 +1018,10 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                     let _ = app.emit("localsend:file-received", &record);
                 }
 
-                let resp_json = format!(r#"{{"id":"{}","filename":"{}","path":"{}","size":{}}}"#, record.id, record.file_name, record.local_path, record.size);
+                let resp_json = format!(
+                    r#"{{"id":"{}","filename":"{}","path":"{}","size":{}}}"#,
+                    record.id, record.file_name, record.local_path, record.size
+                );
                 let mut response = Response::from_string(resp_json);
                 response.add_header(cors_header);
                 response.add_header(json_header);
@@ -955,7 +1034,9 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 state.register_or_touch_sender(&sender_ip, None, None);
                 let vault_dir = data_dir.join("vault");
                 let _ = fs::create_dir_all(&vault_dir);
-                let entries = crate::notes::vault_list_entries(vault_dir.to_string_lossy().to_string()).unwrap_or_default();
+                let entries =
+                    crate::notes::vault_list_entries(vault_dir.to_string_lossy().to_string())
+                        .unwrap_or_default();
                 let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string());
                 let mut response = Response::from_string(json);
                 response.add_header(cors_header);
@@ -968,13 +1049,18 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
             if method == "GET" && url.starts_with("/api/vault/read") {
                 state.register_or_touch_sender(&sender_ip, None, None);
                 let vault_dir = data_dir.join("vault");
-                let rel_path = url.split("path=")
+                let rel_path = url
+                    .split("path=")
                     .nth(1)
                     .map(|p| p.split('&').next().unwrap_or(p))
                     .map(|p| percent_decode_filename(p))
                     .unwrap_or_default();
 
-                let content = crate::notes::vault_read_file(vault_dir.to_string_lossy().to_string(), rel_path).unwrap_or_default();
+                let content = crate::notes::vault_read_file(
+                    vault_dir.to_string_lossy().to_string(),
+                    rel_path,
+                )
+                .unwrap_or_default();
                 let mut response = Response::from_string(content);
                 response.add_header(cors_header);
                 let _ = request.respond(response);
@@ -989,11 +1075,19 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 let _ = request.as_reader().read_to_string(&mut body);
 
                 #[derive(Deserialize)]
-                struct WriteReq { path: String, content: String }
+                struct WriteReq {
+                    path: String,
+                    content: String,
+                }
 
                 let mut ok = false;
                 if let Ok(req) = serde_json::from_str::<WriteReq>(&body) {
-                    ok = crate::notes::vault_write_file(vault_dir.to_string_lossy().to_string(), req.path, req.content).is_ok();
+                    ok = crate::notes::vault_write_file(
+                        vault_dir.to_string_lossy().to_string(),
+                        req.path,
+                        req.content,
+                    )
+                    .is_ok();
                 }
 
                 let mut response = Response::from_string(format!(r#"{{"success":{ok}}}"#));
@@ -1011,11 +1105,19 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 let _ = request.as_reader().read_to_string(&mut body);
 
                 #[derive(Deserialize)]
-                struct CreateReq { path: String, content: Option<String> }
+                struct CreateReq {
+                    path: String,
+                    content: Option<String>,
+                }
 
                 let mut ok = false;
                 if let Ok(req) = serde_json::from_str::<CreateReq>(&body) {
-                    ok = crate::notes::vault_create_file(vault_dir.to_string_lossy().to_string(), req.path, req.content).is_ok();
+                    ok = crate::notes::vault_create_file(
+                        vault_dir.to_string_lossy().to_string(),
+                        req.path,
+                        req.content,
+                    )
+                    .is_ok();
                 }
 
                 let mut response = Response::from_string(format!(r#"{{"success":{ok}}}"#));
@@ -1033,11 +1135,17 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                 let _ = request.as_reader().read_to_string(&mut body);
 
                 #[derive(Deserialize)]
-                struct DeleteReq { path: String }
+                struct DeleteReq {
+                    path: String,
+                }
 
                 let mut ok = false;
                 if let Ok(req) = serde_json::from_str::<DeleteReq>(&body) {
-                    ok = crate::notes::vault_delete_entry(vault_dir.to_string_lossy().to_string(), req.path).is_ok();
+                    ok = crate::notes::vault_delete_entry(
+                        vault_dir.to_string_lossy().to_string(),
+                        req.path,
+                    )
+                    .is_ok();
                 }
 
                 let mut response = Response::from_string(format!(r#"{{"success":{ok}}}"#));
@@ -1048,7 +1156,10 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
             }
 
             // GET /api/localsend/v2/info or /api/localsend/v1/info
-            if method == "GET" && (url.starts_with("/api/localsend/v2/info") || url.starts_with("/api/localsend/v1/info")) {
+            if method == "GET"
+                && (url.starts_with("/api/localsend/v2/info")
+                    || url.starts_with("/api/localsend/v1/info"))
+            {
                 let info = state.get_device_info();
                 let json = serde_json::to_string(&info).unwrap_or_default();
                 let mut response = Response::from_string(json);
@@ -1059,7 +1170,10 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
             }
 
             // POST /api/localsend/v2/register or /api/localsend/v1/register
-            if method == "POST" && (url.starts_with("/api/localsend/v2/register") || url.starts_with("/api/localsend/v1/register")) {
+            if method == "POST"
+                && (url.starts_with("/api/localsend/v2/register")
+                    || url.starts_with("/api/localsend/v1/register"))
+            {
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 if let Ok(dev) = serde_json::from_str::<LocalSendDevice>(&body) {
@@ -1154,9 +1268,12 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                             .and_then(|e| e.to_str())
                             .map(|e| format!(".{e}"))
                             .unwrap_or_default();
-                        dest_path = state
-                            .download_dir
-                            .join(format!("{}_{}{}", stem, now_millis() % 10000, ext));
+                        dest_path = state.download_dir.join(format!(
+                            "{}_{}{}",
+                            stem,
+                            now_millis() % 10000,
+                            ext
+                        ));
                     }
 
                     let mut file_data = Vec::new();
@@ -1204,8 +1321,9 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
                     let _ = request.respond(response);
                     continue;
                 } else {
-                    let mut response = Response::from_string(r#"{"error":"Oturum veya token geÃ§ersiz"}"#)
-                        .with_status_code(StatusCode(403));
+                    let mut response =
+                        Response::from_string(r#"{"error":"Oturum veya token geÃ§ersiz"}"#)
+                            .with_status_code(StatusCode(403));
                     response.add_header(cors_header);
                     let _ = request.respond(response);
                     continue;
@@ -1225,13 +1343,23 @@ pub fn start_http_server(state: Arc<LocalSendState>, app_state: AppState, data_d
             if method == "OPTIONS" {
                 let mut response = Response::from_string("");
                 response.add_header(cors_header);
-                response.add_header(Header::from_bytes(&b"Access-Control-Allow-Methods"[..], &b"GET, POST, OPTIONS"[..]).unwrap());
-                response.add_header(Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type"[..]).unwrap());
+                response.add_header(
+                    Header::from_bytes(
+                        &b"Access-Control-Allow-Methods"[..],
+                        &b"GET, POST, OPTIONS"[..],
+                    )
+                    .unwrap(),
+                );
+                response.add_header(
+                    Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type"[..])
+                        .unwrap(),
+                );
                 let _ = request.respond(response);
                 continue;
             }
 
-            let mut response = Response::from_string(r#"{"error":"BulunamadÄ±"}"#).with_status_code(StatusCode(404));
+            let mut response = Response::from_string(r#"{"error":"BulunamadÄ±"}"#)
+                .with_status_code(StatusCode(404));
             response.add_header(cors_header);
             let _ = request.respond(response);
         }
@@ -1256,10 +1384,15 @@ fn parse_query_params(url: &str) -> HashMap<String, String> {
 // ----------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn localsend_get_status(state: State<'_, Arc<LocalSendState>>) -> Result<LocalSendStatus, String> {
+pub fn localsend_get_status(
+    state: State<'_, Arc<LocalSendState>>,
+) -> Result<LocalSendStatus, String> {
     let alias = state.alias.lock().unwrap().clone();
     let local_ip = get_primary_local_ip();
-    let all_ips = get_valid_local_ips().into_iter().map(|i| i.to_string()).collect();
+    let all_ips = get_valid_local_ips()
+        .into_iter()
+        .map(|i| i.to_string())
+        .collect();
     let discovered_count = state.devices.lock().unwrap().len();
 
     Ok(LocalSendStatus {
@@ -1276,7 +1409,9 @@ pub fn localsend_get_status(state: State<'_, Arc<LocalSendState>>) -> Result<Loc
 }
 
 #[tauri::command]
-pub fn localsend_get_devices(state: State<'_, Arc<LocalSendState>>) -> Result<Vec<LocalSendDevice>, String> {
+pub fn localsend_get_devices(
+    state: State<'_, Arc<LocalSendState>>,
+) -> Result<Vec<LocalSendDevice>, String> {
     let devices = state.devices.lock().unwrap();
     let now = now_millis();
     // Filter out devices not seen in the last 5 minutes (300 seconds)
@@ -1306,7 +1441,8 @@ pub fn localsend_add_manual_device(
     target_port: Option<u16>,
     state: State<'_, Arc<LocalSendState>>,
 ) -> Result<LocalSendDevice, String> {
-    let raw = target_ip.trim()
+    let raw = target_ip
+        .trim()
         .trim_start_matches("http://")
         .trim_start_matches("https://")
         .trim();
@@ -1315,7 +1451,9 @@ pub fn localsend_add_manual_device(
     } else {
         (raw.to_string(), None)
     };
-    let port = target_port.or(parsed_port).unwrap_or(LOCALSEND_DEFAULT_PORT);
+    let port = target_port
+        .or(parsed_port)
+        .unwrap_or(LOCALSEND_DEFAULT_PORT);
 
     let agent = create_http_agent();
     let my_info = state.get_device_info();
@@ -1364,7 +1502,9 @@ pub fn localsend_add_manual_device(
         let info_url = format!("{proto}://{clean_ip}:{port}/api/localsend/v2/info");
         if let Ok(resp) = agent.get(&info_url).timeout(Duration::from_secs(2)).call() {
             if resp.status() == 200 {
-                if let Ok(mut dev) = serde_json::from_reader::<_, LocalSendDevice>(resp.into_reader()) {
+                if let Ok(mut dev) =
+                    serde_json::from_reader::<_, LocalSendDevice>(resp.into_reader())
+                {
                     dev.ip = clean_ip.clone();
                     dev.port = port;
                     dev.protocol = (*proto).to_string();
@@ -1380,7 +1520,9 @@ pub fn localsend_add_manual_device(
 }
 
 #[tauri::command]
-pub fn localsend_get_received_files(state: State<'_, Arc<LocalSendState>>) -> Result<Vec<ReceivedFileRecord>, String> {
+pub fn localsend_get_received_files(
+    state: State<'_, Arc<LocalSendState>>,
+) -> Result<Vec<ReceivedFileRecord>, String> {
     let files = state.received_files.lock().unwrap();
     Ok(files.clone())
 }
@@ -1398,7 +1540,10 @@ pub fn localsend_open_download_folder(state: State<'_, Arc<LocalSendState>>) -> 
 }
 
 #[tauri::command]
-pub fn localsend_set_auto_accept(enabled: bool, state: State<'_, Arc<LocalSendState>>) -> Result<bool, String> {
+pub fn localsend_set_auto_accept(
+    enabled: bool,
+    state: State<'_, Arc<LocalSendState>>,
+) -> Result<bool, String> {
     state.auto_accept.store(enabled, Ordering::SeqCst);
     Ok(enabled)
 }
@@ -1443,7 +1588,10 @@ pub fn localsend_send_text(
     let proto = {
         let devices = state.devices.lock().unwrap();
         let key = format!("{target_ip}:{target_port}");
-        devices.get(&key).map(|d| d.protocol.clone()).unwrap_or_else(|| "https".to_string())
+        devices
+            .get(&key)
+            .map(|d| d.protocol.clone())
+            .unwrap_or_else(|| "https".to_string())
     };
 
     let agent = create_http_agent();
@@ -1539,7 +1687,10 @@ pub fn localsend_send_file(
     let proto = {
         let devices = state.devices.lock().unwrap();
         let key = format!("{target_ip}:{target_port}");
-        devices.get(&key).map(|d| d.protocol.clone()).unwrap_or_else(|| "https".to_string())
+        devices
+            .get(&key)
+            .map(|d| d.protocol.clone())
+            .unwrap_or_else(|| "https".to_string())
     };
 
     let agent = create_http_agent();
@@ -1567,8 +1718,8 @@ pub fn localsend_send_file(
         }
     }
 
-    let (prep_resp, active_proto) = prep_resp
-        .ok_or_else(|| "Hedef cihaz isteği kabul etmedi veya ulaşılamadı.".to_string())?;
+    let (prep_resp, active_proto) =
+        prep_resp.ok_or_else(|| "Hedef cihaz isteği kabul etmedi veya ulaşılamadı.".to_string())?;
 
     let token = prep_resp
         .files

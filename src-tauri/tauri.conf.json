@@ -16,8 +16,8 @@
         "title": "kapanış.",
         "width": 1180,
         "height": 740,
-        "minWidth": 780,
-        "minHeight": 560,
+        "minWidth": 320,
+        "minHeight": 500,
         "resizable": true,
         "maximizable": true,
         "minimizable": true,
@@ -50,7 +50,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com; frame-src 'self' https://www.youtube.com; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:5173 https://*.supabase.co wss://*.supabase.co https://www.googleapis.com https://www.youtube.com; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com;"
+      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' 'unsafe-inline'; frame-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:5173 https://*.supabase.co wss://*.supabase.co https://www.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com;"
     }
   },
   "bundle": {

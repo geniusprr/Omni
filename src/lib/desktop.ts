@@ -3,6 +3,42 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { Alarm, AppSettings, CreateAlarmInput, TimerAction, TimerState } from '@/types'
 
+export interface SystemMediaSession {
+  sourceAppId: string
+  title: string
+  artist: string
+  albumTitle: string
+  playbackStatus: 'playing' | 'paused' | 'stopped' | 'unknown'
+  positionSeconds: number
+  durationSeconds: number
+  canPlay: boolean
+  canPause: boolean
+  canSkipNext: boolean
+  canSkipPrevious: boolean
+}
+
+export const BROWSER_EVENTS = {
+  tabCreated: 'browser:tab-created',
+  tabUpdated: 'browser:tab-updated',
+  tabDestroyed: 'browser:tab-destroyed',
+  mediaUpdated: 'browser:media-updated',
+  openRequest: 'browser:open-request',
+} as const
+
+export interface BrowserBounds { x: number; y: number; width: number; height: number }
+export interface BrowserTabProjection {
+  id: string; url: string; title: string; favicon: string | null; loading: boolean
+  canGoBack: boolean; canGoForward: boolean; error: string | null; label: string
+}
+export interface BrowserDebugSnapshot {
+  openTabIds: string[]; webviewLabels: string[]; activeId: string | null
+  mediaIds: string[]; closingIds: string[]; listenerCount: number
+}
+export interface BrowserMediaProjection {
+  tabId: string; playing: boolean; title: string; artist: string; album: string
+  artwork: string | null; source: string; favicon: string | null; lastPlayingAt: number
+}
+
 type TriggeredAlarmHandler = (alarm: Alarm) => void
 
 export function isTauriRuntime() {
@@ -50,6 +86,81 @@ export const desktop = {
       return
     }
     await invoke<void>('open_external_url', { url })
+  },
+  browser: {
+    create: async (id: string, url: string, bounds: BrowserBounds): Promise<BrowserTabProjection> => {
+      assertTauriRuntime()
+      return invoke<BrowserTabProjection>('browser_create_tab', { id, url, bounds })
+    },
+    activate: async (id: string, visible: boolean): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_activate_tab', { id, visible })
+    },
+    close: async (id: string): Promise<boolean> => {
+      if (!isTauriRuntime()) return false
+      return invoke<boolean>('browser_close_tab', { id })
+    },
+    navigate: async (id: string, url: string): Promise<void> => {
+      assertTauriRuntime()
+      await invoke<void>('browser_navigate', { id, url })
+    },
+    reload: async (id: string): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_reload', { id })
+    },
+    back: async (id: string): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_back', { id })
+    },
+    forward: async (id: string): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_forward', { id })
+    },
+    setVisible: async (visible: boolean): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_set_visible', { visible })
+    },
+    deactivate: async (): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_deactivate_tab')
+    },
+    setBounds: async (id: string, bounds: BrowserBounds): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_set_bounds', { id, bounds })
+    },
+    debugSnapshot: async (): Promise<BrowserDebugSnapshot | null> => {
+      if (!isTauriRuntime() || !import.meta.env.DEV) return null
+      return invoke<BrowserDebugSnapshot>('browser_debug_snapshot')
+    },
+    syncMetadata: async (): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_sync_metadata')
+    },
+    toggleMedia: async (id: string): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_toggle_media', { id })
+    },
+    setTheme: async (theme: 'light' | 'dark'): Promise<void> => {
+      if (!isTauriRuntime()) return
+      await invoke<void>('browser_set_theme', { theme })
+    },
+    on: <T>(event: (typeof BROWSER_EVENTS)[keyof typeof BROWSER_EVENTS], callback: (payload: T) => void) => listenWithoutBlocking<T>(event, callback),
+  },
+  media: {
+    getCurrent: async (): Promise<SystemMediaSession | null> => {
+      if (!isTauriRuntime()) return null
+      return invoke<SystemMediaSession | null>('get_system_media_session')
+    },
+    control: async (action: 'toggle-play-pause' | 'next' | 'previous'): Promise<boolean> => {
+      if (!isTauriRuntime()) return false
+      return invoke<boolean>('control_system_media', { action })
+    },
+  },
+  programs: {
+    launch: async (path: string): Promise<void> => {
+      assertTauriRuntime()
+      await invoke<void>('launch_program', { path })
+    },
   },
   window: {
     minimize: async () => {

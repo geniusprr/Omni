@@ -1,5 +1,5 @@
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
-/* Hallmark · macrostructure: Workbench · compact native utility surface
+/* Hallmark · macrostructure: Bento Grid · responsive Windows super-app surface
  * theme: studied-DNA (source: attached references) · vibe: "quiet futuristic Windows glass" · paper: oklch(13.5% 0.012 235) · accent: oklch(78% 0.12 215)
  * display: Bricolage Grotesque · body: Geist · axes: dark / geometric-sans / restrained glass
  * studied: attached reference palette + product UI · context: explicit · v1.0.0
@@ -53,6 +53,14 @@
   --color-rich-black-deep: oklch(10.2% 0.018 236);
   --color-powder-white: oklch(95.6% 0.012 235);
   --color-warm: oklch(82% 0.12 75);
+  --color-browser-blue: oklch(64% 0.15 225);
+  --color-program: oklch(56% 0.14 285);
+  --color-shortcut-youtube: oklch(63% 0.24 26);
+  --color-shortcut-github: oklch(24% 0.02 250);
+  --color-shortcut-gmail: oklch(61% 0.20 28);
+  --color-shortcut-drive: oklch(62% 0.16 150);
+  --color-shortcut-chatgpt: oklch(62% 0.13 165);
+  --color-shortcut-reddit: oklch(66% 0.22 38);
   --color-glass-surface: rgba(14, 20, 30, 0.32);
   --color-glass-surface-soft: rgba(20, 26, 38, 0.22);
   --color-glass-sidebar: rgba(10, 14, 22, 0.26);
@@ -89,6 +97,9 @@
   --space-3xl: 3rem;
   --space-4xl: 4rem;
   --space-5xl: 5rem;
+  --app-edge-padding: var(--space-sm);
+  --sidebar-gap: var(--space-sm);
+  --content-gap: var(--space-md);
 
   --radius-window: 0.75rem;
   --radius-shell: 1.25rem;

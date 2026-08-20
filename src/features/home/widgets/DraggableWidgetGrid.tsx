@@ -6,6 +6,8 @@ import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import GripHorizontal from 'lucide-react/dist/esm/icons/grip-horizontal.js'
 import Laptop from 'lucide-react/dist/esm/icons/laptop.js'
+import Link2 from 'lucide-react/dist/esm/icons/link-2.js'
+import MonitorUp from 'lucide-react/dist/esm/icons/monitor-up.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import Power from 'lucide-react/dist/esm/icons/power.js'
 import QrCode from 'lucide-react/dist/esm/icons/qr-code.js'
@@ -17,6 +19,12 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import Wifi from 'lucide-react/dist/esm/icons/wifi.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
+import {
+  requestBrowserNavigation,
+  saveShortcuts,
+  type BrowserShortcut,
+  type BrowserShortcutKind,
+} from '@/features/browser/browserData'
 import { tabStore } from '@/features/notes/stores/tabStore'
 import { desktop } from '@/lib/desktop'
 import { durationLabel, targetLabel } from '@/lib/format'
@@ -44,8 +52,10 @@ export interface BookmarkItem {
 }
 
 export interface QuickAppItem {
+  id: string
   name: string
-  url: string
+  kind: BrowserShortcutKind
+  target: string
   bg: string
   iconText: string
 }
@@ -71,6 +81,7 @@ interface DraggableWidgetGridProps {
   onDeleteTodo: (id: string) => void
   bookmarks: BookmarkItem[]
   quickAccessApps: QuickAppItem[]
+  onQuickAccessChange: (items: QuickAppItem[]) => void
   recentList: RecentPageItem[]
   onClearRecent: () => void
   latestNote: { path: string; name: string } | null
@@ -107,6 +118,7 @@ export function DraggableWidgetGrid({
   onDeleteTodo,
   bookmarks,
   quickAccessApps,
+  onQuickAccessChange,
   recentList,
   onClearRecent,
   latestNote,
@@ -132,13 +144,66 @@ export function DraggableWidgetGrid({
   const [showAddTodo, setShowAddTodo] = useState(false)
   const [newTodoText, setNewTodoText] = useState('')
   const [powerAction, setPowerAction] = useState<TimerAction>('shutdown')
+  const [quickAccessEditorOpen, setQuickAccessEditorOpen] = useState(false)
+  const [shortcutKind, setShortcutKind] = useState<BrowserShortcutKind>('website')
+  const [shortcutName, setShortcutName] = useState('')
+  const [shortcutTarget, setShortcutTarget] = useState('')
+  const [shortcutError, setShortcutError] = useState<string | null>(null)
+  const [quoteIndex, setQuoteIndex] = useState(() => new Date().getDate() % QUOTES.length)
 
   const hiddenSet = new Set(layout.hiddenWidgets)
   const remainingSeconds = timer ? Math.max(0, Math.ceil((timer.targetAt - now) / 1000)) : 0
   const completedCount = todos.filter((t) => t.completed).length
 
   function handleOpenUrl(url: string) {
-    void desktop.openExternal(url).catch(() => undefined)
+    requestBrowserNavigation(url)
+    onNavigate('browser')
+  }
+
+  function persistQuickAccess(items: QuickAppItem[]) {
+    onQuickAccessChange(items)
+    saveShortcuts(items.map((item): BrowserShortcut => ({
+      id: item.id,
+      name: item.name,
+      kind: item.kind,
+      target: item.target,
+      color: item.bg,
+      iconText: item.iconText,
+    })))
+  }
+
+  function handleShortcutSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    const name = shortcutName.trim()
+    const target = shortcutTarget.trim()
+    if (!name || !target) return
+    if (shortcutKind === 'program' && !/^(?:[a-zA-Z]:\\|\\\\)/.test(target)) {
+      setShortcutError('Program için C:\\... ile başlayan tam dosya yolunu girin.')
+      return
+    }
+    const next = [...quickAccessApps, {
+      id: crypto.randomUUID(),
+      name,
+      kind: shortcutKind,
+      target,
+      bg: shortcutKind === 'program' ? 'var(--color-program)' : 'var(--color-browser-blue)',
+      iconText: name.slice(0, 2).toUpperCase(),
+    }].slice(-11)
+    persistQuickAccess(next)
+    setShortcutName('')
+    setShortcutTarget('')
+    setShortcutError(null)
+  }
+
+  function openShortcut(item: QuickAppItem) {
+    if (item.kind === 'program') {
+      void desktop.programs.launch(item.target).catch((cause) => {
+        setShortcutError(cause instanceof Error ? cause.message : 'Program başlatılamadı.')
+        setQuickAccessEditorOpen(true)
+      })
+      return
+    }
+    handleOpenUrl(item.target)
   }
 
   function handleTodoSubmit(e: React.FormEvent) {
@@ -324,7 +389,7 @@ export function DraggableWidgetGrid({
                 <button
                   type="button"
                   className="card-pill-btn"
-                  onClick={() => onNavigate('notes')}
+                  onClick={() => onNavigate('browser')}
                 >
                   Tümü
                 </button>
@@ -418,7 +483,7 @@ export function DraggableWidgetGrid({
                 <button
                   type="button"
                   className="card-pill-btn"
-                  onClick={() => onNavigate('settings')}
+                  onClick={() => setQuickAccessEditorOpen(true)}
                 >
                   Düzenle
                 </button>
@@ -436,9 +501,10 @@ export function DraggableWidgetGrid({
             <div className="quick-access-8grid">
               {quickAccessApps.map((app) => (
                 <div
-                  key={app.name}
+                  key={app.id}
                   className="qa-app-tile"
-                  onClick={() => handleOpenUrl(app.url)}
+                  onClick={() => openShortcut(app)}
+                  title={app.kind === 'program' ? app.target : undefined}
                 >
                   <div className="qa-app-squircle" style={{ backgroundColor: app.bg }}>
                     <span>{app.iconText}</span>
@@ -449,7 +515,7 @@ export function DraggableWidgetGrid({
 
               <div
                 className="qa-app-tile qa-app-tile--add"
-                onClick={() => onNavigate('settings')}
+                onClick={() => setQuickAccessEditorOpen(true)}
               >
                 <div className="qa-app-squircle qa-app-squircle--dashed">
                   <Plus size={14} />
@@ -471,6 +537,7 @@ export function DraggableWidgetGrid({
                 </div>
               </div>
               <div className="widget-header-actions">
+                <button type="button" className="card-pill-btn" onClick={() => setQuoteIndex((current) => (current + 1) % QUOTES.length)}>Yenile</button>
                 <button
                   type="button"
                   className="widget-hide-btn"
@@ -482,9 +549,9 @@ export function DraggableWidgetGrid({
               </div>
             </div>
             <p className="quote-body-quote">
-              Geleceği tahmin etmenin en iyi yolu, onu yaratmaktır.
+              {QUOTES[quoteIndex].text}
             </p>
-            <span className="quote-author-name">— Peter Drucker</span>
+            <span className="quote-author-name">— {QUOTES[quoteIndex].author}</span>
           </div>
         )
 
@@ -899,6 +966,41 @@ export function DraggableWidgetGrid({
           <span>Widget Taşınıyor</span>
         </div>
       )}
+
+      {quickAccessEditorOpen ? (
+        <div className="quick-access-editor-backdrop" onClick={() => setQuickAccessEditorOpen(false)}>
+          <form className="quick-access-editor" onSubmit={handleShortcutSubmit} onClick={(event) => event.stopPropagation()}>
+            <div className="quick-access-editor__head">
+              <div><h2>Hızlı erişimi düzenle</h2><p>Web sitelerini tarayıcıda aç veya yerel bir program başlat.</p></div>
+              <button type="button" onClick={() => setQuickAccessEditorOpen(false)} aria-label="Kapat"><X size={14} /></button>
+            </div>
+            <div className="quick-access-editor__type" role="group" aria-label="Kısayol türü">
+              <button type="button" className={shortcutKind === 'website' ? 'is-active' : ''} onClick={() => { setShortcutKind('website'); setShortcutError(null) }}><Link2 size={14} /> Web sitesi</button>
+              <button type="button" className={shortcutKind === 'program' ? 'is-active' : ''} onClick={() => { setShortcutKind('program'); setShortcutError(null) }}><MonitorUp size={14} /> Program</button>
+            </div>
+            <label>Ad<input value={shortcutName} onChange={(event) => setShortcutName(event.target.value)} placeholder={shortcutKind === 'program' ? 'Visual Studio Code' : 'GitHub'} required /></label>
+            <label>{shortcutKind === 'program' ? 'Program yolu' : 'Web adresi'}<input value={shortcutTarget} onChange={(event) => setShortcutTarget(event.target.value)} placeholder={shortcutKind === 'program' ? 'C:\\Program Files\\...\\program.exe' : 'github.com'} required /></label>
+            {shortcutError ? <p className="quick-access-editor__error" role="alert">{shortcutError}</p> : null}
+            <div className="quick-access-editor__list">
+              {quickAccessApps.map((item) => (
+                <div key={item.id}>
+                  <span className="quick-access-editor__item-icon">{item.kind === 'program' ? <MonitorUp size={13} /> : <Link2 size={13} />}</span>
+                  <span><strong>{item.name}</strong><small>{item.target}</small></span>
+                  <button type="button" onClick={() => persistQuickAccess(quickAccessApps.filter((entry) => entry.id !== item.id))} aria-label={`${item.name} kısayolunu sil`}><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="quick-access-editor__actions"><button type="button" onClick={() => setQuickAccessEditorOpen(false)}>Bitti</button><button type="submit">Kısayol ekle</button></div>
+          </form>
+        </div>
+      ) : null}
     </div>
   )
 }
+
+const QUOTES = [
+  { text: 'Geleceği tahmin etmenin en iyi yolu, onu yaratmaktır.', author: 'Peter Drucker' },
+  { text: 'İyi tasarım, mümkün olduğunca az tasarımdır.', author: 'Dieter Rams' },
+  { text: 'Basitlik, ulaşılmış nihai karmaşıklıktır.', author: 'Leonardo da Vinci' },
+  { text: 'Başlamak için mükemmel olmak zorunda değilsin.', author: 'Zig Ziglar' },
+]

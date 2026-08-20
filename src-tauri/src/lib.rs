@@ -19,6 +19,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use uuid::Uuid;
 
+mod browser;
 mod localsend;
 mod notes;
 
@@ -529,7 +530,9 @@ fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<bool, String> 
 fn get_app_settings(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let path = state.inner.data_dir.join("settings.json");
     if path.exists() {
-        fs::read_to_string(&path).map(Some).map_err(|e| e.to_string())
+        fs::read_to_string(&path)
+            .map(Some)
+            .map_err(|e| e.to_string())
     } else {
         Ok(None)
     }
@@ -588,9 +591,175 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn browser_create_tab(
+    app: AppHandle,
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+    url: String,
+    bounds: browser::Bounds,
+) -> Result<browser::TabProjection, String> {
+    // `add_child` creates a WebView2 controller.  Running that work in the synchronous
+    // command handler can starve the UI message loop which WebView2 needs to complete
+    // controller creation.  The Tauri handles are cloneable runtime dispatchers, so keep
+    // this command asynchronous and run the blocking manager transaction off that loop.
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.create(app, id, url, bounds))
+        .await
+        .map_err(|error| format!("Tarayıcı sekmesi görevi tamamlanamadı: {error}"))?
+}
+
+#[tauri::command]
+fn browser_activate_tab(
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+    visible: bool,
+) -> Result<(), String> {
+    manager.activate(&id, visible)
+}
+
+#[tauri::command]
+fn browser_close_tab(
+    app: AppHandle,
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+) -> Result<bool, String> {
+    manager.close(&app, &id)
+}
+
+#[tauri::command]
+fn browser_navigate(
+    app: AppHandle,
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+    url: String,
+) -> Result<(), String> {
+    manager.navigate(&app, &id, url)
+}
+
+#[tauri::command]
+fn browser_reload(manager: State<'_, browser::BrowserManager>, id: String) -> Result<(), String> {
+    manager.reload(&id)
+}
+
+#[tauri::command]
+fn browser_back(
+    app: AppHandle,
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+) -> Result<(), String> {
+    manager.history(&app, &id, false)
+}
+
+#[tauri::command]
+fn browser_forward(
+    app: AppHandle,
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+) -> Result<(), String> {
+    manager.history(&app, &id, true)
+}
+
+#[tauri::command]
+fn browser_set_visible(manager: State<'_, browser::BrowserManager>, visible: bool) {
+    manager.set_visible(visible)
+}
+
+#[tauri::command]
+fn browser_deactivate_tab(manager: State<'_, browser::BrowserManager>) -> Result<(), String> {
+    manager.deactivate()
+}
+
+#[tauri::command]
+fn browser_set_bounds(
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+    bounds: browser::Bounds,
+) -> Result<(), String> {
+    manager.set_bounds(&id, bounds)
+}
+
+#[tauri::command]
+fn browser_sync_metadata(
+    app: AppHandle,
+    manager: State<'_, browser::BrowserManager>,
+) -> Result<(), String> {
+    manager.sync_metadata(&app)
+}
+
+#[tauri::command]
+fn browser_toggle_media(
+    manager: State<'_, browser::BrowserManager>,
+    id: String,
+) -> Result<(), String> {
+    manager.toggle_media(&id)
+}
+
+#[tauri::command]
+fn browser_set_theme(
+    manager: State<'_, browser::BrowserManager>,
+    theme: String,
+) -> Result<(), String> {
+    manager.set_theme(&theme)
+}
+
+#[tauri::command]
+fn browser_debug_snapshot(manager: State<'_, browser::BrowserManager>) -> browser::DebugSnapshot {
+    manager.snapshot()
+}
+
+#[tauri::command]
+fn launch_program(path: String) -> Result<(), String> {
+    let input = PathBuf::from(path.trim());
+    if !input.is_absolute() {
+        return Err("Program yolu tam dosya yolu olmalı.".to_string());
+    }
+    let executable = input
+        .canonicalize()
+        .map_err(|_| "Program dosyası bulunamadı.".to_string())?;
+    if !executable.is_file() {
+        return Err("Seçilen yol bir program dosyası değil.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let extension = executable
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if !matches!(extension.as_str(), "exe" | "com" | "lnk") {
+            return Err(
+                "Windows hızlı erişimi .exe, .com veya .lnk dosyalarını destekler.".to_string(),
+            );
+        }
+        if extension == "lnk" {
+            return Command::new("explorer.exe")
+                .arg(&executable)
+                .spawn()
+                .map(|_| ())
+                .map_err(|error| format!("Program kısayolu açılamadı: {error}"));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    return Command::new("open")
+        .arg(&executable)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Program açılamadı: {error}"));
+
+    #[cfg(not(target_os = "macos"))]
+    Command::new(&executable)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Program açılamadı: {error}"))
+}
+
+#[tauri::command]
 fn youtube_music_control(app: AppHandle, action: String) -> Result<(), String> {
     let script = match action.as_str() {
-        "toggle-play" => r#"
+        "toggle-play" => {
+            r#"
           (() => {
             const player = document.querySelector('ytmusic-player-bar') || document;
             const button = player.querySelector('#play-pause-button')
@@ -601,8 +770,10 @@ fn youtube_music_control(app: AppHandle, action: String) -> Result<(), String> {
               || player.querySelector('button[aria-label*="Pause"]');
             if (button && !button.disabled) button.click();
           })();
-        "#,
-        "next" => r#"
+        "#
+        }
+        "next" => {
+            r#"
           (() => {
             const player = document.querySelector('ytmusic-player-bar') || document;
             const button = player.querySelector('.next-button')
@@ -610,8 +781,10 @@ fn youtube_music_control(app: AppHandle, action: String) -> Result<(), String> {
               || player.querySelector('button[aria-label*="Next"]');
             if (button && !button.disabled) button.click();
           })();
-        "#,
-        "previous" => r#"
+        "#
+        }
+        "previous" => {
+            r#"
           (() => {
             const player = document.querySelector('ytmusic-player-bar') || document;
             const button = player.querySelector('.previous-button')
@@ -619,8 +792,10 @@ fn youtube_music_control(app: AppHandle, action: String) -> Result<(), String> {
               || player.querySelector('button[aria-label*="Previous"]');
             if (button && !button.disabled) button.click();
           })();
-        "#,
-        "toggle-mute" => r#"
+        "#
+        }
+        "toggle-mute" => {
+            r#"
           (() => {
             const player = document.querySelector('ytmusic-player-bar') || document;
             const button = player.querySelector('.mute-button')
@@ -631,7 +806,8 @@ fn youtube_music_control(app: AppHandle, action: String) -> Result<(), String> {
               });
             if (button && !button.disabled) button.click();
           })();
-        "#,
+        "#
+        }
         _ => return Err("Geçersiz YouTube Music komutu.".to_string()),
     };
 
@@ -782,6 +958,157 @@ fn youtube_music_set_volume(app: AppHandle, volume: f64) -> Result<(), String> {
     webview
         .eval(&script)
         .map_err(|error| format!("YouTube Music ses seviyesi ayarlanamadı: {error}"))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemMediaSession {
+    source_app_id: String,
+    title: String,
+    artist: String,
+    album_title: String,
+    playback_status: String,
+    position_seconds: f64,
+    duration_seconds: f64,
+    can_play: bool,
+    can_pause: bool,
+    can_skip_next: bool,
+    can_skip_previous: bool,
+}
+
+#[cfg(target_os = "windows")]
+fn current_windows_media_session(
+) -> Result<Option<windows::Media::Control::GlobalSystemMediaTransportControlsSession>, String> {
+    use std::sync::OnceLock;
+    use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager;
+
+    static MANAGER: OnceLock<GlobalSystemMediaTransportControlsSessionManager> = OnceLock::new();
+    if MANAGER.get().is_none() {
+        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
+            .map_err(|error| format!("Windows medya yöneticisi başlatılamadı: {error}"))?
+            .get()
+            .map_err(|error| format!("Windows medya yöneticisine erişilemedi: {error}"))?;
+        let _ = MANAGER.set(manager);
+    }
+    let manager = MANAGER
+        .get()
+        .ok_or_else(|| "Windows medya yöneticisi hazırlanamadı.".to_string())?;
+    Ok(manager.GetCurrentSession().ok())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn get_system_media_session() -> Result<Option<SystemMediaSession>, String> {
+    use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus;
+
+    let Some(session) = current_windows_media_session()? else {
+        return Ok(None);
+    };
+    let properties = session
+        .TryGetMediaPropertiesAsync()
+        .map_err(|error| format!("Medya bilgileri istenemedi: {error}"))?
+        .get()
+        .map_err(|error| format!("Medya bilgileri okunamadı: {error}"))?;
+    let playback = session
+        .GetPlaybackInfo()
+        .map_err(|error| format!("Oynatma durumu okunamadı: {error}"))?;
+    let timeline = session.GetTimelineProperties().ok();
+    let controls = playback.Controls().ok();
+    let status = playback.PlaybackStatus().ok();
+
+    let playback_status = match status {
+        Some(value)
+            if value == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing =>
+        {
+            "playing"
+        }
+        Some(value) if value == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Paused => {
+            "paused"
+        }
+        Some(value)
+            if value == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Stopped =>
+        {
+            "stopped"
+        }
+        _ => "unknown",
+    };
+    let ticks_to_seconds = |ticks: i64| (ticks.max(0) as f64) / 10_000_000.0;
+
+    Ok(Some(SystemMediaSession {
+        source_app_id: session
+            .SourceAppUserModelId()
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        title: properties
+            .Title()
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        artist: properties
+            .Artist()
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        album_title: properties
+            .AlbumTitle()
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        playback_status: playback_status.to_string(),
+        position_seconds: timeline
+            .as_ref()
+            .and_then(|value| value.Position().ok())
+            .map(|value| ticks_to_seconds(value.Duration))
+            .unwrap_or(0.0),
+        duration_seconds: timeline
+            .as_ref()
+            .and_then(|value| value.EndTime().ok())
+            .map(|value| ticks_to_seconds(value.Duration))
+            .unwrap_or(0.0),
+        can_play: controls
+            .as_ref()
+            .and_then(|value| value.IsPlayEnabled().ok())
+            .unwrap_or(false),
+        can_pause: controls
+            .as_ref()
+            .and_then(|value| value.IsPauseEnabled().ok())
+            .unwrap_or(false),
+        can_skip_next: controls
+            .as_ref()
+            .and_then(|value| value.IsNextEnabled().ok())
+            .unwrap_or(false),
+        can_skip_previous: controls
+            .as_ref()
+            .and_then(|value| value.IsPreviousEnabled().ok())
+            .unwrap_or(false),
+    }))
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn get_system_media_session() -> Result<Option<SystemMediaSession>, String> {
+    Ok(None)
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn control_system_media(action: String) -> Result<bool, String> {
+    let Some(session) = current_windows_media_session()? else {
+        return Ok(false);
+    };
+    let operation = match action.as_str() {
+        "toggle-play-pause" => session.TryTogglePlayPauseAsync(),
+        "next" => session.TrySkipNextAsync(),
+        "previous" => session.TrySkipPreviousAsync(),
+        _ => return Err("Geçersiz sistem medya komutu.".to_string()),
+    }
+    .map_err(|error| format!("Medya komutu gönderilemedi: {error}"))?;
+    operation
+        .get()
+        .map_err(|error| format!("Medya komutu tamamlanamadı: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn control_system_media(_action: String) -> Result<bool, String> {
+    Ok(false)
 }
 
 // ----------------- SCHEDULER & RUN -----------------
@@ -971,9 +1298,13 @@ fn configure_tray(app: &mut tauri::App) -> tauri::Result<()> {
 fn configure_close_to_tray(app: &mut tauri::App) {
     if let Some(window) = app.get_webview_window("main") {
         let window_to_hide = window.clone();
+        let app_handle = app.handle().clone();
         window.on_window_event(move |event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                if let Some(manager) = app_handle.try_state::<browser::BrowserManager>() {
+                    manager.set_visible(false);
+                }
                 let _ = window_to_hide.hide();
             }
         });
@@ -1036,6 +1367,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let state = AppState::load();
+            app.manage(browser::BrowserManager::new(
+                state.inner.data_dir.join("browser-profile"),
+            ));
             let settings_path = state.inner.data_dir.join("settings.json");
             let autostart_enabled = if settings_path.exists() {
                 fs::read_to_string(&settings_path)
@@ -1067,7 +1401,11 @@ pub fn run() {
             let localsend_state = Arc::new(localsend::LocalSendState::new(&state.inner.data_dir));
             localsend_state.set_app_handle(app.handle().clone());
             localsend::start_udp_discovery(localsend_state.clone());
-            localsend::start_http_server(localsend_state.clone(), state.clone(), state.inner.data_dir.clone());
+            localsend::start_http_server(
+                localsend_state.clone(),
+                state.clone(),
+                state.inner.data_dir.clone(),
+            );
             app.manage(localsend_state);
             app.manage(notes::VaultWatcher::new());
 
@@ -1093,6 +1431,23 @@ pub fn run() {
             save_app_settings,
             get_system_info,
             open_external_url,
+            browser_navigate,
+            browser_reload,
+            browser_create_tab,
+            browser_activate_tab,
+            browser_close_tab,
+            browser_back,
+            browser_forward,
+            browser_set_visible,
+            browser_deactivate_tab,
+            browser_set_bounds,
+            browser_sync_metadata,
+            browser_toggle_media,
+            browser_set_theme,
+            browser_debug_snapshot,
+            launch_program,
+            get_system_media_session,
+            control_system_media,
             youtube_music_control,
             youtube_music_set_volume,
             youtube_music_sync_state,
