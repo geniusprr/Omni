@@ -1,6 +1,7 @@
 package com.kapanis.mobil.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.rounded.AlarmAdd
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,16 +55,7 @@ import com.kapanis.mobil.data.ConnectionMode
 import com.kapanis.mobil.data.ConnectionTarget
 import com.kapanis.mobil.network.KapanisApiClient
 import com.kapanis.mobil.ui.components.GlassCard
-import com.kapanis.mobil.ui.theme.AccentBlue
-import com.kapanis.mobil.ui.theme.AccentInk
-import com.kapanis.mobil.ui.theme.DangerRed
-import com.kapanis.mobil.ui.theme.DarkPaper
-import com.kapanis.mobil.ui.theme.DarkSurface
-import com.kapanis.mobil.ui.theme.DarkSurfaceRaised
-import com.kapanis.mobil.ui.theme.InkPrimary
-import com.kapanis.mobil.ui.theme.RuleColor
-import com.kapanis.mobil.ui.theme.TextFaint
-import com.kapanis.mobil.ui.theme.TextMuted
+import com.kapanis.mobil.ui.theme.KapanisTheme
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -79,6 +70,7 @@ fun NotifyScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+    val colors = KapanisTheme.colors
 
     // Notification State
     var notifTitle by remember { mutableStateOf("") }
@@ -90,7 +82,6 @@ fun NotifyScreen(
     // Alarm State
     var alarmMinutes by remember { mutableStateOf(10) }
     var alarmNote by remember { mutableStateOf("") }
-    var alarmSound by remember { mutableStateOf("chime") }
     var isCreatingAlarm by remember { mutableStateOf(false) }
     var alarmsList by remember { mutableStateOf<List<AlarmItem>>(emptyList()) }
     var isLoadingAlarms by remember { mutableStateOf(false) }
@@ -146,7 +137,7 @@ fun NotifyScreen(
                 timestamp = targetTimestamp,
                 note = alarmNote.trim(),
                 soundEnabled = true,
-                soundProfile = alarmSound
+                soundProfile = "chime"
             )
             isCreatingAlarm = false
             if (res.isSuccess) {
@@ -192,193 +183,54 @@ fun NotifyScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkPaper)
+            .background(colors.paper)
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // PC Alarm Card
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = DarkSurface
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(AccentBlue.copy(alpha = 0.15f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(imageVector = Icons.Rounded.Alarm, contentDescription = null, tint = AccentBlue, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
+        // Instant Notification Card
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(colors.accent.copy(alpha = 0.14f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(imageVector = Icons.Rounded.NotificationsActive, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
                     Text(
-                        text = "PC Alarmı Kur",
-                        fontSize = 14.sp,
+                        text = "PC'ye Anlık Bildirim Gönder",
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = InkPrimary
+                        color = colors.textPrimary
+                    )
+                    Text(
+                        text = "Bilgisayar ekranına hemen açılır bildirim yollar.",
+                        fontSize = 12.sp,
+                        color = colors.textMuted
                     )
                 }
             }
 
-            Text(
-                text = "Bilgisayar ekranında tam zamanında sesli ve görsel alarm çalar.",
-                fontSize = 12.sp,
-                color = TextMuted,
-                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-            )
-
-            // Preset minute buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                listOf(5, 10, 15, 30, 60).forEach { mins ->
-                    val isSelected = alarmMinutes == mins
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { alarmMinutes = mins },
-                        color = if (isSelected) AccentBlue else DarkSurfaceRaised,
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = "$mins dk",
-                            color = if (isSelected) AccentInk else InkPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = alarmNote,
-                onValueChange = { alarmNote = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Alarm notu / hatırlatma...", color = TextFaint, fontSize = 12.sp) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = DarkSurfaceRaised,
-                    unfocusedContainerColor = DarkSurfaceRaised,
-                    focusedBorderColor = AccentBlue,
-                    unfocusedBorderColor = RuleColor,
-                    focusedTextColor = InkPrimary,
-                    unfocusedTextColor = InkPrimary
-                ),
-                shape = RoundedCornerShape(8.dp)
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Button(
-                onClick = { createAlarm() },
-                enabled = !isCreatingAlarm,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentBlue,
-                    contentColor = AccentInk
-                ),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                if (isCreatingAlarm) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = AccentInk, strokeWidth = 2.dp)
-                } else {
-                    Icon(imageVector = Icons.Rounded.AlarmAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "PC'de $alarmMinutes Dk Sonra Çalacak Alarm Kur", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // Active Alarms List
-            if (alarmsList.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Bekleyen PC Alarmları (${alarmsList.size})",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = InkPrimary
-                )
-
-                alarmsList.forEach { alarm ->
-                    val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(alarm.timestamp))
-                    val remainingMins = ((alarm.timestamp - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .background(DarkSurfaceRaised, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "$timeStr (${remainingMins} dk kaldı)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AccentBlue
-                            )
-                            if (alarm.note.isNotEmpty()) {
-                                Text(text = alarm.note, fontSize = 11.sp, color = InkPrimary)
-                            }
-                        }
-
-                        IconButton(
-                            onClick = { cancelAlarm(alarm.id) },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(imageVector = Icons.Rounded.Delete, contentDescription = "İptal", tint = DangerRed, modifier = Modifier.size(14.dp))
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Direct PC Notification Card
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = DarkSurface
-        ) {
-            Text(
-                text = "PC'ye Anlık Bildirim Gönder",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = InkPrimary
-            )
-            Text(
-                text = "Windows bildirim baloncuğu ve zil sesi tetikler.",
-                fontSize = 12.sp,
-                color = TextMuted,
-                modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
-            )
+            Spacer(modifier = Modifier.height(14.dp))
 
             OutlinedTextField(
                 value = notifTitle,
                 onValueChange = { notifTitle = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Başlık (İsteğe bağlı)", color = TextFaint, fontSize = 13.sp) },
+                placeholder = { Text("Başlık (İsteğe bağlı)", color = colors.textFaint, fontSize = 12.sp) },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = DarkSurfaceRaised,
-                    unfocusedContainerColor = DarkSurfaceRaised,
-                    focusedBorderColor = AccentBlue,
-                    unfocusedBorderColor = RuleColor,
-                    focusedTextColor = InkPrimary,
-                    unfocusedTextColor = InkPrimary
+                    focusedContainerColor = colors.surfaceRaised,
+                    unfocusedContainerColor = colors.surfaceRaised,
+                    focusedBorderColor = colors.accent,
+                    unfocusedBorderColor = colors.border,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary
                 ),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(10.dp)
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -387,23 +239,24 @@ fun NotifyScreen(
                 value = notifMessage,
                 onValueChange = { notifMessage = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Mesaj metni...", color = TextFaint, fontSize = 13.sp) },
+                placeholder = { Text("Bildirim mesajı...", color = colors.textFaint, fontSize = 12.sp) },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = DarkSurfaceRaised,
-                    unfocusedContainerColor = DarkSurfaceRaised,
-                    focusedBorderColor = AccentBlue,
-                    unfocusedBorderColor = RuleColor,
-                    focusedTextColor = InkPrimary,
-                    unfocusedTextColor = InkPrimary
+                    focusedContainerColor = colors.surfaceRaised,
+                    unfocusedContainerColor = colors.surfaceRaised,
+                    focusedBorderColor = colors.accent,
+                    unfocusedBorderColor = colors.border,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary
                 ),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(10.dp),
+                minLines = 2,
                 maxLines = 3
             )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -415,14 +268,15 @@ fun NotifyScreen(
                         checked = isUrgent,
                         onCheckedChange = { isUrgent = it },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = AccentBlue,
-                            checkedTrackColor = DarkSurfaceRaised
+                            checkedThumbColor = colors.accent,
+                            checkedTrackColor = colors.surfaceRaised
                         )
                     )
                     Text(
                         text = "Acil Sesli Çal",
                         fontSize = 12.sp,
-                        color = if (isUrgent) AccentBlue else TextMuted
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isUrgent) colors.accent else colors.textMuted
                     )
                 }
 
@@ -430,16 +284,14 @@ fun NotifyScreen(
                     onClick = { sendNotification() },
                     enabled = notifMessage.isNotBlank() && !isSendingNotif,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentBlue,
-                        contentColor = AccentInk
+                        containerColor = colors.accent,
+                        contentColor = colors.accentInk
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     if (isSendingNotif) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = AccentInk, strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = colors.accentInk, strokeWidth = 2.dp)
                     } else {
-                        Icon(imageVector = Icons.Rounded.NotificationsActive, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
                         Text(text = "Gönder", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -449,43 +301,59 @@ fun NotifyScreen(
         Spacer(modifier = Modifier.height(14.dp))
 
         // Clipboard Sync Card
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = DarkSurface
-        ) {
-            Text(
-                text = "Hızlı Pano Aktarımı",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = InkPrimary
-            )
-            Text(
-                text = "Telefonda kopyaladığınız metni anında PC panosuna (Ctrl+V) yapıştırın.",
-                fontSize = 12.sp,
-                color = TextMuted,
-                modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
-            )
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(colors.accent.copy(alpha = 0.15f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(imageVector = Icons.Rounded.ContentPaste, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Hızlı Pano Senkronizasyonu",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            text = "Telefonda kopyalanan metni PC panosuna yazar.",
+                            fontSize = 11.sp,
+                            color = colors.textMuted
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Button(
                 onClick = { syncClipboard() },
                 enabled = !isSendingClip,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(44.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = DarkSurfaceRaised,
-                    contentColor = InkPrimary
+                    containerColor = colors.surfaceRaised,
+                    contentColor = colors.textPrimary
                 ),
-                shape = RoundedCornerShape(8.dp)
+                border = BorderStroke(1.dp, colors.border),
+                shape = RoundedCornerShape(10.dp)
             ) {
                 if (isSendingClip) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = InkPrimary, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = colors.textPrimary, strokeWidth = 2.dp)
                 } else {
-                    Icon(imageVector = Icons.Rounded.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Telefonda Kopyalanan Metni PC'ye Gönder", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text("Telefondaki Panoyu PC'ye Aktar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
     }
 }

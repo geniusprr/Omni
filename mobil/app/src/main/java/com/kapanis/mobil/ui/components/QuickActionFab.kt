@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,11 +14,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,20 +41,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kapanis.mobil.ui.theme.AccentBlue
-import com.kapanis.mobil.ui.theme.AccentInk
-import com.kapanis.mobil.ui.theme.DangerRed
-import com.kapanis.mobil.ui.theme.DarkPaper
-import com.kapanis.mobil.ui.theme.DarkSurface
-import com.kapanis.mobil.ui.theme.DarkSurfaceRaised
-import com.kapanis.mobil.ui.theme.InkPrimary
-import com.kapanis.mobil.ui.theme.TextMuted
+import com.kapanis.mobil.ui.theme.KapanisTheme
 
 @Composable
 fun QuickActionFab(
@@ -69,13 +60,14 @@ fun QuickActionFab(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val colors = KapanisTheme.colors
 
     Box(modifier = modifier) {
         if (expanded) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.6f))
+                    .background(Color.Black.copy(alpha = 0.5f))
                     .clickable { expanded = false }
             )
         }
@@ -85,7 +77,7 @@ fun QuickActionFab(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 16.dp, end = 16.dp)
+                .padding(bottom = 84.dp, end = 16.dp)
         ) {
             AnimatedVisibility(
                 visible = expanded,
@@ -99,8 +91,8 @@ fun QuickActionFab(
                     FabActionItem(
                         icon = Icons.Rounded.Timer,
                         label = "30 Dk Sonra Kapat",
-                        containerColor = DarkSurfaceRaised,
-                        contentColor = AccentBlue,
+                        containerColor = colors.surfaceRaised,
+                        contentColor = colors.accent,
                         onClick = {
                             expanded = false
                             onShutdown30m()
@@ -110,8 +102,8 @@ fun QuickActionFab(
                     FabActionItem(
                         icon = Icons.Rounded.PowerSettingsNew,
                         label = "60 Dk Sonra Kapat",
-                        containerColor = DarkSurfaceRaised,
-                        contentColor = AccentBlue,
+                        containerColor = colors.surfaceRaised,
+                        contentColor = colors.accent,
                         onClick = {
                             expanded = false
                             onShutdown60m()
@@ -121,8 +113,8 @@ fun QuickActionFab(
                     FabActionItem(
                         icon = Icons.Rounded.Stop,
                         label = "Sayacı İptal Et",
-                        containerColor = DangerRed.copy(alpha = 0.2f),
-                        contentColor = DangerRed,
+                        containerColor = colors.danger.copy(alpha = 0.2f),
+                        contentColor = colors.danger,
                         onClick = {
                             expanded = false
                             onCancelTimer()
@@ -132,8 +124,8 @@ fun QuickActionFab(
                     FabActionItem(
                         icon = Icons.Rounded.Alarm,
                         label = "Hızlı Alarm Kur",
-                        containerColor = DarkSurfaceRaised,
-                        contentColor = InkPrimary,
+                        containerColor = colors.surfaceRaised,
+                        contentColor = colors.textPrimary,
                         onClick = {
                             expanded = false
                             onQuickAlarm()
@@ -143,8 +135,8 @@ fun QuickActionFab(
                     FabActionItem(
                         icon = Icons.Rounded.ContentPaste,
                         label = "Panoyu PC'ye Aktar",
-                        containerColor = DarkSurfaceRaised,
-                        contentColor = InkPrimary,
+                        containerColor = colors.surfaceRaised,
+                        contentColor = colors.textPrimary,
                         onClick = {
                             expanded = false
                             onSendClipboard()
@@ -154,8 +146,8 @@ fun QuickActionFab(
                     FabActionItem(
                         icon = Icons.Rounded.Image,
                         label = "Fotoğraf Gönder",
-                        containerColor = DarkSurfaceRaised,
-                        contentColor = InkPrimary,
+                        containerColor = colors.surfaceRaised,
+                        contentColor = colors.textPrimary,
                         onClick = {
                             expanded = false
                             onSendPhoto()
@@ -165,8 +157,8 @@ fun QuickActionFab(
                     FabActionItem(
                         icon = Icons.Rounded.NotificationsActive,
                         label = "PC'ye Bildirim Gönder",
-                        containerColor = DarkSurfaceRaised,
-                        contentColor = InkPrimary,
+                        containerColor = colors.surfaceRaised,
+                        contentColor = colors.textPrimary,
                         onClick = {
                             expanded = false
                             onSendNotification()
@@ -179,10 +171,10 @@ fun QuickActionFab(
 
             FloatingActionButton(
                 onClick = { expanded = !expanded },
-                containerColor = if (expanded) DarkSurfaceRaised else AccentBlue,
-                contentColor = if (expanded) InkPrimary else AccentInk,
+                containerColor = if (expanded) colors.surfaceRaised else colors.accent,
+                contentColor = if (expanded) colors.textPrimary else colors.accentInk,
                 shape = CircleShape,
-                modifier = Modifier.size(56.dp)
+                modifier = Modifier.size(52.dp)
             ) {
                 Icon(
                     imageVector = if (expanded) Icons.Rounded.Close else Icons.Rounded.Add,
@@ -202,6 +194,8 @@ private fun FabActionItem(
     contentColor: Color,
     onClick: () -> Unit
 ) {
+    val colors = KapanisTheme.colors
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End,
@@ -210,15 +204,16 @@ private fun FabActionItem(
             .padding(vertical = 2.dp)
     ) {
         Surface(
-            color = DarkSurface,
-            shape = RoundedCornerShape(8.dp),
+            color = colors.surfaceGlass,
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, colors.border),
             modifier = Modifier.padding(end = 8.dp)
         ) {
             Text(
                 text = label,
-                color = InkPrimary,
+                color = colors.textPrimary,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
             )
         }

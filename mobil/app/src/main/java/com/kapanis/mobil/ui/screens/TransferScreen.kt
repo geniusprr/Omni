@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,16 +54,7 @@ import com.kapanis.mobil.data.ConnectionTarget
 import com.kapanis.mobil.data.TransferItem
 import com.kapanis.mobil.network.KapanisApiClient
 import com.kapanis.mobil.ui.components.GlassCard
-import com.kapanis.mobil.ui.theme.AccentBlue
-import com.kapanis.mobil.ui.theme.AccentCyan
-import com.kapanis.mobil.ui.theme.AccentInk
-import com.kapanis.mobil.ui.theme.DarkPaper
-import com.kapanis.mobil.ui.theme.DarkSurface
-import com.kapanis.mobil.ui.theme.DarkSurfaceRaised
-import com.kapanis.mobil.ui.theme.InkPrimary
-import com.kapanis.mobil.ui.theme.RuleColor
-import com.kapanis.mobil.ui.theme.TextFaint
-import com.kapanis.mobil.ui.theme.TextMuted
+import com.kapanis.mobil.ui.theme.KapanisTheme
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -77,16 +69,15 @@ fun TransferScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val colors = KapanisTheme.colors
 
     var isUploading by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableFloatStateOf(0f) }
-    var currentUploadingFile by remember { mutableStateOf("") }
 
     fun uploadUri(uri: Uri) {
         if (isUploading) return
         isUploading = true
         uploadProgress = 0f
-        currentUploadingFile = "Dosya hazırlanıyor..."
 
         scope.launch {
             val result = apiClient.uploadFile(
@@ -115,7 +106,6 @@ fun TransferScreen(
         }
     }
 
-    // Photo Picker
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -124,7 +114,6 @@ fun TransferScreen(
         }
     }
 
-    // Generic File Picker
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -142,24 +131,21 @@ fun TransferScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkPaper)
+            .background(colors.paper)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         // Transfer Action Buttons
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = DarkSurface
-        ) {
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = "PC'ye Dosya / Fotoğraf Aktar",
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = InkPrimary
+                color = colors.textPrimary
             )
             Text(
-                text = "Seçilen fotoğraflar ve belgeler doğrudan PC'ye akıtılır.",
+                text = "Seçilen fotoğraflar ve belgeler doğrudan PC'ye aktarılır.",
                 fontSize = 12.sp,
-                color = TextMuted,
+                color = colors.textMuted,
                 modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
             )
 
@@ -174,12 +160,12 @@ fun TransferScreen(
                         )
                     },
                     enabled = !isUploading,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(46.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentBlue,
-                        contentColor = AccentInk
+                        containerColor = colors.accent,
+                        contentColor = colors.accentInk
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Image,
@@ -199,17 +185,19 @@ fun TransferScreen(
                         filePickerLauncher.launch("*/*")
                     },
                     enabled = !isUploading,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(46.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = DarkSurfaceRaised,
-                        contentColor = InkPrimary
+                        containerColor = colors.surfaceRaised,
+                        contentColor = colors.textPrimary
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    border = BorderStroke(1.dp, colors.border),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.UploadFile,
                         contentDescription = "Dosya",
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
+                        tint = colors.accent
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
@@ -232,14 +220,14 @@ fun TransferScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "PC'ye gönderiliyor...",
+                            text = "PC'ye aktarılıyor...",
                             fontSize = 12.sp,
-                            color = AccentCyan
+                            color = colors.accent
                         )
                         Text(
                             text = "${(uploadProgress * 100).toInt()}%",
                             fontSize = 12.sp,
-                            color = InkPrimary,
+                            color = colors.textPrimary,
                             fontFamily = FontFamily.Monospace
                         )
                     }
@@ -250,157 +238,62 @@ fun TransferScreen(
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
-                        color = AccentBlue,
-                        trackColor = DarkSurfaceRaised
+                        color = colors.accent,
+                        trackColor = colors.surfaceRaised
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // History Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // Recent Transfers List
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "Son Aktarılanlar (${transfers.size})",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextMuted
-            )
-            if (transfers.isNotEmpty()) {
-                Text(
-                    text = "PC: %APPDATA%/kapanis/transfers",
-                    fontSize = 10.sp,
-                    color = TextFaint,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
+            items(transfers, key = { it.id }) { item ->
+                val dateStr = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(item.createdAt))
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Transfers List
-        if (transfers.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Henüz aktarılan dosya yok.\nYukarıdaki butonlarla telefonunuzdan fotoğraf veya belge seçin.",
-                    color = TextFaint,
-                    fontSize = 13.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    lineHeight = 18.sp
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(transfers, key = { it.id }) { item ->
-                    GlassCard(
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = colors.surfaceRaised
+                ) {
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = DarkSurfaceRaised,
-                        borderColor = RuleColor,
-                        contentPadding = 10.dp
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.accent.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            // Icon or Image
-                            if (item.isImage) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(DarkPaper)
-                                ) {
-                                    val imageUrl = "http://${target.host}:${target.port}/api/media/${item.filename}"
-                                    AsyncImage(
-                                        model = imageUrl,
-                                        contentDescription = item.filename,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(DarkSurface),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Description,
-                                        contentDescription = "Dosya",
-                                        tint = TextMuted,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                            }
+                            Icon(
+                                imageVector = if (item.isImage) Icons.Rounded.Image else Icons.Rounded.FilePresent,
+                                contentDescription = null,
+                                tint = colors.accent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
 
-                            // Details
-                            Column(
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = item.filename,
-                                    color = InkPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                ) {
-                                    Text(
-                                        text = formatBytes(item.size),
-                                        color = TextFaint,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(text = "•", color = TextFaint, fontSize = 10.sp)
-                                    val timeStr = remember(item.createdAt) {
-                                        val sdf = SimpleDateFormat("HH:mm", Locale("tr"))
-                                        sdf.format(Date(item.createdAt))
-                                    }
-                                    Text(
-                                        text = timeStr,
-                                        color = TextFaint,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
+                        Spacer(modifier = Modifier.width(12.dp))
 
-                            // Delete Action
-                            IconButton(
-                                onClick = {
-                                    onTransfersUpdated(transfers.filter { it.id != item.id })
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Delete,
-                                    contentDescription = "Sil",
-                                    tint = TextFaint,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.filename,
+                                color = colors.textPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${formatBytes(item.size)} · $dateStr",
+                                color = colors.textFaint,
+                                fontSize = 11.sp
+                            )
                         }
                     }
                 }

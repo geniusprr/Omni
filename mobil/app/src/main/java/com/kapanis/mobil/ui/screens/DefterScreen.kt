@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material3.Button
@@ -37,11 +38,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,15 +48,7 @@ import com.kapanis.mobil.data.ConnectionTarget
 import com.kapanis.mobil.data.NoteItem
 import com.kapanis.mobil.network.KapanisApiClient
 import com.kapanis.mobil.ui.components.GlassCard
-import com.kapanis.mobil.ui.theme.AccentBlue
-import com.kapanis.mobil.ui.theme.AccentInk
-import com.kapanis.mobil.ui.theme.DarkPaper
-import com.kapanis.mobil.ui.theme.DarkSurface
-import com.kapanis.mobil.ui.theme.DarkSurfaceRaised
-import com.kapanis.mobil.ui.theme.InkPrimary
-import com.kapanis.mobil.ui.theme.RuleColor
-import com.kapanis.mobil.ui.theme.TextFaint
-import com.kapanis.mobil.ui.theme.TextMuted
+import com.kapanis.mobil.ui.theme.KapanisTheme
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -73,6 +64,7 @@ fun DefterScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+    val colors = KapanisTheme.colors
 
     var noteText by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
@@ -110,8 +102,9 @@ fun DefterScreen(
             val result = apiClient.fetchNotes(target.host, target.port)
             isRefreshing = false
             if (result.isSuccess) {
-                result.getOrNull()?.let { onNotesUpdated(it) }
-                Toast.makeText(context, "Defter güncellendi", Toast.LENGTH_SHORT).show()
+                val list = result.getOrDefault(emptyList())
+                onNotesUpdated(list)
+                Toast.makeText(context, "Defter senkronize edildi ✓", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(context, "Notlar alınamadı", Toast.LENGTH_SHORT).show()
             }
@@ -121,205 +114,149 @@ fun DefterScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkPaper)
+            .background(colors.paper)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        // Quick note input
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = DarkSurface
-        ) {
-            OutlinedTextField(
-                value = noteText,
-                onValueChange = { noteText = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(100.dp),
-                placeholder = {
-                    Text(
-                        text = "Hızlı not veya panodaki metni yaz...",
-                        color = TextFaint,
-                        fontSize = 14.sp
-                    )
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedTextColor = InkPrimary,
-                    unfocusedTextColor = InkPrimary
-                )
-            )
-
+        // Send Note Input Card
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (noteText.isNotEmpty()) "${noteText.length} harf" else "",
-                    fontSize = 11.sp,
-                    color = TextFaint,
-                    fontFamily = FontFamily.Monospace
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Description,
+                        contentDescription = null,
+                        tint = colors.accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "PC Defterine Hızlı Not",
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
 
-                Button(
-                    onClick = { sendNoteToPc() },
-                    enabled = noteText.isNotBlank() && !isSending,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentBlue,
-                        contentColor = AccentInk,
-                        disabledContainerColor = DarkSurfaceRaised,
-                        disabledContentColor = TextFaint
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                IconButton(
+                    onClick = { refreshNotes() },
+                    modifier = Modifier.size(32.dp)
                 ) {
-                    if (isSending) {
+                    if (isRefreshing) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
-                            color = AccentInk,
+                            color = colors.accent,
                             strokeWidth = 2.dp
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Rounded.Send,
-                            contentDescription = "Gönder",
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "PC'ye Aktar",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Yenile",
+                            tint = colors.textMuted,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-        // Header for list
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Kayıtlı Notlar (${notes.size})",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextMuted
+            OutlinedTextField(
+                value = noteText,
+                onValueChange = { noteText = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("PC'ye aktarmak istediğiniz notu yazın...", color = colors.textFaint, fontSize = 13.sp) },
+                minLines = 3,
+                maxLines = 6,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = colors.surfaceRaised,
+                    unfocusedContainerColor = colors.surfaceRaised,
+                    focusedBorderColor = colors.accent,
+                    unfocusedBorderColor = colors.border,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary
+                ),
+                shape = RoundedCornerShape(10.dp)
             )
 
-            IconButton(
-                onClick = { refreshNotes() },
-                modifier = Modifier.size(28.dp)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = { sendNoteToPc() },
+                enabled = !isSending && noteText.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent,
+                    contentColor = colors.accentInk
+                ),
+                shape = RoundedCornerShape(10.dp)
             ) {
-                if (isRefreshing) {
+                if (isSending) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        color = AccentBlue,
+                        modifier = Modifier.size(16.dp),
+                        color = colors.accentInk,
                         strokeWidth = 2.dp
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Gönderiliyor...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 } else {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Yenile",
-                        tint = TextMuted,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Icon(imageVector = Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "PC Defterine Kaydet", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // Notes list
-        if (notes.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Henüz not bulunmuyor.\nYukarıdan yazıp anında PC'ye gönderebilirsiniz.",
-                    color = TextFaint,
-                    fontSize = 13.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    lineHeight = 18.sp
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(notes, key = { it.id }) { note ->
-                    GlassCard(
+        // Synced Notes List
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(notes, key = { it.id }) { note ->
+                val dateStr = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(note.updatedAt))
+
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = colors.surfaceRaised
+                ) {
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = DarkSurfaceRaised,
-                        borderColor = RuleColor
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Text(
-                            text = note.content,
-                            color = InkPrimary,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp
-                        )
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val timeStr = remember(note.createdAt) {
-                                val sdf = SimpleDateFormat("dd MMM HH:mm", Locale("tr"))
-                                sdf.format(Date(note.createdAt))
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = timeStr,
-                                fontSize = 11.sp,
-                                color = TextFaint,
-                                fontFamily = FontFamily.Monospace
+                                text = note.content,
+                                color = colors.textPrimary,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = dateStr,
+                                color = colors.textFaint,
+                                fontSize = 11.sp
+                            )
+                        }
 
-                            Row {
-                                IconButton(
-                                    onClick = {
-                                        clipboard.setText(AnnotatedString(note.content))
-                                        Toast.makeText(context, "Kopyalandı", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ContentCopy,
-                                        contentDescription = "Kopyala",
-                                        tint = TextMuted,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        onNotesUpdated(notes.filter { it.id != note.id })
-                                    },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Delete,
-                                        contentDescription = "Sil",
-                                        tint = TextFaint,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(note.content))
+                                    Toast.makeText(context, "Not kopyalandı ✓", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ContentCopy,
+                                    contentDescription = "Kopyala",
+                                    tint = colors.textMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
                     }

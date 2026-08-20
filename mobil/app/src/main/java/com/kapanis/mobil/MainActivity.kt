@@ -5,6 +5,10 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.kapanis.mobil.data.ConnectionMode
 import com.kapanis.mobil.data.ConnectionTarget
 import com.kapanis.mobil.data.PreferencesManager
@@ -23,16 +27,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         prefs = PreferencesManager(this)
-
         val initialTarget = parseIntentUri(intent?.data)
 
         setContent {
-            KapanisTheme {
+            var currentTheme by remember { mutableStateOf(prefs.themeMode) }
+
+            KapanisTheme(darkTheme = currentTheme == "dark") {
                 MainScreen(
                     prefs = prefs,
                     apiClient = apiClient,
                     supabaseClient = supabaseClient,
-                    initialTarget = initialTarget
+                    initialTarget = initialTarget,
+                    currentTheme = currentTheme,
+                    onToggleTheme = {
+                        val next = if (currentTheme == "dark") "light" else "dark"
+                        prefs.themeMode = next
+                        currentTheme = next
+                    }
                 )
             }
         }
@@ -46,12 +57,20 @@ class MainActivity : ComponentActivity() {
             prefs.port = target.port
             prefs.deviceName = target.deviceName
             setContent {
-                KapanisTheme {
+                var currentTheme by remember { mutableStateOf(prefs.themeMode) }
+
+                KapanisTheme(darkTheme = currentTheme == "dark") {
                     MainScreen(
                         prefs = prefs,
                         apiClient = apiClient,
                         supabaseClient = supabaseClient,
-                        initialTarget = target
+                        initialTarget = target,
+                        currentTheme = currentTheme,
+                        onToggleTheme = {
+                            val next = if (currentTheme == "dark") "light" else "dark"
+                            prefs.themeMode = next
+                            currentTheme = next
+                        }
                     )
                 }
             }

@@ -1,6 +1,7 @@
 package com.kapanis.mobil.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,16 +64,7 @@ import com.kapanis.mobil.network.LanScanner
 import com.kapanis.mobil.network.NetworkUtils
 import com.kapanis.mobil.network.SupabaseRemoteClient
 import com.kapanis.mobil.ui.components.GlassCard
-import com.kapanis.mobil.ui.theme.AccentBlue
-import com.kapanis.mobil.ui.theme.AccentInk
-import com.kapanis.mobil.ui.theme.DangerRed
-import com.kapanis.mobil.ui.theme.DarkPaper
-import com.kapanis.mobil.ui.theme.DarkSurface
-import com.kapanis.mobil.ui.theme.DarkSurfaceRaised
-import com.kapanis.mobil.ui.theme.InkPrimary
-import com.kapanis.mobil.ui.theme.RuleColor
-import com.kapanis.mobil.ui.theme.TextFaint
-import com.kapanis.mobil.ui.theme.TextMuted
+import com.kapanis.mobil.ui.theme.KapanisTheme
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -93,6 +85,7 @@ fun PairingDetailsModal(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val colors = KapanisTheme.colors
 
     var pairedList by remember { mutableStateOf(prefs.getPairedDevices()) }
     var currentWifiName by remember { mutableStateOf(NetworkUtils.getCurrentWifiName(context)) }
@@ -154,7 +147,6 @@ fun PairingDetailsModal(
                 prefs.wifiSsid = wifi
                 prefs.mode = ConnectionMode.LOCAL
 
-                // Register phone with PC immediately
                 apiClient.registerDevice(
                     host = host,
                     port = port,
@@ -227,7 +219,7 @@ fun PairingDetailsModal(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = DarkPaper,
+        containerColor = colors.paper,
         dragHandle = null
     ) {
         Column(
@@ -248,12 +240,12 @@ fun PairingDetailsModal(
                         text = "Eşleşme & Cihaz Yönetimi",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = InkPrimary
+                        color = colors.textPrimary
                     )
                     Text(
                         text = "Bağlı cihazlar ve Wi-Fi detayları",
                         fontSize = 12.sp,
-                        color = TextMuted
+                        color = colors.textMuted
                     )
                 }
 
@@ -261,17 +253,14 @@ fun PairingDetailsModal(
                     onClick = onDismiss,
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Icon(imageVector = Icons.Rounded.Close, contentDescription = "Kapat", tint = TextMuted)
+                    Icon(imageVector = Icons.Rounded.Close, contentDescription = "Kapat", tint = colors.textMuted)
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Current Wi-Fi Network Info Card
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                backgroundColor = DarkSurface
-            ) {
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -279,10 +268,10 @@ fun PairingDetailsModal(
                     Box(
                         modifier = Modifier
                             .size(38.dp)
-                            .background(AccentBlue.copy(alpha = 0.15f), CircleShape),
+                            .background(colors.accent.copy(alpha = 0.15f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(imageVector = Icons.Rounded.Wifi, contentDescription = null, tint = AccentBlue, modifier = Modifier.size(20.dp))
+                        Icon(imageVector = Icons.Rounded.Wifi, contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
@@ -291,20 +280,20 @@ fun PairingDetailsModal(
                         Text(
                             text = "Mevcut Wi-Fi Ağı",
                             fontSize = 11.sp,
-                            color = TextMuted,
+                            color = colors.textMuted,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = currentWifiName,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = InkPrimary
+                            color = colors.textPrimary
                         )
                         if (localIp.isNotEmpty()) {
                             Text(
                                 text = "Telefon IP: $localIp",
                                 fontSize = 11.sp,
-                                color = TextFaint
+                                color = colors.textFaint
                             )
                         }
                     }
@@ -313,14 +302,15 @@ fun PairingDetailsModal(
                         onClick = { scanLan() },
                         enabled = !isScanning,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = DarkSurfaceRaised,
-                            contentColor = AccentBlue
+                            containerColor = colors.surfaceRaised,
+                            contentColor = colors.accent
                         ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(34.dp)
+                        border = BorderStroke(1.dp, colors.border),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.height(36.dp)
                     ) {
                         if (isScanning) {
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = AccentBlue, strokeWidth = 2.dp)
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = colors.accent, strokeWidth = 2.dp)
                         } else {
                             Icon(imageVector = Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -330,14 +320,14 @@ fun PairingDetailsModal(
                 }
             }
 
-            // Scanned Discovered Devices (if any)
+            // Scanned Discovered Devices
             if (scannedDevices.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "Ağda Bulunan Bilgisayarlar (${scannedDevices.size})",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = AccentBlue,
+                    color = colors.accent,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                 )
 
@@ -345,9 +335,9 @@ fun PairingDetailsModal(
                     GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable { connectLocal(ip, status.port) },
-                        backgroundColor = DarkSurfaceRaised
+                            .padding(vertical = 4.dp),
+                        backgroundColor = colors.surfaceRaised,
+                        onClick = { connectLocal(ip, status.port) }
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -355,14 +345,14 @@ fun PairingDetailsModal(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column {
-                                Text(text = status.deviceName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = InkPrimary)
-                                Text(text = "$ip:${status.port}", fontSize = 11.sp, color = TextMuted)
+                                Text(text = status.deviceName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                                Text(text = "$ip:${status.port}", fontSize = 11.sp, color = colors.textMuted)
                             }
                             Button(
                                 onClick = { connectLocal(ip, status.port) },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = AccentInk),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.height(28.dp)
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.accent, contentColor = colors.accentInk),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.height(30.dp)
                             ) {
                                 Text("Bağlan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
@@ -378,32 +368,24 @@ fun PairingDetailsModal(
                 text = "Eşleşilen Cihazlar Geçmişi (${pairedList.size})",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = InkPrimary,
+                color = colors.textPrimary,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             )
 
             if (pairedList.isEmpty()) {
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = DarkSurface
-                ) {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(imageVector = Icons.Rounded.Devices, contentDescription = null, tint = TextFaint, modifier = Modifier.size(32.dp))
+                        Icon(imageVector = Icons.Rounded.Devices, contentDescription = null, tint = colors.textFaint, modifier = Modifier.size(32.dp))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Henüz eşleşmiş bir cihaz kaydı yok.",
                             fontSize = 12.sp,
-                            color = TextMuted
-                        )
-                        Text(
-                            text = "Aşağıdaki IP veya Eşleştirme Kodu ile hemen bağlanın.",
-                            fontSize = 11.sp,
-                            color = TextFaint
+                            color = colors.textMuted
                         )
                     }
                 }
@@ -420,13 +402,9 @@ fun PairingDetailsModal(
                     GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .border(
-                                width = if (isCurrent) 1.dp else 0.dp,
-                                color = if (isCurrent) AccentBlue else Color.Transparent,
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        backgroundColor = if (isCurrent) DarkSurfaceRaised else DarkSurface
+                            .padding(vertical = 4.dp),
+                        borderColor = if (isCurrent) colors.accent else colors.border,
+                        backgroundColor = if (isCurrent) colors.surfaceRaised else colors.surfaceGlass
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -436,8 +414,8 @@ fun PairingDetailsModal(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .background(
-                                        if (dev.mode == ConnectionMode.LOCAL) AccentBlue.copy(alpha = 0.15f)
-                                        else Color(0xFF10B981).copy(alpha = 0.15f),
+                                        if (dev.mode == ConnectionMode.LOCAL) colors.accent.copy(alpha = 0.15f)
+                                        else colors.success.copy(alpha = 0.15f),
                                         CircleShape
                                     ),
                                 contentAlignment = Alignment.Center
@@ -445,7 +423,7 @@ fun PairingDetailsModal(
                                 Icon(
                                     imageVector = if (dev.mode == ConnectionMode.LOCAL) Icons.Rounded.Laptop else Icons.Rounded.Cloud,
                                     contentDescription = null,
-                                    tint = if (dev.mode == ConnectionMode.LOCAL) AccentBlue else Color(0xFF10B981),
+                                    tint = if (dev.mode == ConnectionMode.LOCAL) colors.accent else colors.success,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -458,17 +436,17 @@ fun PairingDetailsModal(
                                         text = dev.name,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = InkPrimary
+                                        color = colors.textPrimary
                                     )
                                     if (isCurrent) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Surface(
-                                            color = AccentBlue.copy(alpha = 0.2f),
+                                            color = colors.accent.copy(alpha = 0.2f),
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
                                             Text(
                                                 text = "Aktif",
-                                                color = AccentBlue,
+                                                color = colors.accent,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
@@ -478,16 +456,16 @@ fun PairingDetailsModal(
                                 }
 
                                 Text(
-                                    text = if (dev.mode == ConnectionMode.LOCAL) "Wi-Fi: ${dev.wifiSsid.ifEmpty { "Yerel Ağ" }} · ${dev.host}:${dev.port}"
-                                           else "Bulut (Supabase) · Kod: ${dev.pairingCode}",
+                                    text = if (dev.mode == ConnectionMode.LOCAL) "Wi-Fi · ${dev.host}:${dev.port}"
+                                    else "Bulut (Supabase) · Kod: ${dev.pairingCode}",
                                     fontSize = 11.sp,
-                                    color = TextMuted
+                                    color = colors.textMuted
                                 )
 
                                 Text(
                                     text = "Son bağlantı: $dateStr",
                                     fontSize = 10.sp,
-                                    color = TextFaint
+                                    color = colors.textFaint
                                 )
                             }
 
@@ -499,11 +477,12 @@ fun PairingDetailsModal(
                                             else connectCloud(dev.pairingCode)
                                         },
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = DarkSurfaceRaised,
-                                            contentColor = InkPrimary
+                                            containerColor = colors.surfaceRaised,
+                                            contentColor = colors.textPrimary
                                         ),
-                                        shape = RoundedCornerShape(6.dp),
-                                        modifier = Modifier.height(28.dp)
+                                        border = BorderStroke(1.dp, colors.border),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(30.dp)
                                     ) {
                                         Text("Bağlan", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                     }
@@ -516,7 +495,7 @@ fun PairingDetailsModal(
                                     },
                                     modifier = Modifier.size(32.dp)
                                 ) {
-                                    Icon(imageVector = Icons.Rounded.Delete, contentDescription = "Sil", tint = TextFaint, modifier = Modifier.size(16.dp))
+                                    Icon(imageVector = Icons.Rounded.Delete, contentDescription = "Sil", tint = colors.textFaint, modifier = Modifier.size(16.dp))
                                 }
                             }
                         }
@@ -526,30 +505,27 @@ fun PairingDetailsModal(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Connect New PC Section (Tabs / Forms)
+            // Connect New PC Section (Forms)
             Text(
                 text = "Yeni Cihaz Bağla",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = InkPrimary,
+                color = colors.textPrimary,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             )
 
-            // Local Wi-Fi Connection Form
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                backgroundColor = DarkSurface
-            ) {
+            // Local Wi-Fi Form
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "Yerel Ağ (Wi-Fi) ile Bağlan",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    color = AccentBlue
+                    color = colors.accent
                 )
                 Text(
                     text = "Bilgisayarınızdaki kapanış. programındaki IP adresini girin.",
                     fontSize = 11.sp,
-                    color = TextMuted,
+                    color = colors.textMuted,
                     modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
                 )
 
@@ -561,34 +537,34 @@ fun PairingDetailsModal(
                         value = manualHost,
                         onValueChange = { manualHost = it },
                         modifier = Modifier.weight(2.5f),
-                        placeholder = { Text("192.168.1.xxx", color = TextFaint, fontSize = 12.sp) },
+                        placeholder = { Text("192.168.1.xxx", color = colors.textFaint, fontSize = 12.sp) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = DarkSurfaceRaised,
-                            unfocusedContainerColor = DarkSurfaceRaised,
-                            focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = RuleColor,
-                            focusedTextColor = InkPrimary,
-                            unfocusedTextColor = InkPrimary
+                            focusedContainerColor = colors.surfaceRaised,
+                            unfocusedContainerColor = colors.surfaceRaised,
+                            focusedBorderColor = colors.accent,
+                            unfocusedBorderColor = colors.border,
+                            focusedTextColor = colors.textPrimary,
+                            unfocusedTextColor = colors.textPrimary
                         ),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(10.dp)
                     )
 
                     OutlinedTextField(
                         value = manualPort,
                         onValueChange = { manualPort = it },
                         modifier = Modifier.weight(1.2f),
-                        placeholder = { Text("53317", color = TextFaint, fontSize = 12.sp) },
+                        placeholder = { Text("53317", color = colors.textFaint, fontSize = 12.sp) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = DarkSurfaceRaised,
-                            unfocusedContainerColor = DarkSurfaceRaised,
-                            focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = RuleColor,
-                            focusedTextColor = InkPrimary,
-                            unfocusedTextColor = InkPrimary
+                            focusedContainerColor = colors.surfaceRaised,
+                            unfocusedContainerColor = colors.surfaceRaised,
+                            focusedBorderColor = colors.accent,
+                            unfocusedBorderColor = colors.border,
+                            focusedTextColor = colors.textPrimary,
+                            unfocusedTextColor = colors.textPrimary
                         ),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(10.dp)
                     )
                 }
 
@@ -600,15 +576,15 @@ fun PairingDetailsModal(
                         connectLocal(manualHost.trim(), port)
                     },
                     enabled = manualHost.isNotBlank() && !isConnecting,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentBlue,
-                        contentColor = AccentInk
+                        containerColor = colors.accent,
+                        contentColor = colors.accentInk
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     if (isConnecting) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = AccentInk, strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = colors.accentInk, strokeWidth = 2.dp)
                     } else {
                         Text("Yerel Cihaza Bağlan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
@@ -618,20 +594,17 @@ fun PairingDetailsModal(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Cloud Supabase Pairing Code Form
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                backgroundColor = DarkSurface
-            ) {
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "Çevrim İçi (Bulut / Supabase) ile Bağlan",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF10B981)
+                    color = colors.success
                 )
                 Text(
                     text = "PC Ayarlar sayfasındaki 6 haneli eşleştirme kodunu girin.",
                     fontSize = 11.sp,
-                    color = TextMuted,
+                    color = colors.textMuted,
                     modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
                 )
 
@@ -639,17 +612,17 @@ fun PairingDetailsModal(
                     value = cloudPairingCode,
                     onValueChange = { cloudPairingCode = it.uppercase() },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Örn: KPN-782", color = TextFaint, fontSize = 13.sp) },
+                    placeholder = { Text("Örn: KAP-782", color = colors.textFaint, fontSize = 13.sp) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = DarkSurfaceRaised,
-                        unfocusedContainerColor = DarkSurfaceRaised,
-                        focusedBorderColor = Color(0xFF10B981),
-                        unfocusedBorderColor = RuleColor,
-                        focusedTextColor = InkPrimary,
-                        unfocusedTextColor = InkPrimary
+                        focusedContainerColor = colors.surfaceRaised,
+                        unfocusedContainerColor = colors.surfaceRaised,
+                        focusedBorderColor = colors.success,
+                        unfocusedBorderColor = colors.border,
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp)
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -657,15 +630,15 @@ fun PairingDetailsModal(
                 Button(
                     onClick = { connectCloud(cloudPairingCode) },
                     enabled = cloudPairingCode.isNotBlank() && !isConnecting,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF10B981),
-                        contentColor = Color.Black
+                        containerColor = colors.success,
+                        contentColor = colors.accentInk
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     if (isConnecting) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = colors.accentInk, strokeWidth = 2.dp)
                     } else {
                         Text("Bulut Cihazı ile Eşleştir", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }

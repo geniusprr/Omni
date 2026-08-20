@@ -21,6 +21,10 @@ class PreferencesManager(context: Context) {
         }
         set(value) = prefs.edit().putString("connection_mode", value.name).apply()
 
+    var themeMode: String
+        get() = prefs.getString("theme_mode", "dark") ?: "dark"
+        set(value) = prefs.edit().putString("theme_mode", value).apply()
+
     // Local LAN Settings
     var host: String
         get() = prefs.getString("server_host", "192.168.1.100") ?: "192.168.1.100"

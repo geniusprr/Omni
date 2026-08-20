@@ -4,11 +4,13 @@ import Check from 'lucide-react/dist/esm/icons/check.js'
 import Clock3 from 'lucide-react/dist/esm/icons/clock-3.js'
 import Laptop from 'lucide-react/dist/esm/icons/laptop.js'
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js'
+import Moon from 'lucide-react/dist/esm/icons/moon.js'
 import Power from 'lucide-react/dist/esm/icons/power.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
 import RotateCw from 'lucide-react/dist/esm/icons/rotate-cw.js'
 import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js'
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js'
+import Sun from 'lucide-react/dist/esm/icons/sun.js'
 import Wifi from 'lucide-react/dist/esm/icons/wifi.js'
 import WifiOff from 'lucide-react/dist/esm/icons/wifi-off.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
@@ -34,6 +36,16 @@ interface StoredPairingInfo {
 }
 
 export function RemoteControllerView() {
+  const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('kapanis_remote_theme') as 'dark' | 'light') || 'dark'
+  })
+
+  function toggleTheme() {
+    const next = themeMode === 'dark' ? 'light' : 'dark'
+    setThemeMode(next)
+    localStorage.setItem('kapanis_remote_theme', next)
+  }
+
   const [pairingInfo, setPairingInfo] = useState<StoredPairingInfo | null>(() => {
     try {
       const item = localStorage.getItem('kapanis_remote_pair')
@@ -228,10 +240,20 @@ export function RemoteControllerView() {
 
   if (!pairingInfo) {
     return (
-      <div className="remote-container">
+      <div className={`remote-container ${themeMode === 'light' ? 'remote-container--light' : 'remote-container--dark'}`}>
         <div className="remote-card">
           <header className="remote-header">
-            <div className="brand-mark"><span /></div>
+            <div className="remote-header-top-row">
+              <div className="brand-mark"><span /></div>
+              <button
+                type="button"
+                className="remote-theme-btn"
+                onClick={toggleTheme}
+                title={themeMode === 'dark' ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
+              >
+                {themeMode === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+              </button>
+            </div>
             <h2>kapanış. Remote</h2>
             <p>Bilgisayarını telefonundan veya başka bir cihazdan yönet.</p>
           </header>
@@ -280,7 +302,7 @@ export function RemoteControllerView() {
   }
 
   return (
-    <div className="remote-container">
+    <div className={`remote-container ${themeMode === 'light' ? 'remote-container--light' : 'remote-container--dark'}`}>
       <div className="remote-card remote-card--active">
         {/* Device Status Top Bar */}
         <header className="remote-active-header">
@@ -303,6 +325,9 @@ export function RemoteControllerView() {
             </div>
           </div>
           <div className="remote-header-actions">
+            <Button size="compact" variant="ghost" title="Tema Değiştir" onClick={toggleTheme}>
+              {themeMode === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+            </Button>
             <Button size="compact" variant="ghost" title="Yenile" onClick={() => void handleRefreshState()}>
               <RefreshCw size={14} />
             </Button>
