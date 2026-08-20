@@ -1,16 +1,16 @@
-kapanış. 1.0.0 — Windows x64 release
-Build date: 2026-08-19
+kapanış. 1.1.0 — Windows x64 release
+Build date: 2026-08-20
 
 Installer
-  File: kapanış._1.0.0_x64-setup.exe
-  Size: 4,019,975 bytes (3.83 MiB)
-  SHA-256: F9BFB21D9426CE501EC895D2FB122AB91114D8F7992E58B03436C5F838203117
+  File: kapanış._1.1.0_x64-setup.exe
+  Size: 5,467,027 bytes (5.21 MiB)
+  SHA-256: 11BF091065EE9B85CF5D16E858468107E9351A9E8B81E452B63A61BA462C26A5
   Authenticode: NotSigned
 
 Portable release executable
   File: kapanis.exe
-  Size: 9,620,992 bytes (9.18 MiB)
-  SHA-256: 2EBE73687E36B09A430C5887B2131ABB1926B511B347B554715228C0B530EEB9
+  Size: 12,923,904 bytes (12.32 MiB)
+  SHA-256: 27C80766E0A071506D183B8B78F13019FF907775542D9480053C45E7E62E1486
   Authenticode: NotSigned
 
 Verification

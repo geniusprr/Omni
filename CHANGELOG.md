@@ -1,5 +1,13 @@
 # Değişiklikler
 
+## 1.1.0 — 2026-08-20
+
+- Mini OS Ana Sayfa & Özelleştirilebilir Widget'lar (YouTube Müzik, Hava Durumu, Başlık Çubuğu Mini Oynatıcı)
+- Yerel Dosya Transferi (LocalSend protokolü entegrasyonu ve cihaz keşfi)
+- Markdown & Vault Not Defteri (Çift yönlü bağlantılar [[wikilinks]], Canlı Önizleme / Okuma modu, Grafik Görünümü, Hızlı Arama)
+- Gelişmiş Ayarlar ve Cihaz Eşleştirme Yönetimi
+- Yeni Tipografi & Değişken Yazı Tipleri (Plus Jakarta Sans, Geist, Outfit, Bricolage Grotesque)
+
 ## 1.0.0 — 2026-08-19
 
 - Windows kapatma ve yeniden başlatma sayacı
