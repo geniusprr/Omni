@@ -16,7 +16,11 @@ import {
   useMusicPlayer,
 } from './musicStore'
 
-export function TitlebarMiniPlayer() {
+export interface TitlebarMiniPlayerProps {
+  onOpenStudio?: () => void
+}
+
+export function TitlebarMiniPlayer({ onOpenStudio }: TitlebarMiniPlayerProps = {}) {
   const {
     activeTrack,
     currentPresetIndex,
@@ -27,7 +31,6 @@ export function TitlebarMiniPlayer() {
     volume,
     currentTime,
     duration,
-    isExpandedModalOpen,
     togglePlay,
     playTrack,
     nextTrack,
@@ -193,12 +196,12 @@ export function TitlebarMiniPlayer() {
           <ListMusic size={13} />
         </button>
 
-        {/* Expand Detailed Modal Button */}
+        {/* Expand Detailed Studio Button */}
         <button
           type="button"
           className="titlebar-player-btn"
-          onClick={() => setExpandedModalOpen(true)}
-          title="Tam Ekran YouTube Music"
+          onClick={() => (onOpenStudio ? onOpenStudio() : setExpandedModalOpen(true))}
+          title="YouTube Music Ekranını Aç"
           aria-label="Genişlet"
         >
           <Maximize2 size={13} />
@@ -239,13 +242,13 @@ export function TitlebarMiniPlayer() {
           <div className="tb-presets-list">
             <span className="tb-presets-label">Hazır İstasyonlar</span>
             {MUSIC_PRESETS.map((preset, idx) => {
-              const isSelected = !customPreset && currentPresetIndex === idx
+              const isSelected = activeTrack.youtubeId === preset.youtubeId
               return (
                 <div
                   key={preset.id}
                   className={`tb-preset-item ${isSelected ? 'tb-preset-item--active' : ''}`}
                   onClick={() => {
-                    playTrack(idx)
+                    playTrack(preset)
                     setShowPresetsPopover(false)
                   }}
                 >
@@ -264,64 +267,6 @@ export function TitlebarMiniPlayer() {
                 </div>
               )
             })}
-          </div>
-        </div>
-      )}
-
-      {/* Detailed YouTube Music Modal */}
-      {isExpandedModalOpen && (
-        <div
-          className="yt-modal-overlay"
-          onClick={() => setExpandedModalOpen(false)}
-        >
-          <div
-            className="yt-modal-content"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="yt-modal-header">
-              <div className="yt-modal-title-group">
-                <div className="yt-badge" style={{ backgroundColor: '#ef4444' }}>
-                  <Youtube size={14} className="text-white fill-current" />
-                  <span>YouTube Music Detaylı Ekran</span>
-                </div>
-                <span className="yt-modal-hint">
-                  Google hesabınızla giriş yapabilir, tüm kitaplığınızı yönetebilirsiniz.
-                </span>
-              </div>
-
-              <div className="yt-modal-header-actions">
-                <a
-                  href="https://music.youtube.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="yt-modal-btn-link"
-                >
-                  <ExternalLink size={13} />
-                  <span>Tarayıcıda Aç</span>
-                </a>
-
-                <button
-                  type="button"
-                  className="yt-modal-close"
-                  onClick={() => setExpandedModalOpen(false)}
-                  aria-label="Kapat"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-
-            <div className="yt-modal-iframe-wrapper">
-              <iframe
-                src="https://music.youtube.com"
-                title="YouTube Music Detailed View"
-                className="yt-modal-iframe"
-                allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-presentation"
-              />
-            </div>
           </div>
         </div>
       )}

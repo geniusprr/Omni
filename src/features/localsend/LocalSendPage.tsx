@@ -332,7 +332,7 @@ export function LocalSendPage() {
           {showManualAdd ? (
             <form className="localsend-manual-ip-bar" onSubmit={handleAddManual}>
               <div className="localsend-manual-input-wrap">
-                <Search size={13} className="text-zinc-400" />
+                <Search size={13} className="localsend-manual-search-icon" />
                 <Input
                   placeholder="Örn: 192.168.1.45"
                   value={manualIp}
@@ -362,7 +362,7 @@ export function LocalSendPage() {
                   <div className="radar-ring radar-ring--2" />
                   <div className="radar-ring radar-ring--3" />
                   <div className="radar-core">
-                    <Radio size={22} className="text-blue-400 animate-pulse" />
+                    <Radio size={22} className="localsend-radar-pulse-icon animate-pulse" />
                   </div>
                 </div>
                 <h4 className="localsend-radar-heading">Cihaz Aranıyor…</h4>
@@ -608,7 +608,7 @@ export function LocalSendPage() {
               <div className="localsend-history-list">
                 {receivedFiles.length === 0 ? (
                   <div className="localsend-history-empty">
-                    <Download size={28} className="text-zinc-500" />
+                    <Download size={28} className="localsend-history-empty-icon" />
                     <strong>Henüz Gelen Veri Yok</strong>
                     <p>Diğer cihazlarınızdan bu bilgisayara gönderilen dosya ve metinler burada listelenir.</p>
                   </div>

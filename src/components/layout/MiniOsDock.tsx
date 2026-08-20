@@ -4,12 +4,13 @@ import Download from 'lucide-react/dist/esm/icons/download.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
+import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import Star from 'lucide-react/dist/esm/icons/star.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { RemoteConnectionStatus } from '@/types'
 
-export type MiniOsMode = 'home' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
+export type MiniOsMode = 'home' | 'music' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
 
 interface MiniOsDockProps {
   activeMode: MiniOsMode
@@ -30,7 +31,7 @@ export function MiniOsDock({
     <aside className="dock-rail" aria-label="Mini-OS Dock">
       <TooltipProvider delayDuration={300}>
         <div className="dock-pill-body">
-          {/* 1. Home / Dashboard (Dark rounded square when active) */}
+          {/* 1. Home / Dashboard */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -43,6 +44,21 @@ export function MiniOsDock({
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">Anasayfa</TooltipContent>
+          </Tooltip>
+
+          {/* 2. YouTube Music Studio (Dedicated Full Screen) */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`dock-btn ${activeMode === 'music' ? 'dock-btn--active' : ''}`}
+                onClick={() => onSelectMode('music')}
+                aria-label="YouTube Music"
+              >
+                <Music2 size={18} strokeWidth={2} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">YouTube Music</TooltipContent>
           </Tooltip>
 
           {/* 2. Star / Bookmarks / Favorites */}

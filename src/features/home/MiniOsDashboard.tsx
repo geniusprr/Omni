@@ -222,6 +222,7 @@ export function MiniOsDashboard({
             <YouTubeMusicWidget
               variant="tall"
               onHide={() => handleToggleMusicPlayer(false)}
+              onOpenStudio={() => onNavigate('music')}
             />
           </div>
         )}

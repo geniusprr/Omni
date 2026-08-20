@@ -4,6 +4,7 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
 import Minus from 'lucide-react/dist/esm/icons/minus.js'
+import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import Power from 'lucide-react/dist/esm/icons/power.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
@@ -37,6 +38,7 @@ const SCREEN_TITLES: Record<
   { label: string; icon: React.ComponentType<any>; color: string }
 > = {
   home: { label: 'Anasayfa', icon: Clock, color: 'text-sky-400' },
+  music: { label: 'YouTube Music Studio', icon: Music2, color: 'text-rose-400' },
   power: { label: 'Güç & Sayaç', icon: Power, color: 'text-amber-400' },
   alarms: { label: 'Alarmlar & Zamanlayıcı', icon: Clock, color: 'text-sky-400' },
   notes: { label: 'Notlar / Obsidian Vault', icon: FileText, color: 'text-emerald-400' },
@@ -255,7 +257,7 @@ export function MiniOsHeader({
 
         {/* Center: Compact Titlebar Mini Music Player */}
         <div className="header-compact-center" data-tauri-drag-region>
-          <TitlebarMiniPlayer />
+          <TitlebarMiniPlayer onOpenStudio={() => onSelectMode && onSelectMode('music')} />
         </div>
 
         {/* Right: Window Controls Capsule */}

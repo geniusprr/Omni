@@ -1,6 +1,7 @@
 package com.kapanis.mobil.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -67,7 +68,7 @@ fun QuickActionFab(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(Color.Black.copy(alpha = 0.4f))
                     .clickable { expanded = false }
             )
         }
@@ -77,16 +78,16 @@ fun QuickActionFab(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 84.dp, end = 16.dp)
+                .padding(bottom = 78.dp, end = 18.dp)
         ) {
             AnimatedVisibility(
                 visible = expanded,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
-                exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 })
+                enter = fadeIn(tween(140)) + slideInVertically(tween(140), initialOffsetY = { it / 2 }),
+                exit = fadeOut(tween(120)) + slideOutVertically(tween(120), targetOffsetY = { it / 2 })
             ) {
                 Column(
                     horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FabActionItem(
                         icon = Icons.Rounded.Timer,
@@ -123,7 +124,7 @@ fun QuickActionFab(
 
                     FabActionItem(
                         icon = Icons.Rounded.Alarm,
-                        label = "Hızlı Alarm Kur",
+                        label = "Hızlı Alarm (15 dk)",
                         containerColor = colors.surfaceRaised,
                         contentColor = colors.textPrimary,
                         onClick = {
@@ -134,9 +135,9 @@ fun QuickActionFab(
 
                     FabActionItem(
                         icon = Icons.Rounded.ContentPaste,
-                        label = "Panoyu PC'ye Aktar",
+                        label = "Panoyu PC'ye Yapıştır (Ctrl+V)",
                         containerColor = colors.surfaceRaised,
-                        contentColor = colors.textPrimary,
+                        contentColor = colors.accent,
                         onClick = {
                             expanded = false
                             onSendClipboard()
@@ -174,7 +175,7 @@ fun QuickActionFab(
                 containerColor = if (expanded) colors.surfaceRaised else colors.accent,
                 contentColor = if (expanded) colors.textPrimary else colors.accentInk,
                 shape = CircleShape,
-                modifier = Modifier.size(52.dp)
+                modifier = Modifier.size(54.dp)
             ) {
                 Icon(
                     imageVector = if (expanded) Icons.Rounded.Close else Icons.Rounded.Add,

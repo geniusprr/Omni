@@ -7,6 +7,7 @@ import { RingingOverlay } from '@/components/RingingOverlay'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
 import { GlobalMusicEngine } from '@/features/home/widgets/GlobalMusicEngine'
 import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
+import { YouTubeMusicPage } from '@/features/music/YouTubeMusicPage'
 import { LocalSendPage } from '@/features/localsend/LocalSendPage'
 import { NotesPage } from '@/features/notes/NotesPage'
 import { QuickSwitcherModal } from '@/features/notes/search/QuickSwitcherModal'
@@ -336,6 +337,12 @@ export default function App() {
                 isCustomizeOpen={isCustomizeWidgetsOpen}
                 onToggleCustomizeOpen={setIsCustomizeWidgetsOpen}
               />
+            )}
+
+            {mode === 'music' && (
+              <div className="minios-subscreen minios-subscreen--full">
+                <YouTubeMusicPage />
+              </div>
             )}
 
             {mode === 'power' && (
