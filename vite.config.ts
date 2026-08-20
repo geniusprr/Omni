@@ -18,14 +18,14 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: {
-      ignored: ['**/src-tauri/**'],
+      ignored: ['**/dist-electron/**'],
     },
   },
   clearScreen: false,
-  envPrefix: ['VITE_', 'TAURI_ENV_'],
+  envPrefix: ['VITE_'],
   build: {
-    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
-    sourcemap: Boolean(process.env.TAURI_ENV_DEBUG),
+    target: 'chrome120',
+    sourcemap: true,
     rollupOptions: {
       input: {
         main: path.resolve(rootDirectory, 'index.html'),

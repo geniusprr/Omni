@@ -9,8 +9,8 @@ import './styles/compact.css'
 
 function Splash() {
   return (
-    <div className="splash-window" data-tauri-drag-region>
-      <div className="splash-lockup" data-tauri-drag-region>
+    <div className="splash-window" data-window-drag>
+      <div className="splash-lockup" data-window-drag>
         <span className="splash-mark" aria-hidden="true" />
         <strong>kapanış.</strong>
         <span>yerel Windows aracı</span>

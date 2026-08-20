@@ -173,7 +173,7 @@ export function YouTubePlayer() {
       try {
         player?.destroy()
       } catch {
-        // The iframe may already have been removed by the WebView.
+        // The player mount may already have been removed by the renderer.
       }
     }
   }, [])
@@ -207,7 +207,7 @@ export function YouTubePlayer() {
           playerRef.current.getDuration() || 0,
         )
       } catch {
-        // The player may be between WebView navigation states.
+        // The player may be between renderer navigation states.
       }
     }, 500)
     return () => window.clearInterval(interval)
@@ -248,7 +248,7 @@ export function YouTubePlayer() {
         }
       }
     } catch {
-      // Media Session is optional in Tauri/WebView environments.
+      // Media Session is optional in Electron renderer environments.
       return undefined
     }
   }, [activeTrack])

@@ -81,7 +81,7 @@ export function NotesPage() {
       }
     })
 
-    // Listen to filesystem events emitted by Rust watcher
+    // Listen to filesystem events emitted by the Electron main-process watcher
     const unlistenFs = desktop.vault.onFsChange(() => {
       void vaultStore.reload()
     })

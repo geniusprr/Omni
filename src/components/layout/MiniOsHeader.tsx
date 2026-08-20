@@ -209,14 +209,14 @@ export function MiniOsHeader({
     return (
       <header
         className="header-compact-subscreen-bar"
-        data-tauri-drag-region
+        data-window-drag
         onDoubleClick={handleDoubleClick}
       >
-        <div className="header-compact-left" data-tauri-drag-region />
-        <div className="header-compact-center" data-tauri-drag-region />
+        <div className="header-compact-left" data-window-drag />
+        <div className="header-compact-center" data-window-drag />
 
         {/* Right: Window Controls Capsule */}
-        <div className="header-compact-right" data-tauri-drag-region>
+        <div className="header-compact-right" data-window-drag>
           {actionCapsule}
         </div>
       </header>
@@ -227,11 +227,11 @@ export function MiniOsHeader({
   return (
     <header
       className="header-top-row"
-      data-tauri-drag-region
+      data-window-drag
       onDoubleClick={handleDoubleClick}
     >
       {/* Top Left: User Greeting Pill */}
-      <div className="header-left-col" data-tauri-drag-region>
+      <div className="header-left-col" data-window-drag>
         <div className="user-greeting-pill">
           <span>{greeting}, {userName || 'Genius'}</span>
           <span className="waving-hand" aria-hidden="true">👋</span>
@@ -239,12 +239,12 @@ export function MiniOsHeader({
       </div>
 
       {/* Top Center: Big Bold Clock & Spotlight In-App Search Bar */}
-      <div className="header-center-col" data-tauri-drag-region>
-        <div className="center-clock-block" data-tauri-drag-region>
-          <div className="big-clock-digits" data-tauri-drag-region>
+      <div className="header-center-col" data-window-drag>
+        <div className="center-clock-block" data-window-drag>
+          <div className="big-clock-digits" data-window-drag>
             <span className="digits-main">{timeFormatted}</span>
           </div>
-          <div className="clock-date-line" data-tauri-drag-region>
+          <div className="clock-date-line" data-window-drag>
             {dateFormatted}
           </div>
         </div>
@@ -276,7 +276,7 @@ export function MiniOsHeader({
       </div>
 
       {/* Top Right: Controls Capsule & Live Weather Widget */}
-      <div className="header-right-col" data-tauri-drag-region>
+      <div className="header-right-col" data-window-drag>
         {actionCapsule}
 
         {/* Live Weather Card with Geolocation */}

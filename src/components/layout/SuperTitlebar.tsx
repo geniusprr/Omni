@@ -57,8 +57,8 @@ export function SuperTitlebar({
   }
 
   return (
-    <header className="super-titlebar" data-tauri-drag-region>
-      <div className="super-titlebar__left" data-tauri-drag-region>
+    <header className="super-titlebar" data-window-drag>
+      <div className="super-titlebar__left" data-window-drag>
         {/* Sidebar Toggle */}
         <TooltipProvider delayDuration={500}>
           <Tooltip>
@@ -77,7 +77,7 @@ export function SuperTitlebar({
         </TooltipProvider>
 
         {/* History Nav */}
-        <div className="titlebar-history-group" data-tauri-drag-region>
+        <div className="titlebar-history-group" data-window-drag>
           <button
             type="button"
             className="titlebar-icon-btn"
@@ -234,14 +234,14 @@ export function SuperTitlebar({
       </div>
 
       {/* Center Breadcrumb */}
-      <div className="super-titlebar__center" data-tauri-drag-region>
-        <span className="titlebar-app-name" data-tauri-drag-region>kapanış.</span>
-        <span className="titlebar-sep" data-tauri-drag-region>·</span>
-        <span className="titlebar-active-mode" data-tauri-drag-region>{modeLabels[activeMode] || activeMode}</span>
+      <div className="super-titlebar__center" data-window-drag>
+        <span className="titlebar-app-name" data-window-drag>kapanış.</span>
+        <span className="titlebar-sep" data-window-drag>·</span>
+        <span className="titlebar-active-mode" data-window-drag>{modeLabels[activeMode] || activeMode}</span>
       </div>
 
       {/* Right Controls */}
-      <div className="super-titlebar__right" data-tauri-drag-region>
+      <div className="super-titlebar__right" data-window-drag>
         {/* Quick Search Button */}
         <button
           type="button"

@@ -3,7 +3,7 @@ import { MusicProviderError, type MusicProvider, type MusicProviderSearchOptions
 /**
  * Spotify is intentionally a capability boundary for now. It documents the
  * provider contract without pretending that credentials or DRM-backed playback
- * are available in the Tauri WebView.
+ * are available in the Electron renderer.
  */
 export class SpotifyProvider implements MusicProvider {
   readonly id = 'spotify' as const

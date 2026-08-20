@@ -132,7 +132,7 @@ export function DraggableWidgetGrid({
   pairedControllers = [],
   onRefreshControllers,
 }: DraggableWidgetGridProps) {
-  // POINTER-BASED DRAG & DROP ENGINE (100% reliable in Tauri / WebViews)
+  // POINTER-BASED DRAG & DROP ENGINE (100% reliable in Electron renderers)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [dropTargetCol, setDropTargetCol] = useState<number | null>(null)
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)

@@ -14,6 +14,7 @@
 - Tek seferlik ve aralıklı sesli alarmlar
 - Alarm erteleme, notlar ve kalıcı yerel scheduler
 - Sistem tepsisi, Windows ile açılma ve tek uygulama örneği
-- Şeffaf Tauri splash ve Acrylic cam arayüz
+- Electron splash, Acrylic cam arayüz ve Chromium tabanlı browser shell
+- `WebContentsView` tab lifecycle, session restore, favicon, popup, permission, download ve media yönetimi
 - RLS korumalı Supabase telefon kontrolü altyapısı
 - NSIS kurulum paketi ve GitHub Actions yayın akışı

@@ -1,462 +1,211 @@
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import type { Alarm, AppSettings, CreateAlarmInput, TimerAction, TimerState } from '@/types'
+import type {
+  Alarm,
+  AppSettings,
+  ConnectionInfo,
+  CreateAlarmInput,
+  LocalSendDevice,
+  LocalSendStatus,
+  MobileNotification,
+  NoteItem,
+  ReceivedFileRecord,
+  TimerAction,
+  TimerState,
+  TransferItem,
+} from '@/types'
+import { APP_EVENTS, BROWSER_EVENTS, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
+import type { VaultFileEntry } from '@/features/notes/types'
 
-export interface SystemMediaSession {
-  sourceAppId: string
-  title: string
-  artist: string
-  albumTitle: string
-  playbackStatus: 'playing' | 'paused' | 'stopped' | 'unknown'
-  positionSeconds: number
-  durationSeconds: number
-  canPlay: boolean
-  canPause: boolean
-  canSkipNext: boolean
-  canSkipPrevious: boolean
+export { APP_EVENTS, BROWSER_EVENTS }
+export type { BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, SystemMediaSession, YouTubeMusicState }
+
+type Unsubscribe = () => void
+
+function getBridge(): ElectronDesktopBridge | undefined {
+  return typeof window !== 'undefined' ? window.kapanisDesktop : undefined
 }
 
-export const BROWSER_EVENTS = {
-  tabCreated: 'browser:tab-created',
-  tabUpdated: 'browser:tab-updated',
-  tabDestroyed: 'browser:tab-destroyed',
-  mediaUpdated: 'browser:media-updated',
-  openRequest: 'browser:open-request',
-} as const
+export function isElectronRuntime() {
+  return Boolean(getBridge())
+}
 
-export interface BrowserBounds { x: number; y: number; width: number; height: number }
-export interface BrowserTabProjection {
-  id: string; url: string; title: string; favicon: string | null; loading: boolean
-  canGoBack: boolean; canGoForward: boolean; error: string | null; label: string
+export function isDesktopRuntime() {
+  return isElectronRuntime()
 }
-export interface BrowserDebugSnapshot {
-  openTabIds: string[]; webviewLabels: string[]; activeId: string | null
-  mediaIds: string[]; closingIds: string[]; listenerCount: number
+
+function requireBridge() {
+  const bridge = getBridge()
+  if (!bridge) throw new Error('kapanış. masaüstü API’si yalnızca Electron uygulaması içinde çalışır.')
+  return bridge
 }
-export interface BrowserMediaProjection {
-  tabId: string; playing: boolean; title: string; artist: string; album: string
-  artwork: string | null; source: string; favicon: string | null; lastPlayingAt: number
+
+function invoke<T>(channel: IpcChannel, payload?: unknown): Promise<T> {
+  return requireBridge().invoke(channel, payload) as Promise<T>
+}
+
+function optionalInvoke<T>(channel: IpcChannel, fallback: T, payload?: unknown): Promise<T> {
+  return getBridge() ? invoke<T>(channel, payload) : Promise.resolve(fallback)
+}
+
+function listen<T>(event: DesktopEventName, callback: (payload: T) => void): Unsubscribe {
+  const bridge = getBridge()
+  return bridge ? bridge.on(event, callback as (payload: unknown) => void) : () => undefined
+}
+
+function readLocal<T>(key: string): T | null {
+  try {
+    const value = localStorage.getItem(key)
+    return value ? JSON.parse(value) as T : null
+  } catch {
+    return null
+  }
 }
 
 type TriggeredAlarmHandler = (alarm: Alarm) => void
 
-export function isTauriRuntime() {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}
-
-function assertTauriRuntime() {
-  if (!isTauriRuntime()) {
-    throw new Error('kapanış. masaüstü API’si yalnızca Windows uygulaması içinde çalışır.')
-  }
-}
-
-function listenWithoutBlocking<T>(
-  eventName: string,
-  callback: (payload: T) => void,
-  onError?: (error: unknown) => void,
-) {
-  if (!isTauriRuntime()) return () => undefined
-  let active = true
-  let unlisten: UnlistenFn | null = null
-
-  void listen<T>(eventName, (event) => callback(event.payload))
-    .then((cleanup) => {
-      unlisten = cleanup
-      if (!active) cleanup()
-    })
-    .catch((error) => {
-      if (active) onError?.(error)
-    })
-
-  return () => {
-    active = false
-    unlisten?.()
-  }
-}
-
 export const desktop = {
-  isTauri: isTauriRuntime,
+  isElectron: isElectronRuntime,
   openExternal: async (url: string): Promise<void> => {
-    if (!/^https?:\/\//i.test(url.trim())) {
-      throw new Error('Yalnızca http veya https bağlantıları açılabilir.')
-    }
-    if (!isTauriRuntime()) {
-      window.open(url, '_blank', 'noopener,noreferrer')
+    if (!/^https?:\/\//i.test(url.trim())) throw new Error('Yalnızca http veya https bağlantıları açılabilir.')
+    if (!getBridge()) {
+      if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
       return
     }
-    await invoke<void>('open_external_url', { url })
+    await invoke<void>('open-external', { url })
   },
   browser: {
-    create: async (id: string, url: string, bounds: BrowserBounds): Promise<BrowserTabProjection> => {
-      assertTauriRuntime()
-      return invoke<BrowserTabProjection>('browser_create_tab', { id, url, bounds })
-    },
-    activate: async (id: string, visible: boolean): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_activate_tab', { id, visible })
-    },
-    close: async (id: string): Promise<boolean> => {
-      if (!isTauriRuntime()) return false
-      return invoke<boolean>('browser_close_tab', { id })
-    },
-    navigate: async (id: string, url: string): Promise<void> => {
-      assertTauriRuntime()
-      await invoke<void>('browser_navigate', { id, url })
-    },
-    reload: async (id: string): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_reload', { id })
-    },
-    back: async (id: string): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_back', { id })
-    },
-    forward: async (id: string): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_forward', { id })
-    },
-    setVisible: async (visible: boolean): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_set_visible', { visible })
-    },
-    deactivate: async (): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_deactivate_tab')
-    },
-    setBounds: async (id: string, bounds: BrowserBounds): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_set_bounds', { id, bounds })
-    },
-    debugSnapshot: async (): Promise<BrowserDebugSnapshot | null> => {
-      if (!isTauriRuntime() || !import.meta.env.DEV) return null
-      return invoke<BrowserDebugSnapshot>('browser_debug_snapshot')
-    },
-    syncMetadata: async (): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_sync_metadata')
-    },
-    toggleMedia: async (id: string): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_toggle_media', { id })
-    },
-    setTheme: async (theme: 'light' | 'dark'): Promise<void> => {
-      if (!isTauriRuntime()) return
-      await invoke<void>('browser_set_theme', { theme })
-    },
-    on: <T>(event: (typeof BROWSER_EVENTS)[keyof typeof BROWSER_EVENTS], callback: (payload: T) => void) => listenWithoutBlocking<T>(event, callback),
+    create: (id: string, url: string, bounds: BrowserBounds) => invoke<BrowserTabProjection>('browser:create-tab', { id, url, bounds }),
+    activate: (id: string, visible: boolean) => optionalInvoke<void>('browser:activate-tab', undefined, { id, visible }),
+    close: (id: string) => optionalInvoke<boolean>('browser:close-tab', false, { id }),
+    navigate: (id: string, url: string) => invoke<void>('browser:navigate', { id, url }),
+    reload: (id: string) => optionalInvoke<void>('browser:reload', undefined, { id }),
+    back: (id: string) => optionalInvoke<void>('browser:back', undefined, { id }),
+    forward: (id: string) => optionalInvoke<void>('browser:forward', undefined, { id }),
+    setVisible: (visible: boolean) => optionalInvoke<void>('browser:set-visible', undefined, { visible }),
+    deactivate: () => optionalInvoke<void>('browser:deactivate', undefined),
+    setBounds: (id: string, bounds: BrowserBounds) => optionalInvoke<void>('browser:set-bounds', undefined, { id, bounds }),
+    debugSnapshot: () => optionalInvoke<BrowserDebugSnapshot | null>('browser:debug-snapshot', null),
+    syncMetadata: () => optionalInvoke<void>('browser:sync-metadata', undefined),
+    toggleMedia: (id: string) => optionalInvoke<void>('browser:toggle-media', undefined, { id }),
+    controlMedia: (id: string, action: 'toggle-play' | 'next' | 'previous' | 'toggle-mute') => optionalInvoke<void>('browser:media-control', undefined, { id, action }),
+    setMediaVolume: (id: string, volume: number) => optionalInvoke<void>('browser:media-volume', undefined, { id, volume }),
+    setTheme: (theme: 'light' | 'dark') => optionalInvoke<void>('browser:set-theme', undefined, { theme }),
+    getSession: () => optionalInvoke<BrowserSessionSnapshot>('browser:get-session', { tabs: [], activeTabId: null }),
+    saveSession: (snapshot: BrowserSessionSnapshot) => optionalInvoke<void>('browser:save-session', undefined, snapshot),
+    duplicate: (id: string, newId: string, bounds: BrowserBounds) => invoke<BrowserTabProjection>('browser:duplicate-tab', { id, newId, bounds }),
+    setPinned: (id: string, pinned: boolean) => optionalInvoke<void>('browser:set-pinned', undefined, { id, pinned }),
+    setMuted: (id: string, muted: boolean) => optionalInvoke<void>('browser:set-muted', undefined, { id, muted }),
+    showTabMenu: (id: string) => optionalInvoke<void>('browser:show-tab-menu', undefined, { id }),
+    listHistory: (limit?: number) => optionalInvoke<BrowserHistoryItem[]>('browser:list-history', [], { limit }),
+    clearHistory: () => optionalInvoke<void>('browser:clear-history', undefined),
+    listDownloads: () => optionalInvoke<BrowserDownloadItem[]>('browser:list-downloads', []),
+    openDownload: (id: string) => optionalInvoke<void>('browser:open-download', undefined, { id }),
+    showDownload: (id: string) => optionalInvoke<void>('browser:show-download', undefined, { id }),
+    cancelDownload: (id: string) => optionalInvoke<boolean>('browser:cancel-download', false, { id }),
+    removeDownload: (id: string) => optionalInvoke<boolean>('browser:remove-download', false, { id }),
+    listPermissions: () => optionalInvoke<BrowserPermissionRecord[]>('browser:list-permissions', []),
+    setPermission: (input: PermissionSetInput) => optionalInvoke<void>('browser:set-permission', undefined, input),
+    clearPermission: (origin?: string, permission?: string) => optionalInvoke<void>('browser:clear-permission', undefined, { origin, permission }),
+    on: <T>(event: (typeof BROWSER_EVENTS)[keyof typeof BROWSER_EVENTS], callback: (payload: T) => void) => listen<T>(event, callback),
   },
   media: {
-    getCurrent: async (): Promise<SystemMediaSession | null> => {
-      if (!isTauriRuntime()) return null
-      return invoke<SystemMediaSession | null>('get_system_media_session')
-    },
-    control: async (action: 'toggle-play-pause' | 'next' | 'previous'): Promise<boolean> => {
-      if (!isTauriRuntime()) return false
-      return invoke<boolean>('control_system_media', { action })
-    },
+    getCurrent: () => optionalInvoke<SystemMediaSession | null>('media:get-current', null),
+    control: (action: 'toggle-play-pause' | 'next' | 'previous') => optionalInvoke<boolean>('media:control', false, { action }),
+  },
+  youtubeMusic: {
+    control: (action: 'toggle-play' | 'next' | 'previous' | 'toggle-mute') => optionalInvoke<void>('youtube-music:control', undefined, { action }),
+    setVolume: (volume: number) => optionalInvoke<void>('youtube-music:set-volume', undefined, { volume }),
+    syncState: () => optionalInvoke<YouTubeMusicState | null>('youtube-music:sync-state', null),
+    onState: (callback: (state: YouTubeMusicState) => void) => listen(APP_EVENTS.youtubeMusicState, callback),
   },
   programs: {
-    launch: async (path: string): Promise<void> => {
-      assertTauriRuntime()
-      await invoke<void>('launch_program', { path })
-    },
+    launch: (path: string) => invoke<void>('launch-program', { path }),
   },
   window: {
-    minimize: async () => {
-      if (!isTauriRuntime()) return
-      await getCurrentWindow().minimize()
-    },
-    toggleMaximize: async () => {
-      if (!isTauriRuntime()) return
-      const win = getCurrentWindow()
-      await win.toggleMaximize()
-    },
-    isMaximized: async () => {
-      if (!isTauriRuntime()) return false
-      return getCurrentWindow().isMaximized()
-    },
-    close: async () => {
-      if (!isTauriRuntime()) return
-      await getCurrentWindow().close()
-    },
+    minimize: () => optionalInvoke<void>('window:minimize', undefined),
+    toggleMaximize: () => optionalInvoke<void>('window:toggle-maximize', undefined),
+    isMaximized: () => optionalInvoke<boolean>('window:is-maximized', false),
+    close: () => optionalInvoke<void>('window:close', undefined),
   },
   system: {
-    getTimerStatus: async () => {
-      if (!isTauriRuntime()) return null
-      return invoke<TimerState | null>('get_timer_status')
-    },
-    scheduleShutdown: async (action: TimerAction, seconds: number) => {
-      assertTauriRuntime()
-      return invoke<TimerState>('schedule_shutdown', { action, seconds })
-    },
-    cancelShutdown: async () => {
-      assertTauriRuntime()
-      return invoke<void>('cancel_shutdown')
-    },
-    getInfo: async () => {
-      if (!isTauriRuntime()) {
-        return { hostname: 'Web Controller', os: 'Web Browser', platform: 'web' }
-      }
-      return invoke<{ hostname: string; os: string; platform: string }>('get_system_info')
-    },
-    onCommand: (callback: (payload: { command: string; delaySeconds: number }) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<{ command: string; delaySeconds: number }>('remote:command', callback)
-    },
+    getTimerStatus: () => optionalInvoke<TimerState | null>('system:get-timer-status', null),
+    scheduleShutdown: (action: TimerAction, seconds: number) => invoke<TimerState>('system:schedule-shutdown', { action, seconds }),
+    cancelShutdown: () => invoke<void>('system:cancel-shutdown'),
+    getInfo: () => optionalInvoke<{ hostname: string; os: string; platform: string }>('system:get-info', { hostname: 'Web Controller', os: 'Web Browser', platform: 'web' }),
+    onCommand: (callback: (payload: { command: string; delaySeconds: number }) => void) => listen(APP_EVENTS.remoteCommand, callback),
   },
   autostart: {
-    isEnabled: async () => {
-      if (!isTauriRuntime()) return false
-      try {
-        return await invoke<boolean>('is_autostart_enabled')
-      } catch {
-        return false
-      }
-    },
-    setEnabled: async (enabled: boolean) => {
-      if (!isTauriRuntime()) return enabled
-      try {
-        return await invoke<boolean>('set_autostart_enabled', { enabled })
-      } catch {
-        return false
-      }
-    },
+    isEnabled: () => optionalInvoke<boolean>('system:get-autostart', false),
+    setEnabled: (enabled: boolean) => optionalInvoke<boolean>('system:set-autostart', enabled, { enabled }),
   },
   settings: {
     get: async (): Promise<AppSettings | null> => {
-      if (!isTauriRuntime()) {
-        const stored = localStorage.getItem('kapanis_settings')
-        return stored ? JSON.parse(stored) : null
-      }
-      try {
-        const content = await invoke<string | null>('get_app_settings')
-        return content ? JSON.parse(content) : null
-      } catch {
-        return null
-      }
+      if (!getBridge()) return readLocal<AppSettings>('kapanis_settings')
+      return invoke<AppSettings | null>('settings:get')
     },
     save: async (settings: AppSettings): Promise<void> => {
-      if (!isTauriRuntime()) {
+      if (!getBridge()) {
         localStorage.setItem('kapanis_settings', JSON.stringify(settings))
         return
       }
-      await invoke<void>('save_app_settings', { settingsJson: JSON.stringify(settings, null, 2) })
+      await invoke<void>('settings:save', { settings })
     },
   },
   alarms: {
-    list: async () => {
-      if (!isTauriRuntime()) return []
-      return invoke<Alarm[]>('list_alarms')
-    },
-    getActive: async () => {
-      if (!isTauriRuntime()) return null
-      return invoke<Alarm | null>('get_active_alarm')
-    },
-    create: (payload: CreateAlarmInput) => {
-      assertTauriRuntime()
-      return invoke<Alarm>('create_alarm', { input: payload })
-    },
-    cancel: (id: string) => {
-      assertTauriRuntime()
-      return invoke<boolean>('cancel_alarm', { id })
-    },
-    stopSound: () => {
-      assertTauriRuntime()
-      return invoke<void>('stop_alarm_sound')
-    },
-    onTriggered: (callback: TriggeredAlarmHandler, onError?: (error: unknown) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<Alarm>('alarm:triggered', callback, onError)
-    },
-    onCreated: (callback: (alarm: Alarm) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<Alarm>('alarm:created', callback)
-    },
-    onCancelled: (callback: (id: string) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<string>('alarm:cancelled', callback)
-    },
+    list: () => optionalInvoke<Alarm[]>('alarms:list', []),
+    getActive: () => optionalInvoke<Alarm | null>('alarms:get-active', null),
+    create: (input: CreateAlarmInput) => invoke<Alarm>('alarms:create', { input }),
+    cancel: (id: string) => invoke<boolean>('alarms:cancel', { id }),
+    stopSound: () => invoke<void>('alarms:stop-sound'),
+    onTriggered: (callback: TriggeredAlarmHandler, _onError?: (error: unknown) => void) => listen(APP_EVENTS.alarmTriggered, callback),
+    onCreated: (callback: (alarm: Alarm) => void) => listen(APP_EVENTS.alarmCreated, callback),
+    onCancelled: (callback: (id: string) => void) => listen(APP_EVENTS.alarmCancelled, callback),
   },
   notes: {
-    list: async () => {
-      if (!isTauriRuntime()) return []
-      return invoke<import('@/types').NoteItem[]>('list_notes')
-    },
-    save: async (content: string, id?: string, pinned?: boolean) => {
-      assertTauriRuntime()
-      return invoke<import('@/types').NoteItem>('save_note', { id: id ?? null, content, pinned: pinned ?? null })
-    },
-    delete: async (id: string) => {
-      assertTauriRuntime()
-      return invoke<boolean>('delete_note', { id })
-    },
-    togglePin: async (id: string) => {
-      assertTauriRuntime()
-      return invoke<boolean>('toggle_note_pin', { id })
-    },
-    onReceived: (callback: (note: import('@/types').NoteItem) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<import('@/types').NoteItem>('mobile:note', callback)
-    },
+    list: () => optionalInvoke<NoteItem[]>('notes:list', []),
+    save: (content: string, id?: string, pinned?: boolean) => invoke<NoteItem>('notes:save', { id, content, pinned }),
+    delete: (id: string) => invoke<boolean>('notes:delete', { id }),
+    togglePin: (id: string) => invoke<boolean>('notes:toggle-pin', { id }),
+    onReceived: (callback: (note: NoteItem) => void) => listen(APP_EVENTS.mobileNote, callback),
   },
   transfers: {
-    list: async () => {
-      if (!isTauriRuntime()) return []
-      return invoke<import('@/types').TransferItem[]>('list_transfers')
-    },
-    open: async (path: string) => {
-      assertTauriRuntime()
-      return invoke<void>('open_transfer_file', { path })
-    },
-    showInFolder: async (path: string) => {
-      assertTauriRuntime()
-      return invoke<void>('show_transfer_in_folder', { path })
-    },
-    delete: async (id: string) => {
-      assertTauriRuntime()
-      return invoke<boolean>('delete_transfer', { id })
-    },
-    clear: async () => {
-      assertTauriRuntime()
-      return invoke<void>('clear_transfers')
-    },
-    onReceived: (callback: (item: import('@/types').TransferItem) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<import('@/types').TransferItem>('mobile:file', callback)
-    },
+    list: () => optionalInvoke<TransferItem[]>('transfers:list', []),
+    open: (path: string) => invoke<void>('transfers:open', { path }),
+    showInFolder: (path: string) => invoke<void>('transfers:show-in-folder', { path }),
+    delete: (id: string) => invoke<boolean>('transfers:delete', { id }),
+    clear: () => invoke<void>('transfers:clear'),
+    onReceived: (callback: (item: TransferItem) => void) => listen(APP_EVENTS.mobileFile, callback),
   },
   mobile: {
-    getConnectionInfo: async () => {
-      if (!isTauriRuntime()) {
-        return {
-          port: 54321,
-          ipAddresses: ['127.0.0.1'],
-          deviceName: 'Kapanış Desktop',
-          qrPayload: 'kapanis://connect?host=127.0.0.1&port=54321&name=Desktop',
-        }
-      }
-      return invoke<import('@/types').ConnectionInfo>('get_connection_info')
-    },
-    onNotification: (callback: (payload: import('@/types').MobileNotification) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<import('@/types').MobileNotification>('mobile:notification', callback)
-    },
+    getConnectionInfo: () => optionalInvoke<ConnectionInfo>('mobile:get-connection-info', { port: 54321, ipAddresses: ['127.0.0.1'], deviceName: 'Kapanış Desktop', qrPayload: 'kapanis://connect?host=127.0.0.1&port=54321&name=Desktop' }),
+    onNotification: (callback: (payload: MobileNotification) => void) => listen(APP_EVENTS.mobileNotification, callback),
   },
   localsend: {
-    getStatus: async (): Promise<import('@/types').LocalSendStatus> => {
-      if (!isTauriRuntime()) {
-        return {
-          isRunning: true,
-          localIp: '192.168.1.100',
-          allIps: ['192.168.1.100'],
-          port: 53317,
-          alias: 'Masaüstü PC',
-          fingerprint: 'web-demo',
-          autoAccept: true,
-          downloadDir: 'Downloads/kapanis_received',
-          discoveredCount: 0,
-        }
-      }
-      return invoke<import('@/types').LocalSendStatus>('localsend_get_status')
-    },
-    getDevices: async (): Promise<import('@/types').LocalSendDevice[]> => {
-      if (!isTauriRuntime()) return []
-      return invoke<import('@/types').LocalSendDevice[]>('localsend_get_devices')
-    },
-    scanNetwork: async (): Promise<void> => {
-      if (!isTauriRuntime()) return
-      return invoke<void>('localsend_scan_network')
-    },
-    sendText: async (targetIp: string, targetPort: number, text: string): Promise<string> => {
-      assertTauriRuntime()
-      return invoke<string>('localsend_send_text', { targetIp, targetPort, text })
-    },
-    sendFile: async (targetIp: string, targetPort: number, filePath: string): Promise<string> => {
-      assertTauriRuntime()
-      return invoke<string>('localsend_send_file', { targetIp, targetPort, filePath })
-    },
-    getReceivedFiles: async (): Promise<import('@/types').ReceivedFileRecord[]> => {
-      if (!isTauriRuntime()) return []
-      return invoke<import('@/types').ReceivedFileRecord[]>('localsend_get_received_files')
-    },
-    openDownloadFolder: async (): Promise<void> => {
-      if (!isTauriRuntime()) return
-      return invoke<void>('localsend_open_download_folder')
-    },
-    setAutoAccept: async (enabled: boolean): Promise<boolean> => {
-      if (!isTauriRuntime()) return enabled
-      return invoke<boolean>('localsend_set_auto_accept', { enabled })
-    },
-    addManualDevice: async (targetIp: string, targetPort?: number): Promise<import('@/types').LocalSendDevice> => {
-      assertTauriRuntime()
-      return invoke<import('@/types').LocalSendDevice>('localsend_add_manual_device', { targetIp, targetPort: targetPort ?? null })
-    },
-    onDeviceDiscovered: (callback: (device: import('@/types').LocalSendDevice) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<import('@/types').LocalSendDevice>('localsend:device-discovered', callback)
-    },
-    onFileReceived: (callback: (file: import('@/types').ReceivedFileRecord) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<import('@/types').ReceivedFileRecord>('localsend:file-received', callback)
-    },
+    getStatus: () => optionalInvoke<LocalSendStatus>('localsend:get-status', { isRunning: false, localIp: '127.0.0.1', allIps: ['127.0.0.1'], port: 53317, alias: 'Kapanış Desktop', fingerprint: 'web-preview', autoAccept: false, downloadDir: '', discoveredCount: 0 }),
+    getDevices: () => optionalInvoke<LocalSendDevice[]>('localsend:get-devices', []),
+    scanNetwork: () => optionalInvoke<void>('localsend:scan-network', undefined),
+    sendText: (targetIp: string, targetPort: number, text: string) => invoke<string>('localsend:send-text', { targetIp, targetPort, text }),
+    sendFile: (targetIp: string, targetPort: number, filePath: string) => invoke<string>('localsend:send-file', { targetIp, targetPort, filePath }),
+    getReceivedFiles: () => optionalInvoke<ReceivedFileRecord[]>('localsend:get-received-files', []),
+    openDownloadFolder: () => optionalInvoke<void>('localsend:open-download-folder', undefined),
+    setAutoAccept: (enabled: boolean) => optionalInvoke<boolean>('localsend:set-auto-accept', enabled, { enabled }),
+    addManualDevice: (targetIp: string, targetPort?: number) => invoke<LocalSendDevice>('localsend:add-manual-device', { targetIp, targetPort }),
+    onDeviceDiscovered: (callback: (device: LocalSendDevice) => void) => listen(APP_EVENTS.localSendDevice, callback),
+    onFileReceived: (callback: (file: ReceivedFileRecord) => void) => listen(APP_EVENTS.localSendFile, callback),
   },
   vault: {
-    selectFolder: async (): Promise<string | null> => {
-      if (!isTauriRuntime()) return '/mock/vault'
-      return invoke<string | null>('vault_select_folder')
-    },
-    getDefaultPath: async (): Promise<string> => {
-      if (!isTauriRuntime()) return '/mock/vault'
-      return invoke<string>('vault_get_default_path')
-    },
-    listEntries: async (vaultPath: string): Promise<import('@/features/notes/types').VaultFileEntry[]> => {
-      if (!isTauriRuntime()) return []
-      return invoke<import('@/features/notes/types').VaultFileEntry[]>('vault_list_entries', { vaultPath })
-    },
-    readFile: async (vaultPath: string, relPath: string): Promise<string> => {
-      if (!isTauriRuntime()) return ''
-      return invoke<string>('vault_read_file', { vaultPath, relPath })
-    },
-    writeFile: async (vaultPath: string, relPath: string, content: string): Promise<void> => {
-      assertTauriRuntime()
-      return invoke<void>('vault_write_file', { vaultPath, relPath, content })
-    },
-    createFile: async (vaultPath: string, relPath: string, initialContent?: string): Promise<void> => {
-      assertTauriRuntime()
-      return invoke<void>('vault_create_file', { vaultPath, relPath, initialContent: initialContent ?? null })
-    },
-    createFolder: async (vaultPath: string, relPath: string): Promise<void> => {
-      assertTauriRuntime()
-      return invoke<void>('vault_create_folder', { vaultPath, relPath })
-    },
-    renameEntry: async (vaultPath: string, oldRelPath: string, newRelPath: string): Promise<void> => {
-      assertTauriRuntime()
-      return invoke<void>('vault_rename_entry', { vaultPath, oldRelPath, newRelPath })
-    },
-    deleteEntry: async (vaultPath: string, relPath: string): Promise<void> => {
-      assertTauriRuntime()
-      return invoke<void>('vault_delete_entry', { vaultPath, relPath })
-    },
-    revealInExplorer: async (vaultPath: string, relPath?: string): Promise<void> => {
-      if (!isTauriRuntime()) return
-      return invoke<void>('vault_reveal_in_explorer', { vaultPath, relPath: relPath ?? null })
-    },
-    startWatcher: async (vaultPath: string): Promise<void> => {
-      if (!isTauriRuntime()) return
-      return invoke<void>('vault_start_watcher', { vaultPath })
-    },
-    stopWatcher: async (): Promise<void> => {
-      if (!isTauriRuntime()) return
-      return invoke<void>('vault_stop_watcher')
-    },
-    setWindowMode: async (mode: 'notes' | 'compact'): Promise<void> => {
-      if (!isTauriRuntime()) return
-      return invoke<void>('vault_set_window_mode', { mode })
-    },
-    onFsChange: (callback: (payload: { kind: string; path: string }) => void) => {
-      if (!isTauriRuntime()) return () => undefined
-      return listenWithoutBlocking<{ kind: string; path: string }>('vault:fs-change', callback)
-    },
+    selectFolder: () => optionalInvoke<string | null>('vault:select-folder', null),
+    getDefaultPath: () => optionalInvoke<string>('vault:get-default-path', '/mock/vault'),
+    listEntries: (vaultPath: string) => optionalInvoke<VaultFileEntry[]>('vault:list-entries', [], { vaultPath }),
+    readFile: (vaultPath: string, relPath: string) => optionalInvoke<string>('vault:read-file', '', { vaultPath, relPath }),
+    writeFile: (vaultPath: string, relPath: string, content: string) => invoke<void>('vault:write-file', { vaultPath, relPath, content }),
+    createFile: (vaultPath: string, relPath: string, initialContent?: string) => invoke<void>('vault:create-file', { vaultPath, relPath, initialContent }),
+    createFolder: (vaultPath: string, relPath: string) => invoke<void>('vault:create-folder', { vaultPath, relPath }),
+    renameEntry: (vaultPath: string, oldRelPath: string, newRelPath: string) => invoke<void>('vault:rename-entry', { vaultPath, oldRelPath, newRelPath }),
+    deleteEntry: (vaultPath: string, relPath: string) => invoke<void>('vault:delete-entry', { vaultPath, relPath }),
+    revealInExplorer: (vaultPath: string, relPath?: string) => optionalInvoke<void>('vault:reveal-in-explorer', undefined, { vaultPath, relPath }),
+    startWatcher: (vaultPath: string) => optionalInvoke<void>('vault:start-watcher', undefined, { vaultPath }),
+    stopWatcher: () => optionalInvoke<void>('vault:stop-watcher', undefined),
+    setWindowMode: (mode: 'notes' | 'compact') => optionalInvoke<void>('vault:set-window-mode', undefined, { mode }),
+    onFsChange: (callback: (payload: { kind: string; path: string }) => void) => listen(APP_EVENTS.vaultFsChange, callback),
   },
 }

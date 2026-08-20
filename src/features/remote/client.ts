@@ -97,7 +97,7 @@ export async function getEffectiveSettings(): Promise<AppSettings> {
 export async function saveEffectiveSettings(settings: AppSettings): Promise<void> {
   settings.lastSavedAt = Date.now()
   await desktop.settings.save(settings)
-  if (desktop.isTauri()) {
+  if (desktop.isElectron()) {
     await desktop.autostart.setEnabled(settings.autostart).catch(() => undefined)
   }
 }

@@ -19,7 +19,7 @@ import {
   startRemoteEngine,
 } from '@/features/remote/client'
 import { SettingsPage } from '@/features/settings/SettingsPage'
-import { desktop, isTauriRuntime } from '@/lib/desktop'
+import { desktop, isElectronRuntime } from '@/lib/desktop'
 import { errorMessage } from '@/lib/format'
 import type {
   Alarm,
@@ -36,7 +36,7 @@ export default function App() {
     if (typeof window === 'undefined') return false
     const params = new URLSearchParams(window.location.search)
     const desktopPreview = params.get('preview') === 'desktop'
-    return (!isTauriRuntime() && !desktopPreview) || params.get('mode') === 'remote' || params.has('pair')
+    return (!isElectronRuntime() && !desktopPreview) || params.get('mode') === 'remote' || params.has('pair')
   })
 
   const [mode, setMode] = useState<MiniOsMode>('home')
@@ -82,7 +82,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // Initial Data & Tauri Event Listeners
+  // Initial local data and Electron event listeners
   useEffect(() => {
     let mounted = true
     void Promise.all([

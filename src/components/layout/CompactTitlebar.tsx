@@ -6,12 +6,12 @@ import { desktop } from '@/lib/desktop'
 
 export function CompactTitlebar() {
   return (
-    <header className="compact-titlebar" data-tauri-drag-region>
-      <div className="compact-titlebar__brand" data-tauri-drag-region>
+    <header className="compact-titlebar" data-window-drag>
+      <div className="compact-titlebar__brand" data-window-drag>
         <span className="brand-mark" aria-hidden="true"><span /></span>
         <span className="brand-title">kapanış.</span>
       </div>
-      <div className="compact-titlebar__spacer" data-tauri-drag-region />
+      <div className="compact-titlebar__spacer" data-window-drag />
       <TooltipProvider delayDuration={700}>
         <div className="compact-titlebar__controls">
           <Tooltip>

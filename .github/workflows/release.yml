@@ -17,16 +17,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
         run: npm ci
-      - name: Build and attach NSIS installer
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+      - name: Build NSIS installer
+        run: npm run dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attach installer to GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: v__VERSION__
-          releaseName: kapanış. v__VERSION__
-          releaseBody: Windows NSIS kurulum paketi.
-          releaseDraft: true
+          files: release/*.exe
+          draft: true
           prerelease: false
+          generate_release_notes: true

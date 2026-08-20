@@ -15,16 +15,16 @@ export function GlassTitlebar() {
   return (
     <header
       className="glass-titlebar"
-      data-tauri-drag-region
+      data-window-drag
       onDoubleClick={handleDoubleClick}
     >
-      <div className="glass-titlebar__left" data-tauri-drag-region>
+      <div className="glass-titlebar__left" data-window-drag>
         <span className="glass-brand-mark" aria-hidden="true">
           <span />
         </span>
       </div>
 
-      <div className="glass-titlebar__spacer" data-tauri-drag-region />
+      <div className="glass-titlebar__spacer" data-window-drag />
 
       <TooltipProvider delayDuration={600}>
         <div className="glass-titlebar__controls">

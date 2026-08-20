@@ -2,6 +2,7 @@
   "name": "kapanis",
   "version": "1.1.0",
   "private": true,
+  "main": "dist-electron/electron/main.js",
   "description": "Sakin ve düşük kaynak tüketimli Windows kapatma ve alarm zamanlayıcısı.",
   "author": "kapanış. contributors",
   "license": "MIT",
@@ -10,13 +11,13 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "node electron/dev.mjs",
     "dev:ui": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run build:electron",
+    "build:electron": "tsc -p tsconfig.electron.json",
     "test": "npx tsx src/features/notes/lib/markdownParser.test.ts && npx tsx src/features/notes/lib/vaultEngine.test.ts && npx tsx src/features/music/providers/youtube/youtubeUrl.test.ts && npx tsx src/features/music/core/queue.test.ts && npx tsx src/features/music/core/persistence.test.ts && npx tsx src/features/music/core/musicStore.test.ts && npx tsx src/features/browser/browserState.test.ts",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "test:browser": "npm run build && node electron/browser-smoke-runner.mjs",
+    "dist": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -35,7 +36,6 @@
     "@lezer/markdown": "^1.7.2",
     "@radix-ui/react-slot": "^1.1.2",
     "@supabase/supabase-js": "2.112.3",
-    "@tauri-apps/api": "^2.11.1",
     "@types/qrcode": "^1.5.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -57,7 +57,6 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",
-    "@tauri-apps/cli": "^2.11.4",
     "@types/d3-drag": "^3.0.7",
     "@types/d3-force": "^3.0.10",
     "@types/d3-selection": "^3.0.11",
@@ -67,7 +66,34 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
+  },
+  "build": {
+    "appId": "com.kapanis.desktop",
+    "productName": "kapanış.",
+    "directories": {
+      "output": "release"
+    },
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "app-icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "app-icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "kapanış."
+    }
   }
 }

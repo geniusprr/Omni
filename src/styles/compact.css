@@ -9,7 +9,7 @@
  * handoff: contrast pass (40–41) · slop pass (42–45) · honest pass (46) · chrome pass (47) · tokens pass (48) · responsive pass (49) · native viewport pass · icons pass (30)
  */
 
-/* Hallmark · feature pass: native Edge workbench + functional widget actions
+/* Hallmark · feature pass: Electron browser workbench + functional widget actions
  * audience: open-source desktop users · use: browser and system tools in balance
  * tone: existing acrylic · states: default · hover · focus · active · disabled · loading · error · success
  */
@@ -72,6 +72,20 @@ body {
   line-height: 1.45;
   user-select: none;
   background: #080c14;
+}
+
+/* Frameless Electron window chrome. Interactive descendants must remain
+ * clickable while the surrounding titlebar provides the drag surface. */
+[data-window-drag] {
+  -webkit-app-region: drag;
+}
+
+[data-window-drag] button,
+[data-window-drag] input,
+[data-window-drag] textarea,
+[data-window-drag] a,
+[data-window-drag] [role="button"] {
+  -webkit-app-region: no-drag;
 }
 
 input,
@@ -7642,7 +7656,7 @@ textarea {
 }
 
 /* ==========================================================================
-   EDGE WEBVIEW2 BROWSER WORKBENCH
+   ELECTRON WEB CONTENTS VIEW BROWSER WORKBENCH
    ========================================================================== */
 
 .minios-window {
@@ -7846,6 +7860,110 @@ textarea {
   padding: var(--space-xs);
   border-bottom: 1px solid var(--acrylic-line);
   background: color-mix(in oklch, var(--acrylic-surface-strong) 58%, transparent);
+}
+
+.edge-browser__tool--active {
+  background: var(--acrylic-surface-hover);
+  color: var(--acrylic-text);
+}
+
+.edge-browser__tab-media {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--color-accent);
+}
+
+.edge-browser__permission {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--acrylic-line);
+  background: color-mix(in oklch, var(--color-accent) 12%, var(--acrylic-surface-strong));
+  color: var(--acrylic-text);
+  font-size: 0.72rem;
+}
+
+.edge-browser__permission > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.edge-browser__permission button,
+.edge-browser__download-row button {
+  border: 1px solid var(--acrylic-line);
+  border-radius: var(--radius-sm);
+  background: var(--acrylic-surface);
+  color: var(--acrylic-text);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.edge-browser__permission button:last-child {
+  border-color: transparent;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.edge-browser__browser-panel {
+  position: absolute;
+  z-index: 10;
+  top: 5.65rem;
+  right: var(--space-xs);
+  width: min(31rem, calc(100% - var(--space-md)));
+  max-height: min(28rem, calc(100% - 6.25rem));
+  overflow-y: auto;
+  padding: var(--space-sm);
+  border: 1px solid var(--acrylic-line);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--acrylic-surface-strong) 92%, transparent);
+  box-shadow: 0 18px 42px var(--acrylic-shadow);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+.edge-browser__browser-panel .edge-browser__section-title {
+  position: sticky;
+  top: calc(-1 * var(--space-sm));
+  z-index: 1;
+  margin: calc(-1 * var(--space-sm)) calc(-1 * var(--space-sm)) var(--space-xs);
+  padding: var(--space-sm);
+  background: color-mix(in oklch, var(--acrylic-surface-strong) 94%, transparent);
+}
+
+.edge-browser__download-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--acrylic-line);
+}
+
+.edge-browser__download-row > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.edge-browser__download-row strong,
+.edge-browser__download-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edge-browser__download-row small {
+  color: var(--acrylic-text-soft);
+  font-size: 0.65rem;
+}
+
+.edge-browser__download-row > div {
+  display: flex;
+  gap: var(--space-2xs);
 }
 
 .edge-browser__address {
@@ -8579,7 +8697,7 @@ textarea {
   background: rgba(51, 65, 85, 0.95);
 }
 
-/* Tall now-playing companion for the real YouTube Music child webview. */
+/* Tall now-playing companion for the real YouTube Music browser tab. */
 .dashboard-music-status-card {
   --music-accent: #e11d48;
   --music-accent-soft: rgba(244, 63, 94, 0.12);
@@ -12218,7 +12336,7 @@ textarea {
   overflow: hidden;
 }
 
-/* Direct YouTube Music child webview host */
+/* YouTube Music browser hand-off surface */
 .youtube-music-webview-host {
   position: relative;
   flex: 1;

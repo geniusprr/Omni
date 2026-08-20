@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js'
+import Download from 'lucide-react/dist/esm/icons/download.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
+import History from 'lucide-react/dist/esm/icons/history.js'
 import LoaderCircle from 'lucide-react/dist/esm/icons/loader-circle.js'
+import Pin from 'lucide-react/dist/esm/icons/pin.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js'
 import Star from 'lucide-react/dist/esm/icons/star.js'
+import Volume2 from 'lucide-react/dist/esm/icons/volume-2.js'
+import VolumeX from 'lucide-react/dist/esm/icons/volume-x.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
-import { BROWSER_EVENTS, desktop, isTauriRuntime, type BrowserBounds, type BrowserMediaProjection, type BrowserTabProjection } from '@/lib/desktop'
+import { BROWSER_EVENTS, desktop, isElectronRuntime, type BrowserBounds, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRequest, type BrowserTabProjection } from '@/lib/desktop'
 import { addRecentlyClosed, BROWSER_DATA_EVENT, BROWSER_NAVIGATION_EVENT, consumeBrowserNavigation, hostnameFromUrl, loadFavorites, loadRecentlyClosed, normalizeBrowserInput, relativeTime, saveFavorites, type BrowserFavorite, type BrowserRecentItem } from './browserData'
-import { applyTabProjectionState, canStartNativeRestore, closeTabState, faviconForUrl, makeTab, migrateBrowserState, nativeNavigationAction, nativeRestoreTasks, nativeViewAction, openTabState, prepareNewTabNavigation, resolveOptimisticClose, selectTabState, serializeBrowserState, type BrowserState, type BrowserTab } from './browserState'
+import { applyTabProjectionState, canStartNativeRestore, closeTabState, faviconForUrl, makeTab, migrateBrowserState, nativeRestoreTasks, nativeViewAction, openTabState, prepareNewTabNavigation, resolveOptimisticClose, selectTabState, serializeBrowserState, type BrowserState, type BrowserTab } from './browserState'
 
 interface BrowserPageProps { isVisible: boolean; theme?: 'light' | 'dark' }
+type BrowserPanel = 'history' | 'downloads' | null
 const TABS_KEY = 'minios_browser_tabs_v2'
 const ACTIVE_KEY = 'minios_browser_active_tab_v2'
 
@@ -20,70 +27,363 @@ function loadState(): BrowserState {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(TABS_KEY) || '[]')
     return migrateBrowserState(parsed, localStorage.getItem(ACTIVE_KEY))
-  } catch { return { tabs: [], activeTabId: null, mediaByTabId: {} } }
+  } catch {
+    return { tabs: [], activeTabId: null, mediaByTabId: {} }
+  }
 }
-function getBounds(node: HTMLElement | null): BrowserBounds | null { if (!node) return null; const r = node.getBoundingClientRect(); return r.width > 8 && r.height > 8 ? { x: Math.max(0, Math.round(r.left)), y: Math.max(0, Math.round(r.top)), width: Math.round(r.width), height: Math.round(r.height) } : null }
+
+function getBounds(node: HTMLElement | null): BrowserBounds | null {
+  if (!node) return null
+  const rect = node.getBoundingClientRect()
+  return rect.width > 8 && rect.height > 8
+    ? { x: Math.max(0, Math.round(rect.left)), y: Math.max(0, Math.round(rect.top)), width: Math.round(rect.width), height: Math.round(rect.height) }
+    : null
+}
+
 function nextFrame() { return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())) }
-async function waitForBounds(node: HTMLElement | null): Promise<BrowserBounds | null> { for (let attempt = 0; attempt < 60; attempt += 1) { await nextFrame(); const bounds = getBounds(node); if (bounds) return bounds } return null }
+
+async function waitForBounds(node: HTMLElement | null): Promise<BrowserBounds | null> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await nextFrame()
+    const bounds = getBounds(node)
+    if (bounds) return bounds
+  }
+  return null
+}
+
 function errorMessage(cause: unknown, fallback: string): string {
   if (typeof cause === 'string' && cause.trim()) return cause
   if (cause instanceof Error && cause.message) return cause.message
   if (typeof cause === 'object' && cause !== null && 'message' in cause && typeof cause.message === 'string' && cause.message.trim()) return cause.message
   return fallback
 }
-function isMissingNativeTab(cause: unknown) { return errorMessage(cause, '').includes('sekmesi bulunamadı') }
 
-function persist(state: BrowserState) { const snapshot = serializeBrowserState(state); localStorage.setItem(TABS_KEY, JSON.stringify(snapshot.tabs)); localStorage.setItem(ACTIVE_KEY, snapshot.activeTabId ?? '') }
+function isMissingBrowserTab(cause: unknown) { return errorMessage(cause, '').includes('sekmesi bulunamadı') }
+
+function persist(state: BrowserState) {
+  const snapshot = serializeBrowserState(state)
+  localStorage.setItem(TABS_KEY, JSON.stringify(snapshot.tabs))
+  localStorage.setItem(ACTIVE_KEY, snapshot.activeTabId ?? '')
+}
+
+function sessionSnapshot(state: BrowserState) {
+  return {
+    tabs: state.tabs.map((tab) => ({
+      id: tab.id,
+      url: tab.url,
+      title: tab.title,
+      favicon: tab.favicon,
+      pinned: tab.pinned === true,
+      muted: tab.muted === true,
+    })),
+    activeTabId: state.activeTabId,
+  }
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, bytes)} B`
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1 }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
+}
 
 export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
-  const [state, setState] = useState(loadState); const [address, setAddress] = useState(''); const [favorites, setFavorites] = useState<BrowserFavorite[]>(loadFavorites); const [recents, setRecents] = useState<BrowserRecentItem[]>(loadRecentlyClosed); const [error, setError] = useState<string | null>(null)
-  const hostRef = useRef<HTMLDivElement>(null); const stateRef = useRef(state); const nativeTabIdsRef = useRef(new Set<string>()); const restoreStarted = useRef(false); stateRef.current = state
+  const [state, setState] = useState(loadState)
+  const [address, setAddress] = useState('')
+  const [favorites, setFavorites] = useState<BrowserFavorite[]>(loadFavorites)
+  const [recents, setRecents] = useState<BrowserRecentItem[]>(loadRecentlyClosed)
+  const [error, setError] = useState<string | null>(null)
+  const [panel, setPanel] = useState<BrowserPanel>(null)
+  const [history, setHistory] = useState<BrowserHistoryItem[]>([])
+  const [downloads, setDownloads] = useState<BrowserDownloadItem[]>([])
+  const [permissionRequest, setPermissionRequest] = useState<BrowserPermissionRequest | null>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const stateRef = useRef(state)
+  const liveTabIdsRef = useRef(new Set<string>())
+  const restoreStarted = useRef(false)
+  const sessionHydrated = useRef(!isElectronRuntime())
+  stateRef.current = state
   const active = state.tabs.find((tab) => tab.id === state.activeTabId) ?? null
-  const project = useCallback((p: BrowserTabProjection) => {
-    // A create command resolves with the projection before its event listener is required.
-    // Update the ref too so an explicit follow-up activation cannot observe a blank tab.
-    const next = applyTabProjectionState(stateRef.current, p)
+
+  const project = useCallback((projection: BrowserTabProjection) => {
+    const next = applyTabProjectionState(stateRef.current, projection)
     stateRef.current = next
     setState(next)
   }, [])
-  const synchronizeNativeView = useCallback(async (nextState: BrowserState) => {
-    if (!isTauriRuntime()) return
+
+  const synchronizeBrowserSurface = useCallback(async (nextState: BrowserState) => {
+    if (!isElectronRuntime()) return
     const action = nativeViewAction(nextState)
     if (action.type === 'activate') await desktop.browser.activate(action.tabId, isVisible)
     else await desktop.browser.deactivate()
   }, [isVisible])
-  const createNativeTab = useCallback(async (id: string, url: string) => {
+
+  const createBrowserTab = useCallback(async (id: string, url: string) => {
     const bounds = await waitForBounds(hostRef.current)
     if (!bounds) throw new Error('Tarayıcı alanı hazırlanamadı. Lütfen tekrar deneyin.')
     const projection = await desktop.browser.create(id, url, bounds)
-    nativeTabIdsRef.current.add(id)
+    liveTabIdsRef.current.add(id)
     project(projection)
   }, [project])
-  const navigateTab = useCallback(async (id: string, input: string) => {
-    const url = normalizeBrowserInput(input); const tab = stateRef.current.tabs.find((t) => t.id === id); if (!tab) { setError('Sekme bulunamadı.'); return false }
-    try { if (!isTauriRuntime()) { project({ id, url, title: hostnameFromUrl(url), favicon: faviconForUrl(url), loading: false, canGoBack: false, canGoForward: false, error: null, label: `browser-${id}` }); return true } if (nativeNavigationAction(tab, nativeTabIdsRef.current.has(id)) === 'create') await createNativeTab(id, url); else { try { await desktop.browser.navigate(id, url) } catch (cause) { if (!isMissingNativeTab(cause)) throw cause; nativeTabIdsRef.current.delete(id); await createNativeTab(id, url) } } await desktop.browser.activate(id, isVisible); setError(null); return true } catch (cause) { setError(errorMessage(cause, 'Sayfa açılamadı.')); return false }
-  }, [createNativeTab, isVisible, project])
-  const openTab = useCallback(async (url?: string) => { const tab = makeTab(); const previous = stateRef.current; const prepared = url ? prepareNewTabNavigation(previous, tab, normalizeBrowserInput(url)) : { state: openTabState(previous, tab), tabId: tab.id, url: null }; stateRef.current = prepared.state; persist(prepared.state); setState(prepared.state); if (!prepared.url) { await synchronizeNativeView(prepared.state).catch(() => undefined); return } const created = await navigateTab(prepared.tabId, prepared.url); if (!created) { const restoredState = resolveOptimisticClose(previous, prepared.state, false); stateRef.current = restoredState; persist(restoredState); setState(restoredState); await synchronizeNativeView(restoredState).catch(() => undefined) } }, [navigateTab, synchronizeNativeView])
 
-  // This persistently mounted BrowserPage restores once only after its native host is visible.
-  useEffect(() => { if (!isVisible || restoreStarted.current) return; let cancelled = false; void (async () => { const bounds = await waitForBounds(hostRef.current); if (cancelled || !canStartNativeRestore(isVisible, Boolean(bounds), restoreStarted.current)) return; restoreStarted.current = true; for (const task of nativeRestoreTasks(stateRef.current)) await navigateTab(task.tabId, task.url); await synchronizeNativeView(stateRef.current).catch(() => undefined) })(); return () => { cancelled = true } }, [isVisible, navigateTab, synchronizeNativeView])
-  useEffect(() => { persist(state) }, [state.activeTabId, state.tabs])
+  const navigateTab = useCallback(async (id: string, input: string) => {
+    const url = normalizeBrowserInput(input)
+    const tab = stateRef.current.tabs.find((item) => item.id === id)
+    if (!tab) { setError('Sekme bulunamadı.'); return false }
+    if (url === 'about:blank') { setError('Bir adres veya arama metni girin.'); return false }
+    try {
+      if (!isElectronRuntime()) {
+        project({ id, url, title: hostnameFromUrl(url), favicon: faviconForUrl(url), loading: false, canGoBack: false, canGoForward: false, error: null, label: `browser-${id}`, muted: tab.muted === true, pinned: tab.pinned === true })
+        return true
+      }
+      if (!liveTabIdsRef.current.has(id)) await createBrowserTab(id, url)
+      else {
+        try { await desktop.browser.navigate(id, url) }
+        catch (cause) {
+          if (!isMissingBrowserTab(cause)) throw cause
+          liveTabIdsRef.current.delete(id)
+          await createBrowserTab(id, url)
+        }
+      }
+      await desktop.browser.activate(id, isVisible)
+      setError(null)
+      return true
+    } catch (cause) {
+      setError(errorMessage(cause, 'Sayfa açılamadı.'))
+      return false
+    }
+  }, [createBrowserTab, isVisible, project])
+
+  const openTab = useCallback(async (url?: string) => {
+    const tab = makeTab()
+    const previous = stateRef.current
+    const prepared = url
+      ? prepareNewTabNavigation(previous, tab, normalizeBrowserInput(url))
+      : { state: openTabState(previous, tab), tabId: tab.id, url: null }
+    stateRef.current = prepared.state
+    persist(prepared.state)
+    setState(prepared.state)
+    if (!prepared.url) {
+      await synchronizeBrowserSurface(prepared.state).catch(() => undefined)
+      return
+    }
+    const created = await navigateTab(prepared.tabId, prepared.url)
+    if (!created) {
+      const restoredState = resolveOptimisticClose(previous, prepared.state, false)
+      stateRef.current = restoredState
+      persist(restoredState)
+      setState(restoredState)
+      await synchronizeBrowserSurface(restoredState).catch(() => undefined)
+    }
+  }, [navigateTab, synchronizeBrowserSurface])
+
+  // Electron owns the persisted session. The localStorage copy is only a fast
+  // renderer fallback for browser preview and is never used to create fake pages.
+  useEffect(() => {
+    if (!isVisible || restoreStarted.current) return
+    let cancelled = false
+    void (async () => {
+      const bounds = await waitForBounds(hostRef.current)
+      if (cancelled || !canStartNativeRestore(isVisible, Boolean(bounds), restoreStarted.current)) return
+      let nextState = stateRef.current
+      if (isElectronRuntime()) {
+        const stored = await desktop.browser.getSession().catch(() => ({ tabs: [], activeTabId: null }))
+        if (stored.tabs.length) nextState = migrateBrowserState(stored, stored.activeTabId)
+      }
+      if (cancelled) return
+      sessionHydrated.current = true
+      restoreStarted.current = true
+      stateRef.current = nextState
+      setState(nextState)
+      persist(nextState)
+      for (const task of nativeRestoreTasks(nextState)) {
+        if (cancelled) return
+        await navigateTab(task.tabId, task.url)
+      }
+      await synchronizeBrowserSurface(stateRef.current).catch(() => undefined)
+    })()
+    return () => { cancelled = true }
+  }, [isVisible, navigateTab, synchronizeBrowserSurface])
+
+  useEffect(() => {
+    if (!sessionHydrated.current) return
+    persist(state)
+    if (isElectronRuntime()) void desktop.browser.saveSession(sessionSnapshot(state)).catch(() => undefined)
+  }, [state])
+
   useEffect(() => setAddress(active?.url ?? ''), [active?.id, active?.url])
-  useEffect(() => { const created = (projection: BrowserTabProjection) => { nativeTabIdsRef.current.add(projection.id); project(projection) }; const destroyed = (projection: BrowserTabProjection) => { nativeTabIdsRef.current.delete(projection.id); setState((s) => closeTabState(s, projection.id)) }; const stops = [desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabCreated, created), desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabUpdated, project), desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabDestroyed, destroyed), desktop.browser.on<BrowserMediaProjection>(BROWSER_EVENTS.mediaUpdated, (media) => setState((s) => ({ ...s, mediaByTabId: { ...s.mediaByTabId, [media.tabId]: media } }))), desktop.browser.on<string>(BROWSER_EVENTS.openRequest, openTab)]; return () => stops.forEach((stop) => stop()) }, [openTab, project])
-  useEffect(() => { const sync = () => { setFavorites(loadFavorites()); setRecents(loadRecentlyClosed()) }; const requested = (e: Event) => { const url = (e as CustomEvent<{ url?: string }>).detail?.url; if (url) openTab(url) }; window.addEventListener(BROWSER_DATA_EVENT, sync); window.addEventListener(BROWSER_NAVIGATION_EVENT, requested); const pending = consumeBrowserNavigation(); if (pending) openTab(pending); return () => { window.removeEventListener(BROWSER_DATA_EVENT, sync); window.removeEventListener(BROWSER_NAVIGATION_EVENT, requested) } }, [openTab])
-  useEffect(() => { const update = () => { const bounds = getBounds(hostRef.current); if (bounds && active?.url) void desktop.browser.setBounds(active.id, bounds).catch(() => undefined) }; const observer = new ResizeObserver(update); if (hostRef.current) observer.observe(hostRef.current); window.addEventListener('resize', update); return () => { observer.disconnect(); window.removeEventListener('resize', update) } }, [active?.id, active?.url])
-  useEffect(() => { void desktop.browser.setVisible(isVisible).catch(() => undefined) }, [isVisible])
+
+  useEffect(() => {
+    const created = (projection: BrowserTabProjection) => { liveTabIdsRef.current.add(projection.id); project(projection) }
+    const destroyed = (projection: BrowserTabProjection) => {
+      liveTabIdsRef.current.delete(projection.id)
+      const next = closeTabState(stateRef.current, projection.id)
+      stateRef.current = next
+      setState(next)
+    }
+    const mediaUpdated = (media: BrowserMediaProjection) => setState((current) => ({ ...current, mediaByTabId: { ...current.mediaByTabId, [media.tabId]: media } }))
+    const openRequest = (payload: { url?: string } | string) => {
+      const url = typeof payload === 'string' ? payload : payload?.url
+      if (url) void openTab(url)
+    }
+    const rendererFailed = (payload: { projection?: BrowserTabProjection; reason?: string }) => {
+      if (payload?.projection) project(payload.projection)
+      if (payload?.projection?.id === stateRef.current.activeTabId) setError(payload.reason || payload.projection.error || 'Sekme renderer işlemi başarısız oldu.')
+    }
+    const permission = (request: BrowserPermissionRequest) => setPermissionRequest(request)
+    const download = (item: BrowserDownloadItem) => setDownloads((current) => [item, ...current.filter((entry) => entry.id !== item.id)])
+    const historyUpdate = (item: BrowserHistoryItem | null) => { if (item) setHistory((current) => [item, ...current.filter((entry) => entry.url !== item.url)]) }
+    const stops = [
+      desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabCreated, created),
+      desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabUpdated, project),
+      desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabDestroyed, destroyed),
+      desktop.browser.on<BrowserMediaProjection>(BROWSER_EVENTS.mediaUpdated, mediaUpdated),
+      desktop.browser.on<{ url?: string } | string>(BROWSER_EVENTS.openRequest, openRequest),
+      desktop.browser.on<{ projection?: BrowserTabProjection; reason?: string }>(BROWSER_EVENTS.rendererFailed, rendererFailed),
+      desktop.browser.on<BrowserPermissionRequest>(BROWSER_EVENTS.permissionRequest, permission),
+      desktop.browser.on<BrowserDownloadItem>(BROWSER_EVENTS.downloadUpdated, download),
+      desktop.browser.on<BrowserHistoryItem | null>(BROWSER_EVENTS.historyUpdated, historyUpdate),
+    ]
+    return () => stops.forEach((stop) => stop())
+  }, [openTab, project])
+
+  useEffect(() => {
+    const sync = () => { setFavorites(loadFavorites()); setRecents(loadRecentlyClosed()) }
+    const requested = (event: Event) => { const url = (event as CustomEvent<{ url?: string }>).detail?.url; if (url) void openTab(url) }
+    window.addEventListener(BROWSER_DATA_EVENT, sync)
+    window.addEventListener(BROWSER_NAVIGATION_EVENT, requested)
+    const pending = consumeBrowserNavigation()
+    if (pending) void openTab(pending)
+    return () => { window.removeEventListener(BROWSER_DATA_EVENT, sync); window.removeEventListener(BROWSER_NAVIGATION_EVENT, requested) }
+  }, [openTab])
+
+  useEffect(() => {
+    const update = () => {
+      const bounds = getBounds(hostRef.current)
+      if (bounds && active?.url && liveTabIdsRef.current.has(active.id)) void desktop.browser.setBounds(active.id, bounds).catch(() => undefined)
+    }
+    const observer = new ResizeObserver(update)
+    if (hostRef.current) observer.observe(hostRef.current)
+    window.addEventListener('resize', update)
+    return () => { observer.disconnect(); window.removeEventListener('resize', update) }
+  }, [active?.id, active?.url])
+
+  useEffect(() => { void desktop.browser.setVisible(isVisible && panel === null).catch(() => undefined) }, [isVisible, panel])
   useEffect(() => { void desktop.browser.setTheme(theme).catch(() => undefined) }, [theme])
-  useEffect(() => { if (!isTauriRuntime()) return; void desktop.browser.syncMetadata().catch(() => undefined); const timer = window.setInterval(() => void desktop.browser.syncMetadata().catch(() => undefined), 1800); return () => window.clearInterval(timer) }, [])
-  async function select(id: string) { const next = selectTabState(stateRef.current, id); if (next === stateRef.current) return; stateRef.current = next; setState(next); await synchronizeNativeView(next).catch(() => undefined) }
-  async function close(id: string) { const tab = stateRef.current.tabs.find((item) => item.id === id); if (!tab) return; const nativeBacked = nativeTabIdsRef.current.has(id); const previous = stateRef.current; const next = closeTabState(previous, id); persist(next); stateRef.current = next; setState(next); if (!tab.url) { nativeTabIdsRef.current.delete(id); await synchronizeNativeView(next).catch(() => undefined); return } if (!nativeBacked) { nativeTabIdsRef.current.delete(id); addRecentlyClosed(tab.title, tab.url, tab.favicon); setRecents(loadRecentlyClosed()); await synchronizeNativeView(next).catch(() => undefined); return } try { await desktop.browser.close(id); nativeTabIdsRef.current.delete(id); addRecentlyClosed(tab.title, tab.url, tab.favicon); setRecents(loadRecentlyClosed()); await synchronizeNativeView(next).catch(() => undefined) } catch (cause) { const restoredState = resolveOptimisticClose(previous, next, false); persist(restoredState); stateRef.current = restoredState; setState(restoredState); await synchronizeNativeView(restoredState).catch(() => undefined); setError(errorMessage(cause, 'Sekme kapatılamadı.')) } }
-  function submit(e: FormEvent) { e.preventDefault(); if (active) void navigateTab(active.id, address); else void openTab(address) }
-  function toggleFavorite() { if (!active?.url) return; const found = favorites.find((f) => f.url === active.url); const next = found ? favorites.filter((f) => f.id !== found.id) : [...favorites, { id: crypto.randomUUID(), name: active.title, url: active.url, color: 'var(--color-browser-blue)', iconText: active.title.slice(0, 2).toUpperCase(), favicon: active.favicon }]; saveFavorites(next); setFavorites(next) }
-  const isFavorite = Boolean(active?.url && favorites.some((f) => f.url === active.url))
+  useEffect(() => {
+    if (!isElectronRuntime()) return
+    void desktop.browser.syncMetadata().catch(() => undefined)
+    const timer = window.setInterval(() => void desktop.browser.syncMetadata().catch(() => undefined), 1_500)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  async function select(id: string) {
+    const next = selectTabState(stateRef.current, id)
+    if (next === stateRef.current) return
+    stateRef.current = next
+    setState(next)
+    await synchronizeBrowserSurface(next).catch(() => undefined)
+  }
+
+  async function close(id: string) {
+    const tab = stateRef.current.tabs.find((item) => item.id === id)
+    if (!tab) return
+    const live = liveTabIdsRef.current.has(id)
+    const previous = stateRef.current
+    const next = closeTabState(previous, id)
+    persist(next)
+    stateRef.current = next
+    setState(next)
+    if (!live) {
+      addRecentlyClosed(tab.title, tab.url || '', tab.favicon)
+      setRecents(loadRecentlyClosed())
+      await synchronizeBrowserSurface(next).catch(() => undefined)
+      return
+    }
+    try {
+      await desktop.browser.close(id)
+      liveTabIdsRef.current.delete(id)
+      if (tab.url) addRecentlyClosed(tab.title, tab.url, tab.favicon)
+      setRecents(loadRecentlyClosed())
+      await synchronizeBrowserSurface(next).catch(() => undefined)
+    } catch (cause) {
+      const restoredState = resolveOptimisticClose(previous, next, false)
+      stateRef.current = restoredState
+      persist(restoredState)
+      setState(restoredState)
+      setError(errorMessage(cause, 'Sekme kapatılamadı.'))
+    }
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    if (active) void navigateTab(active.id, address)
+    else void openTab(address)
+  }
+
+  function toggleFavorite() {
+    if (!active?.url) return
+    const found = favorites.find((item) => item.url === active.url)
+    const next = found
+      ? favorites.filter((item) => item.id !== found.id)
+      : [...favorites, { id: crypto.randomUUID(), name: active.title, url: active.url, color: 'var(--color-browser-blue)', iconText: active.title.slice(0, 2).toUpperCase(), favicon: active.favicon }]
+    saveFavorites(next)
+    setFavorites(next)
+  }
+
+  async function togglePanel(next: Exclude<BrowserPanel, null>) {
+    if (panel === next) { setPanel(null); return }
+    setPanel(next)
+    if (next === 'history') setHistory(await desktop.browser.listHistory().catch(() => []))
+    else setDownloads(await desktop.browser.listDownloads().catch(() => []))
+  }
+
+  async function decidePermission(decision: 'allow' | 'deny') {
+    if (!permissionRequest) return
+    await desktop.browser.setPermission({ origin: permissionRequest.origin, permission: permissionRequest.permission, decision, requestId: permissionRequest.requestId }).catch(() => undefined)
+    setPermissionRequest(null)
+  }
+
+  const isFavorite = Boolean(active?.url && favorites.some((item) => item.url === active.url))
+  const activeMedia = active ? state.mediaByTabId[active.id] : null
+
   return <section className="edge-browser" aria-label="Gömülü tarayıcı">
-    <div className="edge-browser__tabs" role="tablist"><div className="edge-browser__tab-scroll">{state.tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={tab.id === active?.id} className={`edge-browser__tab ${tab.id === active?.id ? 'edge-browser__tab--active' : ''}`} onClick={() => void select(tab.id)}>{tab.favicon ? <img src={tab.favicon} alt="" /> : <Globe2 size={12} />}<span>{tab.title}</span>{tab.loading ? <LoaderCircle className="edge-browser__spinner" size={11} /> : null}<span role="button" tabIndex={0} className="edge-browser__tab-close" aria-label={`${tab.title} sekmesini kapat`} onClick={(e) => { e.stopPropagation(); void close(tab.id) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') void close(tab.id) }}><X size={11} /></span></button>)}</div><button type="button" className="edge-browser__new-tab" onClick={() => void openTab()} aria-label="Yeni sekme"><Plus size={14} /></button></div>
-    <div className="edge-browser__toolbar"><button type="button" className="edge-browser__tool" disabled={!active?.canGoBack} onClick={() => active && void desktop.browser.back(active.id)} aria-label="Geri"><ArrowLeft size={15} /></button><button type="button" className="edge-browser__tool" disabled={!active?.canGoForward} onClick={() => active && void desktop.browser.forward(active.id)} aria-label="İleri"><ArrowRight size={15} /></button><button type="button" className="edge-browser__tool" disabled={!active?.url} onClick={() => active && void desktop.browser.reload(active.id)} aria-label="Yenile"><RefreshCw size={14} /></button><form className="edge-browser__address" onSubmit={submit}><Search size={14} /><input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Web'de ara veya adres yaz" aria-label="Adres ve arama" /><button type="button" onClick={toggleFavorite} className={isFavorite ? 'edge-browser__favorite--active' : ''} aria-label={isFavorite ? 'Favorilerden kaldır' : 'Favorilere ekle'}><Star size={14} fill={isFavorite ? 'currentColor' : 'none'} /></button></form></div>
+    <div className="edge-browser__tabs" role="tablist">
+      <div className="edge-browser__tab-scroll">
+        {state.tabs.map((tab) => {
+          const media = state.mediaByTabId[tab.id]
+          const isMuted = tab.muted === true
+          return <button key={tab.id} type="button" role="tab" aria-selected={tab.id === active?.id} className={`edge-browser__tab ${tab.id === active?.id ? 'edge-browser__tab--active' : ''}`} onClick={() => void select(tab.id)} onContextMenu={(event) => { event.preventDefault(); void desktop.browser.showTabMenu(tab.id) }}>
+            {tab.favicon ? <img src={tab.favicon} alt="" /> : <Globe2 size={12} />}
+            <span>{tab.title}</span>
+            {tab.pinned ? <Pin size={11} aria-label="Sabitlenmiş sekme" /> : null}
+            {media?.playing ? <span className="edge-browser__tab-media" title={isMuted ? 'Sessiz medya' : 'Medya oynatılıyor'} onClick={(event) => { event.stopPropagation(); void desktop.browser.setMuted(tab.id, !isMuted) }}>{isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</span> : null}
+            {tab.loading ? <LoaderCircle className="edge-browser__spinner" size={11} /> : null}
+            <span role="button" tabIndex={0} className="edge-browser__tab-close" aria-label={`${tab.title} sekmesini kapat`} onClick={(event) => { event.stopPropagation(); void close(tab.id) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void close(tab.id) } }}><X size={11} /></span>
+          </button>
+        })}
+      </div>
+      <button type="button" className="edge-browser__new-tab" onClick={() => void openTab()} aria-label="Yeni sekme"><Plus size={14} /></button>
+    </div>
+    <div className="edge-browser__toolbar">
+      <button type="button" className="edge-browser__tool" disabled={!active?.canGoBack} onClick={() => active && void desktop.browser.back(active.id)} aria-label="Geri"><ArrowLeft size={15} /></button>
+      <button type="button" className="edge-browser__tool" disabled={!active?.canGoForward} onClick={() => active && void desktop.browser.forward(active.id)} aria-label="İleri"><ArrowRight size={15} /></button>
+      <button type="button" className="edge-browser__tool" disabled={!active?.url} onClick={() => active && void desktop.browser.reload(active.id)} aria-label="Yenile"><RefreshCw size={14} /></button>
+      <form className="edge-browser__address" onSubmit={submit}><Search size={14} /><input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Web'de ara veya adres yaz" aria-label="Adres ve arama" /><button type="button" onClick={toggleFavorite} className={isFavorite ? 'edge-browser__favorite--active' : ''} aria-label={isFavorite ? 'Favorilerden kaldır' : 'Favorilere ekle'}><Star size={14} fill={isFavorite ? 'currentColor' : 'none'} /></button></form>
+      <button type="button" className={`edge-browser__tool ${panel === 'history' ? 'edge-browser__tool--active' : ''}`} onClick={() => void togglePanel('history')} aria-label="Geçmiş"><History size={14} /></button>
+      <button type="button" className={`edge-browser__tool ${panel === 'downloads' ? 'edge-browser__tool--active' : ''}`} onClick={() => void togglePanel('downloads')} aria-label="İndirmeler"><Download size={14} /></button>
+    </div>
+    {permissionRequest ? <div className="edge-browser__permission" role="dialog" aria-label="Site izni"><ShieldCheck size={16} /><span><strong>{hostnameFromUrl(permissionRequest.origin)}</strong> {permissionRequest.permission} izni istiyor.</span><button type="button" onClick={() => void decidePermission('deny')}>Reddet</button><button type="button" onClick={() => void decidePermission('allow')}>İzin ver</button></div> : null}
+    {panel ? <div className="edge-browser__browser-panel" role="dialog" aria-label={panel === 'history' ? 'Tarama geçmişi' : 'İndirmeler'}>
+      <div className="edge-browser__section-title"><h2>{panel === 'history' ? 'Geçmiş' : 'İndirmeler'}</h2><button type="button" onClick={() => setPanel(null)} aria-label="Paneli kapat"><X size={14} /></button></div>
+      {panel === 'history' ? (history.length ? history.map((item) => <button key={item.id} type="button" className="edge-browser__recent-row" onClick={() => { void openTab(item.url); setPanel(null) }}>{item.favicon ? <img src={item.favicon} alt="" /> : <Globe2 size={14} />}<span><strong>{item.title}</strong><small>{hostnameFromUrl(item.url)}</small></span><time>{relativeTime(item.visitedAt)}</time></button>) : <p className="edge-browser__empty">Henüz geçmiş kaydı yok.</p>) : (downloads.length ? downloads.map((item) => <div key={item.id} className="edge-browser__download-row"><span><strong>{item.filename}</strong><small>{item.state === 'progressing' ? `${formatBytes(item.receivedBytes)} / ${formatBytes(item.totalBytes)}` : item.state}</small></span><div><button type="button" onClick={() => void desktop.browser.openDownload(item.id)} disabled={item.state !== 'completed'}>Aç</button><button type="button" onClick={() => void desktop.browser.showDownload(item.id)}>Klasör</button></div></div>) : <p className="edge-browser__empty">Henüz indirme yok.</p>)}
+    </div> : null}
     {error || active?.error ? <div className="edge-browser__error" role="alert">{error || active?.error}<button type="button" onClick={() => active && void navigateTab(active.id, active.url || address)}>Yeniden dene</button></div> : null}
-    <div className="edge-browser__content"><div ref={hostRef} className={`edge-browser__native-host ${active?.url ? '' : 'edge-browser__native-host--inactive'}`} />{!active?.url ? <div className="edge-browser__start"><div className="edge-browser__start-heading"><div><h1>Yeni sekme</h1><p>Web'de ara veya kayıtlı yer imlerinden birini aç.</p></div></div><div className="edge-browser__favorites">{favorites.map((f) => <button key={f.id} type="button" onClick={() => active ? void navigateTab(active.id, f.url) : void openTab(f.url)} className="edge-browser__favorite-card">{f.favicon ? <img src={f.favicon} alt="" /> : <span>{f.iconText}</span>}<strong>{f.name}</strong><small>{hostnameFromUrl(f.url)}</small></button>)}</div><div className="edge-browser__recent-panel"><div className="edge-browser__section-title"><h2>Son kapatılanlar</h2></div>{recents.length ? recents.map((r) => <button key={r.id} type="button" className="edge-browser__recent-row" onClick={() => void openTab(r.url)}>{r.favicon ? <img src={r.favicon} alt="" /> : <Globe2 size={14} />}<span><strong>{r.title}</strong><small>{hostnameFromUrl(r.url)}</small></span><time>{relativeTime(r.closedAt)}</time></button>) : <p className="edge-browser__empty">Kapatılan sekmeler burada görünür.</p>}</div></div> : !isTauriRuntime() ? <div className="edge-browser__web-fallback"><Globe2 size={30} /><p>Gömülü tarayıcı masaüstü sürümünde çalışır.</p></div> : null}</div>
+    <div className="edge-browser__content">
+      <div ref={hostRef} className={`edge-browser__native-host ${active?.url ? '' : 'edge-browser__native-host--inactive'}`} />
+      {!active?.url ? <div className="edge-browser__start"><div className="edge-browser__start-heading"><div><h1>Yeni sekme</h1><p>Web'de ara veya kayıtlı yer imlerinden birini aç.</p></div></div><div className="edge-browser__favorites">{favorites.map((favorite) => <button key={favorite.id} type="button" onClick={() => active ? void navigateTab(active.id, favorite.url) : void openTab(favorite.url)} className="edge-browser__favorite-card">{favorite.favicon ? <img src={favorite.favicon} alt="" /> : <span>{favorite.iconText}</span>}<strong>{favorite.name}</strong><small>{hostnameFromUrl(favorite.url)}</small></button>)}</div><div className="edge-browser__recent-panel"><div className="edge-browser__section-title"><h2>Son kapatılanlar</h2></div>{recents.length ? recents.map((recent) => <button key={recent.id} type="button" className="edge-browser__recent-row" onClick={() => void openTab(recent.url)}>{recent.favicon ? <img src={recent.favicon} alt="" /> : <Globe2 size={14} />}<span><strong>{recent.title}</strong><small>{hostnameFromUrl(recent.url)}</small></span><time>{relativeTime(recent.closedAt)}</time></button>) : <p className="edge-browser__empty">Kapatılan sekmeler burada görünür.</p>}</div></div> : !isElectronRuntime() ? <div className="edge-browser__web-fallback"><Globe2 size={30} /><p>Gömülü tarayıcı Electron masaüstü sürümünde çalışır.</p></div> : null}
+    </div>
   </section>
 }

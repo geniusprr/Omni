@@ -9,6 +9,8 @@ export interface BrowserTab {
   canGoBack: boolean
   canGoForward: boolean
   error: string | null
+  pinned?: boolean
+  muted?: boolean
 }
 
 export interface BrowserState { tabs: BrowserTab[]; activeTabId: string | null; mediaByTabId: Record<string, BrowserMediaState> }
@@ -21,23 +23,26 @@ export const EMPTY_BROWSER_STATE: BrowserState = { tabs: [], activeTabId: null, 
 
 export function validateTabId(id: string): boolean { return /^[A-Za-z0-9_-]{1,64}$/.test(id) }
 export function migrateBrowserState(raw: unknown, activeId: string | null): BrowserState {
-  const tabs = Array.isArray(raw) ? raw.flatMap((value): BrowserTab[] => {
+  const rawObject = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as { tabs?: unknown; activeTabId?: unknown } : null
+  const rawTabs = Array.isArray(raw) ? raw : rawObject?.tabs
+  const persistedActiveId = activeId ?? (typeof rawObject?.activeTabId === 'string' ? rawObject.activeTabId : null)
+  const tabs = Array.isArray(rawTabs) ? rawTabs.flatMap((value): BrowserTab[] => {
     if (!value || typeof value !== 'object') return []
     const item = value as Partial<BrowserTab>
     if (typeof item.id !== 'string' || !validateTabId(item.id)) return []
     const url = item.url === null ? null : typeof item.url === 'string' && /^https?:\/\//i.test(item.url) ? item.url : null
     if (item.url !== null && url === null) return []
-    return [{ id: item.id, url, title: typeof item.title === 'string' && item.title.trim() ? item.title : url ? hostname(url) : 'Yeni Sekme', favicon: typeof item.favicon === 'string' && /^https?:\/\//i.test(item.favicon) ? item.favicon : url ? faviconForUrl(url) : null, loading: false, canGoBack: false, canGoForward: false, error: null }]
+    return [{ id: item.id, url, title: typeof item.title === 'string' && item.title.trim() ? item.title : url ? hostname(url) : 'Yeni Sekme', favicon: typeof item.favicon === 'string' && /^(?:https?:\/\/|data:image\/)/i.test(item.favicon) ? item.favicon : url ? faviconForUrl(url) : null, loading: false, canGoBack: false, canGoForward: false, error: null, pinned: item.pinned === true, muted: item.muted === true }]
   }).slice(0, 20) : []
-  return { tabs, activeTabId: activeId && tabs.some((tab) => tab.id === activeId) ? activeId : tabs[0]?.id ?? null, mediaByTabId: {} }
+  return { tabs, activeTabId: persistedActiveId && tabs.some((tab) => tab.id === persistedActiveId) ? persistedActiveId : tabs[0]?.id ?? null, mediaByTabId: {} }
 }
 export function serializeBrowserState(state: BrowserState): { tabs: BrowserTab[]; activeTabId: string | null } { return { tabs: state.tabs, activeTabId: state.activeTabId } }
 export function makeTab(url: string | null = null): BrowserTab {
-  return { id: crypto.randomUUID().replace(/-/g, ''), url, title: url ? hostname(url) : 'Yeni Sekme', favicon: url ? faviconForUrl(url) : null, loading: false, canGoBack: false, canGoForward: false, error: null }
+  return { id: crypto.randomUUID().replace(/-/g, ''), url, title: url ? hostname(url) : 'Yeni Sekme', favicon: url ? faviconForUrl(url) : null, loading: false, canGoBack: false, canGoForward: false, error: null, pinned: false, muted: false }
 }
 export function hostname(url: string) { try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url } }
 export function faviconForUrl(url: string) { try { const parsed = new URL(url); return `https://${parsed.host}/favicon.ico` } catch { return null } }
-export function applyProjection(tab: BrowserTab, projection: BrowserTabProjection): BrowserTab { return { ...tab, url: projection.url, title: projection.title || tab.title, favicon: projection.favicon || faviconForUrl(projection.url), loading: projection.loading, canGoBack: projection.canGoBack, canGoForward: projection.canGoForward, error: projection.error } }
+export function applyProjection(tab: BrowserTab, projection: BrowserTabProjection): BrowserTab { return { ...tab, url: projection.url, title: projection.title || tab.title, favicon: projection.favicon || faviconForUrl(projection.url), loading: projection.loading, canGoBack: projection.canGoBack, canGoForward: projection.canGoForward, error: projection.error, pinned: projection.pinned, muted: projection.muted } }
 /** Applies the authoritative projection returned by a native command or event. */
 export function applyTabProjectionState(state: BrowserState, projection: BrowserTabProjection): BrowserState {
   return { ...state, tabs: state.tabs.map((tab) => tab.id === projection.id ? applyProjection(tab, projection) : tab) }

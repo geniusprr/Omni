@@ -1,0 +1,55 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import type { DesktopEventName, ElectronDesktopBridge, IpcChannel } from '../shared/contracts.js'
+
+const allowedChannels: ReadonlySet<string> = new Set([
+  'window:minimize', 'window:toggle-maximize', 'window:is-maximized', 'window:close', 'window:show',
+  'open-external', 'launch-program',
+  'system:get-timer-status', 'system:schedule-shutdown', 'system:cancel-shutdown', 'system:get-info',
+  'system:get-autostart', 'system:set-autostart', 'settings:get', 'settings:save',
+  'alarms:list', 'alarms:get-active', 'alarms:create', 'alarms:cancel', 'alarms:stop-sound',
+  'media:get-current', 'media:control',
+  'browser:create-tab', 'browser:activate-tab', 'browser:close-tab', 'browser:navigate',
+  'browser:reload', 'browser:back', 'browser:forward', 'browser:set-visible', 'browser:deactivate',
+  'browser:set-bounds', 'browser:sync-metadata', 'browser:toggle-media', 'browser:media-control',
+  'browser:media-volume', 'browser:set-theme', 'browser:debug-snapshot', 'browser:get-session',
+  'browser:save-session', 'browser:duplicate-tab', 'browser:set-pinned', 'browser:set-muted',
+  'browser:show-tab-menu', 'browser:list-history', 'browser:clear-history', 'browser:list-downloads',
+  'browser:open-download', 'browser:show-download', 'browser:cancel-download', 'browser:remove-download',
+  'browser:list-permissions', 'browser:set-permission', 'browser:clear-permission',
+  'youtube-music:control', 'youtube-music:set-volume', 'youtube-music:sync-state',
+  'notes:list', 'notes:save', 'notes:delete', 'notes:toggle-pin',
+  'transfers:list', 'transfers:open', 'transfers:show-in-folder', 'transfers:delete', 'transfers:clear',
+  'mobile:get-connection-info',
+  'localsend:get-status', 'localsend:get-devices', 'localsend:scan-network', 'localsend:send-text',
+  'localsend:send-file', 'localsend:get-received-files', 'localsend:open-download-folder',
+  'localsend:set-auto-accept', 'localsend:add-manual-device',
+  'vault:select-folder', 'vault:get-default-path', 'vault:list-entries', 'vault:read-file',
+  'vault:write-file', 'vault:create-file', 'vault:create-folder', 'vault:rename-entry',
+  'vault:delete-entry', 'vault:reveal-in-explorer', 'vault:start-watcher', 'vault:stop-watcher',
+  'vault:set-window-mode',
+])
+
+// Keep the allowlist literal in the isolated preload so a remote page can never
+// turn an arbitrary renderer event or channel into a Node/Electron capability.
+const allowedEvents: ReadonlySet<string> = new Set([
+  'browser:tab-created', 'browser:tab-updated', 'browser:tab-destroyed', 'browser:media-updated',
+  'browser:open-request', 'browser:renderer-failed', 'browser:permission-request', 'browser:fullscreen-changed',
+  'browser:download-updated', 'browser:history-updated', 'alarm:triggered', 'alarm:created', 'alarm:cancelled',
+  'remote:command', 'mobile:note', 'mobile:file', 'mobile:notification', 'localsend:device-discovered',
+  'localsend:file-received', 'vault:fs-change', 'youtube-music-state',
+])
+
+const bridge: ElectronDesktopBridge = {
+  invoke(channel: IpcChannel, payload?: unknown) {
+    if (!allowedChannels.has(channel)) return Promise.reject(new Error(`IPC kanalı izinli değil: ${channel}`))
+    return ipcRenderer.invoke(channel, payload)
+  },
+  on(event: DesktopEventName, listener: (payload: unknown) => void) {
+    if (!allowedEvents.has(event)) throw new Error(`IPC olayı izinli değil: ${event}`)
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, payload: unknown) => listener(payload)
+    ipcRenderer.on(event, handler)
+    return () => ipcRenderer.removeListener(event, handler)
+  },
+}
+
+contextBridge.exposeInMainWorld('kapanisDesktop', bridge)

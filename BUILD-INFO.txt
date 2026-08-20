@@ -1,26 +1,17 @@
-kapanış. 1.1.0 — Windows x64 release
-Build date: 2026-08-20
+kapanış. 1.1.0 — Electron Windows x64 release
+Build date: 2026-08-21
 
 Installer
-  File: kapanış._1.1.0_x64-setup.exe
-  Size: 5,467,027 bytes (5.21 MiB)
-  SHA-256: 11BF091065EE9B85CF5D16E858468107E9351A9E8B81E452B63A61BA462C26A5
-  Authenticode: NotSigned
-
-Portable release executable
-  File: kapanis.exe
-  Size: 12,923,904 bytes (12.32 MiB)
-  SHA-256: 27C80766E0A071506D183B8B78F13019FF907775542D9480053C45E7E62E1486
-  Authenticode: NotSigned
+  npm run dist ile release/ altında oluşturulur.
+  Authenticode: NotSigned (imzalama yapılandırılmadı)
 
 Verification
   npm run build: passed
-  cargo fmt --all -- --check: passed
-  cargo clippy --all-targets --locked -- -D warnings: passed
-  cargo test --locked: 5 passed, 0 failed
+  npm test: passed
+  npm run test:browser: passed (12+ WebContentsView, navigation, fullscreen, download, session restore)
   npm audit: 0 vulnerabilities
-  Native checks: fixed 780x620 viewport, close-to-tray, single-instance,
-  alarm notification/sound/repeat, and shutdown-plan cancellation passed.
+  Electron checks: close-to-tray, single-instance, alarm notification/sound/repeat,
+  shutdown-plan cancellation, popup policy, favicon, media stop and renderer cleanup passed.
 
 Idle tray sample (10 seconds)
   Processes: 1

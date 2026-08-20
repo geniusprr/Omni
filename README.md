@@ -1,6 +1,6 @@
 # kapanış.
 
-Windows için küçük, yerel ve düşük kaynak tüketimli bir kapatma sayacı + alarm uygulaması. Tauri 2, Rust ve React ile çalışır; web sürümü yoktur.
+Windows için küçük, yerel ve düşük kaynak tüketimli bir kapatma sayacı + alarm uygulaması. Electron, React ve Chromium tabanlı gerçek bir tarayıcı sekme sistemi ile çalışır.
 
 ## Özellikler
 
@@ -11,27 +11,30 @@ Windows için küçük, yerel ve düşük kaynak tüketimli bir kapatma sayacı 
 - Üç Windows sistem sesi profili ve 5 dakika erteleme
 - Alarm ve planların `%APPDATA%\kapanis` altında yerel saklanması
 - Windows ile otomatik açılma, arka planda başlama ve sistem tepsisi
-- Gerçek Tauri splash penceresi; sabit 780×620, kaydırmasız arayüz
+- Electron splash penceresi, sistem tepsisi ve frameless Windows kabuğu
+- Her web sekmesi için merkezi `WebContentsView` lifecycle yönetimi
+- Sekme başına favicon, geçmiş, indirme, izin, popup, fullscreen ve medya durumu
+- Kalıcı browser session restore; kapatılan sekmelerin renderer ve medya süreçleri temizlenir
 - Gelecekte telefondan komut vermek için RLS korumalı Supabase migration + isteğe bağlı Realtime köprüsü
 
 ## Geliştirme
 
-Gerekenler: Node.js 22+, Rust stable, MSVC C++ Build Tools ve WebView2.
+Gerekenler: Node.js 22+ ve Windows için Electron build araçları. Electron kendi Chromium altyapısını paketler; ayrıca Chromium fork'u veya sistem WebView2 kurulumu gerekmez.
 
 ```powershell
 npm install
-npm run tauri:dev
+npm run dev
 ```
 
-`npm run dev:ui` yalnızca Tauri’nin geliştirme içeriğini sunar. Uygulama tarayıcıda kullanılmak veya web’e dağıtılmak üzere tasarlanmamıştır.
+`npm run dev:ui` yalnızca React renderer'ını sunar. `npm run dev`, Vite renderer'ını ve Electron main process'i birlikte başlatır.
 
 ## Windows installer
 
 ```powershell
-npm run tauri:build
+npm run dist
 ```
 
-NSIS installer: `src-tauri/target/release/bundle/nsis/`
+NSIS installer: `release/`
 
 `v*` etiketi GitHub'a gönderildiğinde `.github/workflows/release.yml` Windows installer'ını derler ve taslak GitHub Release'e ekler. Kod imzalama yapılandırılmadığı sürece Windows ilk açılışta bilinmeyen yayıncı uyarısı gösterebilir.
 
@@ -43,9 +46,18 @@ src/
   features/power/      kapatma / yeniden başlatma sayacı
   features/alarms/     alarm formu, tekrar seçenekleri ve bekleyenler
   features/remote/     yapılandırılırsa dinamik yüklenen Supabase köprüsü
-  lib/desktop.ts       Tauri IPC sınırı
+  lib/desktop.ts       typed Electron preload IPC sınırı
   styles/compact.css   yalnızca iki üretim ekranının kullandığı stiller
-src-tauri/src/lib.rs   Windows komutları, scheduler, ses, tray ve autostart
+electron/
+  main.ts              güvenli IPC kayıtları ve uygulama yaşam döngüsü
+  WindowManager.ts     pencere, splash ve sistem tepsisi
+  BrowserManager.ts    merkezi browser orchestration
+  TabManager.ts        sekme başına WebContentsView lifecycle
+  SessionManager.ts    kalıcı browser profili, session ve history
+  DownloadManager.ts   indirme yaşam döngüsü
+  PermissionManager.ts site izinleri
+  MediaManager.ts     medya metadata ve playback kontrolü
+  preload.cts          allowlist'li contextBridge API
 supabase/              RLS migration ve telefon kontrolü hazırlığı
 tokens.css             OKLCH tasarım tokenları
 ```
@@ -56,6 +68,6 @@ Telefon kontrolü varsayılan olarak kapalıdır ve ana uygulamaya ağ yükü ge
 
 ## Güvenlik
 
-Kapatma ve yeniden başlatma komutları Rust katmanında doğrulanıp doğrudan Windows `shutdown.exe` aracına iletilir. Supabase komutları cihaz ve kullanıcı sahipliğini Row Level Security ile sınırlar; süresi dolan uzak komutlar çalıştırılmaz. Değişiklikleri yayınlamadan önce `npm run build`, `cargo fmt --all -- --check` ve `cargo test --locked` çalıştırın.
+Kapatma ve yeniden başlatma komutları Electron main process'inde doğrulanıp doğrudan Windows `shutdown.exe` aracına iletilir. Remote web içerikleri `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true` ile açılır; renderer'a yalnızca allowlist'li typed preload API'si verilir. Supabase komutları cihaz ve kullanıcı sahipliğini Row Level Security ile sınırlar; süresi dolan uzak komutlar çalıştırılmaz. Değişiklikleri yayınlamadan önce `npm test`, `npm run build` ve `npm run dist` çalıştırın.
 
 MIT lisanslıdır.

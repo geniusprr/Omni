@@ -58,7 +58,7 @@ export function TitlebarMiniPlayer({ onOpenStudio }: TitlebarMiniPlayerProps = {
     <div
       className="titlebar-mini-player"
       style={{ '--yt-accent': themeConfig.accent, '--yt-glow': themeConfig.glow } as React.CSSProperties}
-      data-tauri-drag-region
+      data-window-drag
     >
       <button
         type="button"

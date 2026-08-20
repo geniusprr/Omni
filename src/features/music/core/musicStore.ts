@@ -231,8 +231,8 @@ export const musicStore = {
       updateState({ playbackState: 'loading', buffering: true, error: null })
       providerController.play()
     } else {
-      // The direct YouTube Music webview owns playback. Keep the shared mini
-      // player responsive even though it has no iframe controller to register.
+      // The direct YouTube Music browser tab owns playback. Keep the shared
+      // mini player responsive even though it has no local controller to register.
       updateState({ playbackState: 'playing', buffering: false, error: null })
     }
   },
