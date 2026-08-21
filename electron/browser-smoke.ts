@@ -37,6 +37,12 @@ export async function runBrowserLifecycleSmoke(browser: BrowserManager, window: 
   browser.setBounds(ids[1], resizedBounds)
   await assertVisibleViewIsPainted(browser, ids[1], resizedBounds)
 
+  // The browser must follow the application's explicit theme rather than the
+  // Windows setting. Test both a page that loads under dark mode and an
+  // already-loaded page switching back to light mode.
+  browser.setTheme('dark')
+  await assertPageTheme(browser, ids[1], 'dark')
+
   browser.navigate(ids[1], `${baseUrl}/page?tab=navigation-check`)
   const activeRecord = browser.tabs.get(ids[1])
   if (!activeRecord) throw new Error('Aktif sekme kaydı bulunamadı.')
@@ -46,6 +52,10 @@ export async function runBrowserLifecycleSmoke(browser: BrowserManager, window: 
     'Aktif sekme yeniden yüklenemedi',
   )
   await assertVisibleViewIsPainted(browser, ids[1], resizedBounds)
+  await assertPageTheme(browser, ids[1], 'dark')
+
+  browser.setTheme('light')
+  await assertPageTheme(browser, ids[1], 'light')
 
   browser.deactivate()
   await assertOnlyActiveViewIsVisible(browser, null)
@@ -94,7 +104,6 @@ async function assertVisibleViewIsPainted(
       width: document.documentElement.clientWidth,
       height: document.documentElement.clientHeight,
       hasSmokeContent: document.body?.innerText.includes('kapanış browser lifecycle smoke test') === true,
-      background: getComputedStyle(document.body).backgroundColor,
     })`,
     true,
   ) as {
@@ -103,17 +112,32 @@ async function assertVisibleViewIsPainted(
     width: number
     height: number
     hasSmokeContent: boolean
-    background: string
   }
   if (
     renderState.readyState !== 'complete'
     || renderState.width < 1
     || renderState.height < 1
     || !renderState.hasSmokeContent
-    || renderState.background !== 'rgb(25, 104, 217)'
   ) {
     throw new Error(`Aktif BrowserView renderer durumu beklenenden farklı: ${JSON.stringify(renderState)}`)
   }
+}
+
+async function assertPageTheme(browser: BrowserManager, id: string, expected: 'light' | 'dark') {
+  const record = browser.tabs.get(id)
+  if (!record) throw new Error('Tema kontrolü için BrowserView kaydı bulunamadı.')
+  const expectedDark = expected === 'dark'
+  const expectedBackground = expectedDark ? 'rgb(22, 30, 45)' : 'rgb(25, 104, 217)'
+  await waitUntilAsync(async () => {
+    const state = await record.webContents.executeJavaScript(
+      `({
+        dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+        background: getComputedStyle(document.body).backgroundColor,
+      })`,
+      true,
+    ) as { dark: boolean; background: string }
+    return state.dark === expectedDark && state.background === expectedBackground
+  }, 5_000, `BrowserView ${expected} tema sinyalini almadı.`)
 }
 
 async function assertOnlyActiveViewIsVisible(browser: BrowserManager, expectedId: string | null) {
@@ -132,6 +156,15 @@ async function waitUntil(check: () => boolean, timeout: number, message: string)
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
     if (check()) return
+    await wait(25)
+  }
+  throw new Error(message)
+}
+
+async function waitUntilAsync(check: () => Promise<boolean>, timeout: number, message: string) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await check()) return
     await wait(25)
   }
   throw new Error(message)

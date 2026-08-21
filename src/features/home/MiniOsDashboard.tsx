@@ -198,7 +198,7 @@ export function MiniOsDashboard({
 
   return (
     <div className="dashboard-wrapper">
-      <div className="dashboard-main-layout">
+      <div className="dashboard-main-layout dashboard-main-layout--home">
         <div className="dashboard-widgets-area">
           <DraggableWidgetGrid
             layout={layout}
@@ -243,7 +243,7 @@ export function MiniOsDashboard({
           </div>
         </div>
 
-        <div className="dashboard-music-sticky-col">
+        <div className="dashboard-music-sticky-col dashboard-music-sticky-col--companion">
           <SystemMediaStatusWidget />
         </div>
 

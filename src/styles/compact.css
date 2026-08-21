@@ -62,7 +62,9 @@ body,
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #080c14;
+  /* The native Windows Acrylic material is drawn behind this transparent
+     renderer. Keeping this surface opaque would hide the windows underneath. */
+  background: transparent;
 }
 
 body {
@@ -71,7 +73,7 @@ body {
   font-size: 0.875rem;
   line-height: 1.45;
   user-select: none;
-  background: #080c14;
+  background: transparent;
 }
 
 html.splash-page,
@@ -7460,7 +7462,9 @@ textarea {
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--radius-window);
-  background: #0b0f19;
+  /* Leave the application canvas clear so the native Acrylic backdrop can
+     blur and pick up colour from windows behind kapanış. */
+  background: transparent;
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
   font-family: var(--font-body);
   color: #f1f5f9;
@@ -7469,31 +7473,22 @@ textarea {
 }
 
 .minios-window--light {
-  background: #f1f5f9;
+  background: transparent;
   color: #1e293b;
 }
 
 .minios-window--dark {
-  background: #0b0f19;
+  background: transparent;
   color: #f1f5f9;
   border-color: rgba(255, 255, 255, 0.12);
 }
 
 .minios-wallpaper-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 1;
-  background: radial-gradient(circle at 20% 15%, rgba(59, 130, 246, 0.16) 0%, transparent 50%),
-              radial-gradient(circle at 80% 85%, rgba(217, 70, 239, 0.12) 0%, transparent 50%),
-              linear-gradient(180deg, #0f172a 0%, #080c14 100%);
+  display: none;
 }
 
 .minios-window--light .minios-wallpaper-backdrop {
-  background: radial-gradient(circle at 20% 15%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-              radial-gradient(circle at 80% 85%, rgba(217, 70, 239, 0.06) 0%, transparent 50%),
-              linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  display: none;
 }
 
 .minios-shell {
@@ -18213,15 +18208,35 @@ body {
   transition: box-shadow var(--dur-short) var(--ease-out);
 }
 
-/* Chrome and page content meet as one continuous browser surface. */
+/* Chrome and page content share one edge-to-edge browser surface. */
+.edge-browser {
+  align-items: stretch;
+  gap: 0;
+}
+
+.edge-browser__chrome,
+.edge-browser__content {
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
+}
+
 .edge-browser__chrome {
+  border-inline: 0;
+  border-bottom: 0;
   border-bottom-right-radius: 0;
   border-bottom-left-radius: 0;
 }
 
 .edge-browser__content {
+  margin: 0;
+  border-top: 0;
   border-top-right-radius: 0;
   border-top-left-radius: 0;
+}
+
+.edge-browser__toolbar {
+  border-bottom: 0;
 }
 
 /* Hallmark · component: quick access application picker · genre: modern-minimal · theme: existing acrylic system
@@ -18716,25 +18731,19 @@ body {
   .quick-access-program-picker__refresh:hover:not(:disabled),
   .quick-access-program-picker__fallback button:hover:not(:disabled),
   .quick-access-editor__actions button:hover:not(:disabled) {
-    background: var(--acrylic-surface-hover);
-    color: var(--acrylic-text);
-    transform: translateY(-1px);
+    background-color: var(--acrylic-surface-hover);
   }
 
   .quick-access-editor__type button:hover:not(.is-active):not(:disabled) {
-    background: color-mix(in oklch, var(--acrylic-text) 6%, transparent);
-    color: var(--acrylic-text);
+    background-color: color-mix(in oklch, var(--acrylic-text) 6%, transparent);
   }
 
   .quick-access-program-picker__item:hover:not(:disabled) {
-    border-color: var(--acrylic-line);
-    background: var(--acrylic-surface);
-    transform: translateY(-1px);
+    background-color: var(--acrylic-surface);
   }
 
   .quick-access-editor__actions .is-primary:hover:not(:disabled) {
-    background: color-mix(in oklch, var(--color-accent) 82%, var(--acrylic-text));
-    color: var(--color-accent-ink);
+    background-color: color-mix(in oklch, var(--color-accent) 82%, var(--acrylic-text));
   }
 }
 
@@ -18783,6 +18792,437 @@ body {
   }
 
   .is-spinning {
-    animation-duration: 1.6s;
+    animation: none;
   }
+}
+
+/* Quick access uses the application or site's own icon; no generated initials. */
+.qa-app-squircle,
+.quick-access-program-picker__icon,
+.quick-access-editor__item-icon {
+  overflow: hidden;
+  border: 1px solid var(--acrylic-line);
+  background: var(--acrylic-surface);
+  box-shadow: none;
+}
+
+.qa-app-squircle {
+  padding: var(--space-3xs);
+}
+
+.qa-app-squircle > img,
+.quick-access-program-picker__icon > img,
+.quick-access-editor__item-icon > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: contain;
+}
+
+.qa-app-tile--iconless {
+  min-height: 3.25rem;
+  justify-content: center;
+}
+
+.quick-access-program-picker__item.is-iconless {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.quick-access-editor__item-details {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
+ * genre: modern-minimal · macrostructure: Split Studio · theme: existing acrylic system
+ * scope: homepage alignment + system media companion · enrichment: none
+ * nav: existing dock rail + command strip · footer: none (native application workspace)
+ * states: default · hover · focus · active · disabled · loading · error · success
+ */
+
+/* The dock used to be visually offset from its flex slot on desktop. Keep the
+   home rail in the same spatial rhythm as the first widget column. */
+.minios-shell--home {
+  gap: var(--space-sm);
+}
+
+@media (min-width: 48.0625rem) {
+  .minios-shell--home .dock-rail {
+    top: 0;
+    left: 0;
+  }
+}
+
+.dashboard-main-layout--home {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-md);
+  align-content: start;
+}
+
+.dashboard-music-sticky-col--companion {
+  order: -1;
+  align-self: stretch;
+  height: auto;
+  min-height: 0;
+}
+
+@media (min-width: 64.0625rem) {
+  .dashboard-main-layout--home {
+    grid-template-columns: minmax(0, 1fr) clamp(15.5rem, 18vw, 17.5rem);
+    align-items: start;
+    overflow: visible;
+  }
+
+  .dashboard-music-sticky-col--companion {
+    order: initial;
+    align-self: start;
+  }
+}
+
+/* Compact companion: artwork is supporting detail, not a full-height panel.
+   The same hierarchy deliberately works without a media session. */
+.dashboard-music-status-card {
+  --music-accent: var(--color-accent);
+  --music-ink: var(--acrylic-text);
+  --music-muted: var(--acrylic-text-soft);
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--acrylic-line);
+  border-radius: var(--radius-panel);
+  background: var(--acrylic-surface);
+  box-shadow: inset 0 1px 0 var(--color-glass-highlight);
+  color: var(--music-ink);
+  overflow: visible;
+}
+
+.dashboard-music-status-card__topline {
+  display: flex !important;
+  min-height: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.dashboard-music-status-card__provider,
+.dashboard-music-status-card__state {
+  display: inline-flex !important;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--music-muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.dashboard-music-status-card__provider {
+  color: var(--music-ink);
+}
+
+.dashboard-music-status-card__state {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+}
+
+.dashboard-music-status-card__state > span {
+  width: 0.375rem;
+  height: 0.375rem;
+  background: var(--color-neutral);
+  box-shadow: none;
+}
+
+.dashboard-music-status-card[data-state="playing"] .dashboard-music-status-card__state > span {
+  background: var(--color-success);
+}
+
+.dashboard-music-status-card[data-state="error"] .dashboard-music-status-card__state > span {
+  background: var(--color-danger);
+}
+
+.dashboard-music-status-card__now-playing {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.dashboard-music-status-card__artwork {
+  position: relative;
+  width: 3.5rem;
+  height: 3.5rem;
+  min-height: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--acrylic-line);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--color-accent) 14%, var(--acrylic-surface-strong));
+  box-shadow: none;
+}
+
+.dashboard-music-status-card__artwork::after,
+.dashboard-music-status-card__artwork-eq {
+  display: none;
+}
+
+.dashboard-music-status-card__artwork-fallback,
+.dashboard-music-status-card__artwork-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dashboard-music-status-card__artwork-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--music-accent);
+}
+
+.dashboard-music-status-card__artwork-image {
+  object-fit: cover;
+  transform: none;
+}
+
+.dashboard-music-status-card__track {
+  display: flex;
+  min-width: 0;
+  gap: var(--space-3xs);
+  padding: 0;
+}
+
+.dashboard-music-status-card__eyebrow,
+.dashboard-music-status-card__artist {
+  overflow: hidden;
+  color: var(--music-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.dashboard-music-status-card__track strong {
+  overflow: hidden;
+  color: var(--music-ink);
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-style: normal;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-music-status-card__progress {
+  display: flex;
+  gap: var(--space-2xs);
+  padding: 0;
+}
+
+.dashboard-music-status-card__progress-meta {
+  color: var(--music-muted);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-music-status-card__progress-track {
+  height: 0.25rem;
+  background: color-mix(in oklch, var(--music-muted) 24%, transparent);
+}
+
+.dashboard-music-status-card__progress-track > span {
+  background: var(--music-accent);
+  transition: none;
+}
+
+.dashboard-music-status-card__controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 2.5rem));
+  justify-content: start;
+  gap: var(--space-xs);
+  margin: 0;
+}
+
+.dashboard-music-status-card__control {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--music-muted);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+}
+
+.dashboard-music-status-card__control--play,
+.dashboard-music-status-card__control--play:hover:not(:disabled) {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-color: var(--music-accent);
+  background: var(--music-accent);
+  box-shadow: none;
+  color: var(--color-accent-ink);
+}
+
+.dashboard-music-status-card__control:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.dashboard-music-status-card__control:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.dashboard-music-status-card__control:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.dashboard-music-status-card[aria-busy="true"] .dashboard-music-status-card__controls {
+  opacity: 0.7;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dashboard-music-status-card__control:hover:not(:disabled):not(.dashboard-music-status-card__control--play) {
+    background: var(--acrylic-surface-hover);
+  }
+}
+
+.dashboard-music-status-card__session-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--music-muted);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+}
+
+.dashboard-music-status-card__session-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-music-status-card__empty {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  padding-block: var(--space-xs);
+}
+
+.dashboard-music-status-card__empty-mark {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--acrylic-line);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--color-accent) 10%, var(--acrylic-surface-strong));
+  color: var(--music-accent);
+}
+
+.dashboard-music-status-card__empty strong {
+  display: block;
+  color: var(--music-ink);
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-style: normal;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+}
+
+.dashboard-music-status-card__empty p,
+.dashboard-music-status-card__error {
+  margin: var(--space-3xs) 0 0;
+  color: var(--music-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.dashboard-music-status-card__error {
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--acrylic-line);
+  color: var(--color-danger);
+}
+
+.dashboard-music-status-card[data-state="error"] {
+  border-color: color-mix(in oklch, var(--color-danger) 42%, var(--acrylic-line));
+}
+
+@media (max-width: 64rem) {
+  .dashboard-main-layout--home {
+    overflow-y: auto;
+  }
+
+  .dashboard-music-sticky-col--companion {
+    order: -1;
+    height: auto;
+  }
+
+  .dashboard-music-status-card {
+    display: flex;
+    height: auto;
+  }
+
+  .dashboard-music-status-card__topline,
+  .dashboard-music-status-card__artwork,
+  .dashboard-music-status-card__track,
+  .dashboard-music-status-card__progress,
+  .dashboard-music-status-card__controls,
+  .dashboard-music-status-card__session-meta {
+    grid-area: auto;
+  }
+}
+
+@media (max-width: 30rem) {
+  .dashboard-music-status-card {
+    gap: var(--space-xs);
+    padding: var(--space-sm);
+  }
+
+  .dashboard-music-status-card__session-meta {
+    display: none;
+  }
+
+  .dashboard-music-status-card__empty p {
+    font-size: 0.6875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-music-status-card__control,
+  .dashboard-music-status-card__progress-track > span {
+    transition-duration: 150ms;
+    transform: none !important;
+  }
+}
+
+html,
+body {
+  overflow-x: clip;
 }

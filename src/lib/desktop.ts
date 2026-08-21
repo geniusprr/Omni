@@ -121,6 +121,7 @@ export const desktop = {
   programs: {
     launch: (path: string) => invoke<void>('launch-program', { path }),
     list: (refresh = false) => optionalInvoke<ProgramCandidate[]>('programs:list', [], { refresh }),
+    icon: (path: string) => optionalInvoke<string | null>('programs:icon', null, { path }),
     pick: () => optionalInvoke<ProgramCandidate | null>('programs:pick', null),
   },
   window: {

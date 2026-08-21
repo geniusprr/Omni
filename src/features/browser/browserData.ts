@@ -141,7 +141,7 @@ export function hostnameFromUrl(url: string) {
 export function faviconForBrowserUrl(url: string): string | null {
   try {
     const parsed = new URL(url)
-    return /^https?:$/.test(parsed.protocol) ? `https://${parsed.host}/favicon.ico` : null
+    return /^https?:$/.test(parsed.protocol) ? `${parsed.origin}/favicon.ico` : null
   } catch {
     return null
   }

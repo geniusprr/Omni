@@ -143,6 +143,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('open-external', (payload) => windows.openExternal(readString(payload, 'url')))
     handle('launch-program', (payload) => windows.launchProgram(readString(payload, 'path')))
     handle('programs:list', (payload) => windows.listPrograms(Boolean(readObject(payload).refresh)))
+    handle('programs:icon', (payload) => windows.getProgramIcon(readString(payload, 'path')))
     handle('programs:pick', () => windows.pickProgram())
 
     handle('system:get-timer-status', () => system.getTimerStatus())
@@ -179,7 +180,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('browser:toggle-media', (payload) => browser.toggleMedia(readString(payload, 'id')))
     handle('browser:media-control', (payload) => browser.controlMedia(readString(payload, 'id'), readString(payload, 'action') as 'toggle-play' | 'next' | 'previous' | 'toggle-mute'))
     handle('browser:media-volume', (payload) => browser.setMediaVolume(readString(payload, 'id'), readNumber(payload, 'volume')))
-    handle('browser:set-theme', (payload) => browser.setTheme(readString(payload, 'theme') as 'light' | 'dark'))
+    handle('browser:set-theme', (payload) => browser.setTheme(readTheme(payload)))
     handle('browser:debug-snapshot', () => browser.getDebugSnapshot())
     handle('browser:get-session', () => browser.getSession())
     handle('browser:save-session', (payload) => browser.saveSession(readObject(payload) as unknown as BrowserSessionSnapshot))
@@ -294,6 +295,12 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     const action = readString(value, 'action')
     if (action !== 'shutdown' && action !== 'restart') throw new Error('Geçersiz Windows işlemi seçildi.')
     return action as 'shutdown' | 'restart'
+  }
+
+  function readTheme(value: unknown): 'light' | 'dark' {
+    const theme = readString(value, 'theme')
+    if (theme !== 'light' && theme !== 'dark') throw new Error('Geçersiz tema.')
+    return theme
   }
 
   function readBounds(value: unknown): BrowserBounds {

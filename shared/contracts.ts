@@ -231,6 +231,7 @@ export type IpcChannel =
   | 'open-external'
   | 'launch-program'
   | 'programs:list'
+  | 'programs:icon'
   | 'programs:pick'
   | 'system:get-timer-status'
   | 'system:schedule-shutdown'

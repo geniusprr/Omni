@@ -2,6 +2,7 @@ import {
   BrowserWindow,
   Menu,
   clipboard,
+  nativeTheme,
   shell,
   type WebContents,
 } from 'electron'
@@ -31,9 +32,15 @@ export class BrowserManager {
   readonly tabs: TabManager
   private readonly windows: WindowManager
   private activeId: string | null = null
+  private theme: 'light' | 'dark' = 'light'
 
   constructor(windows: WindowManager, mainWindow: BrowserWindow) {
     this.windows = windows
+    // A BrowserView takes Chromium's color preference from nativeTheme, not
+    // from the renderer's CSS. Set the default before any tab can load so an
+    // OS-level dark preference cannot make the in-app browser start dark while
+    // the application itself starts in light mode.
+    nativeTheme.themeSource = this.theme
     this.sessions = new SessionManager()
     this.permissions = new PermissionManager(this.sessions.dataDir)
     this.downloads = new DownloadManager(this.sessions.dataDir)
@@ -112,7 +119,14 @@ export class BrowserManager {
   }
   async setMediaVolume(id: string, volume: number) { await this.media.setVolume(id, volume) }
 
-  setTheme(theme: 'light' | 'dark') { this.tabs.setTheme(theme) }
+  setTheme(theme: 'light' | 'dark') {
+    this.theme = theme
+    // This drives matchMedia('(prefers-color-scheme: dark)') in loaded pages,
+    // including their CSS media queries. TabManager's inline color-scheme is
+    // retained for browser-native controls and pages that use that property.
+    nativeTheme.themeSource = theme
+    this.tabs.setTheme(theme)
+  }
 
   getDebugSnapshot() {
     const snapshot = this.tabs.snapshot()

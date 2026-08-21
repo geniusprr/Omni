@@ -53,6 +53,7 @@ import {
   closeTabsToTheRightState,
   closeTabState,
   DEFAULT_BROWSER_HOME_URL,
+  EMPTY_BROWSER_STATE,
   faviconForUrl,
   makeTab,
   migrateBrowserState,
@@ -213,11 +214,19 @@ export function BrowserPage({
     const rect = surface.getBoundingClientRect()
     if (rect.width < 1 || rect.height < 1) return null
 
+    // Round both edges as a pair. Rounding x/y and width/height separately
+    // can make the native BrowserView end one pixel before or after its React
+    // host, which is especially visible where it meets the browser chrome.
+    const left = Math.max(0, Math.round(rect.left))
+    const top = Math.max(0, Math.round(rect.top))
+    const right = Math.max(left + 1, Math.round(rect.right))
+    const bottom = Math.max(top + 1, Math.round(rect.bottom))
+
     return {
-      x: Math.max(0, Math.round(rect.left)),
-      y: Math.max(0, Math.round(rect.top)),
-      width: Math.max(1, Math.round(rect.width)),
-      height: Math.max(1, Math.round(rect.height)),
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
     }
   }, [])
 
@@ -386,7 +395,10 @@ export function BrowserPage({
   useEffect(() => {
     const wasVisible = wasBrowserSurfaceVisibleRef.current
     wasBrowserSurfaceVisibleRef.current = isVisible
-    if (isVisible && !wasVisible && stateRef.current.tabs.length === 0) void openTab()
+    // A dashboard shortcut may already be waiting for the browser surface to
+    // become measurable. Do not create the default tab first, otherwise the
+    // requested URL opens beside it as a second tab.
+    if (isVisible && !wasVisible && stateRef.current.tabs.length === 0 && !pendingOpenRef.current) void openTab()
   }, [isVisible, openTab])
 
   const select = useCallback(
@@ -744,6 +756,11 @@ export function BrowserPage({
         const stored = await desktop.browser.getSession().catch(() => ({ tabs: [], activeTabId: null }))
         if (stored.tabs && stored.tabs.length > 0) {
           nextState = migrateBrowserState(stored, stored.activeTabId)
+        } else if (pendingOpenRef.current) {
+          // `loadState` has a fallback Google tab so opening the browser on its
+          // own is useful. A dashboard shortcut is a more specific intent:
+          // discard that fallback and let the pending URL become the first tab.
+          nextState = { ...EMPTY_BROWSER_STATE, mediaByTabId: {} }
         }
       }
       if (cancelled) return

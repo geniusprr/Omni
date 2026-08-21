@@ -10,6 +10,7 @@ import {
 } from 'electron'
 import { execFile } from 'node:child_process'
 import { readdir } from 'node:fs/promises'
+import { release as osRelease } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -37,6 +38,7 @@ export class WindowManager {
   private allowClose = false
   private rendererUrl: string | null = null
   private programIndex: { createdAt: number; items: ProgramCandidate[] } | null = null
+  private programIconCache = new Map<string, string | null>()
   private readonly preloadPath: string
 
   constructor(preloadPath: string) {
@@ -45,6 +47,10 @@ export class WindowManager {
 
   createMainWindow(rendererUrl: string) {
     this.rendererUrl = rendererUrl
+    // Acrylic is a Windows 11 22H2+ system backdrop. Letting the renderer be
+    // transparent is what exposes that native material through the app shell.
+    // Older Windows releases keep the existing opaque background as a fallback.
+    const useNativeAcrylic = supportsNativeAcrylic()
     const options: BrowserWindowConstructorOptions = {
       width: 1180,
       height: 740,
@@ -53,8 +59,9 @@ export class WindowManager {
       title: 'kapanış.',
       show: false,
       frame: false,
-      transparent: false,
-      backgroundColor: '#111722',
+      transparent: useNativeAcrylic,
+      backgroundColor: useNativeAcrylic ? '#00000000' : '#111722',
+      ...(useNativeAcrylic ? { backgroundMaterial: 'acrylic' } : {}),
       center: true,
       webPreferences: {
         preload: this.preloadPath,
@@ -245,6 +252,28 @@ export class WindowManager {
     return items
   }
 
+  async getProgramIcon(value: string): Promise<string | null> {
+    if (process.platform !== 'win32') return null
+
+    const input = value.trim()
+    if (!path.isAbsolute(input)) return null
+    const resolved = path.resolve(input)
+    if (!isProgramPath(resolved) || !await fileExists(resolved)) return null
+
+    const cacheKey = path.normalize(resolved).toLowerCase()
+    if (this.programIconCache.has(cacheKey)) return this.programIconCache.get(cacheKey) ?? null
+
+    try {
+      const icon = await app.getFileIcon(resolved, { size: 'normal' })
+      const dataUrl = icon.isEmpty() ? null : icon.toDataURL()
+      this.programIconCache.set(cacheKey, dataUrl)
+      return dataUrl
+    } catch {
+      this.programIconCache.set(cacheKey, null)
+      return null
+    }
+  }
+
   async pickProgram(): Promise<ProgramCandidate | null> {
     if (process.platform !== 'win32') return null
 
@@ -298,6 +327,12 @@ export class WindowManager {
       if (width < 1100 || height < 700) window.setSize(1200, 760)
     }
   }
+}
+
+function supportsNativeAcrylic() {
+  if (process.platform !== 'win32') return false
+  const build = Number(osRelease().split('.')[2])
+  return Number.isFinite(build) && build >= 22621
 }
 
 async function fileExists(value: string) {

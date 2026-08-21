@@ -381,7 +381,7 @@ export default function App() {
       </div>
 
       {/* Main Mini-OS Shell Layout */}
-      <div className={`minios-shell ${mode === 'browser' ? 'minios-shell--browser' : ''}`}>
+      <div className={`minios-shell ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''}`}>
         {/* Left Floating Vertical Dock */}
         <MiniOsDock
           activeMode={mode}

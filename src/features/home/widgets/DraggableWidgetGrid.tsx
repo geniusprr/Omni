@@ -26,6 +26,8 @@ import Wifi from 'lucide-react/dist/esm/icons/wifi.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
 import {
+  faviconForBrowserUrl,
+  normalizeBrowserInput,
   requestBrowserNavigation,
   saveShortcuts,
   type BrowserShortcut,
@@ -152,6 +154,8 @@ export function DraggableWidgetGrid({
   const columnsRef = useRef<(HTMLDivElement | null)[]>([])
   const widgetRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const quickAccessDialogRef = useRef<HTMLDialogElement>(null)
+  const programIconRequestsRef = useRef(new Set<string>())
+  const componentMountedRef = useRef(true)
 
   // Local widget states
   const [showAddTodo, setShowAddTodo] = useState(false)
@@ -168,6 +172,7 @@ export function DraggableWidgetGrid({
   const [programsLoaded, setProgramsLoaded] = useState(false)
   const [programsLoading, setProgramsLoading] = useState(false)
   const [programPickerBusy, setProgramPickerBusy] = useState(false)
+  const [programIconByTarget, setProgramIconByTarget] = useState<Record<string, string | null>>({})
   const [quoteIndex, setQuoteIndex] = useState(() => new Date().getDate() % QUOTES.length)
 
   const hiddenSet = new Set(layout.hiddenWidgets)
@@ -184,6 +189,15 @@ export function DraggableWidgetGrid({
     return `${program.name} ${program.path}`.toLocaleLowerCase('tr-TR').includes(normalizedProgramSearch)
   })
   const visiblePrograms = matchingPrograms.slice(0, 80)
+  const programIconPaths = [
+    ...quickAccessApps.filter((item) => item.kind === 'program').map((item) => item.target),
+    ...visiblePrograms.map((program) => program.path),
+  ]
+  const programIconTargetKey = [...new Set(programIconPaths.map(normalizeProgramTarget))].sort().join('\u0001')
+
+  function programIconFor(target: string) {
+    return programIconByTarget[normalizeProgramTarget(target)] ?? null
+  }
 
   function handleOpenUrl(url: string) {
     requestBrowserNavigation(url)
@@ -273,7 +287,7 @@ export function DraggableWidgetGrid({
     event.preventDefault()
     if (shortcutKind !== 'website') return
     const name = shortcutName.trim()
-    const target = shortcutTarget.trim()
+    const target = normalizeBrowserInput(shortcutTarget)
     if (!name || !target) return
     const next = [...quickAccessApps, {
       id: crypto.randomUUID(),
@@ -309,9 +323,46 @@ export function DraggableWidgetGrid({
   }, [quickAccessEditorOpen])
 
   useEffect(() => {
+    componentMountedRef.current = true
+    return () => { componentMountedRef.current = false }
+  }, [])
+
+  useEffect(() => {
     if (!quickAccessEditorOpen || shortcutKind !== 'program' || programsLoaded) return
     void loadPrograms()
   }, [quickAccessEditorOpen, shortcutKind, programsLoaded])
+
+  useEffect(() => {
+    if (!desktop.isElectron() || !programIconTargetKey) return
+
+    const pathsByKey = new Map<string, string>()
+    for (const target of programIconPaths) {
+      pathsByKey.set(normalizeProgramTarget(target), target)
+    }
+    const missing = [...pathsByKey].filter(([key]) => (
+      !Object.prototype.hasOwnProperty.call(programIconByTarget, key)
+      && !programIconRequestsRef.current.has(key)
+    ))
+    if (missing.length === 0) return
+
+    for (const [key] of missing) programIconRequestsRef.current.add(key)
+    void Promise.all(missing.map(async ([key, target]) => {
+      try {
+        return [key, await desktop.programs.icon(target)] as const
+      } catch {
+        return [key, null] as const
+      }
+    })).then((icons) => {
+      if (!componentMountedRef.current) return
+      setProgramIconByTarget((current) => {
+        const next = { ...current }
+        for (const [key, icon] of icons) next[key] = icon
+        return next
+      })
+    }).finally(() => {
+      for (const [key] of missing) programIconRequestsRef.current.delete(key)
+    })
+  }, [programIconByTarget, programIconTargetKey])
 
   function handleQuickAccessDialogClose() {
     setQuickAccessEditorOpen(false)
@@ -623,20 +674,21 @@ export function DraggableWidgetGrid({
             </div>
 
             <div className="quick-access-8grid">
-              {quickAccessApps.map((app) => (
-                <button
-                  type="button"
-                  key={app.id}
-                  className="qa-app-tile"
-                  onClick={() => openShortcut(app)}
-                  title={app.kind === 'program' ? app.target : undefined}
-                >
-                  <div className="qa-app-squircle" style={{ backgroundColor: app.bg }}>
-                    <span>{app.iconText}</span>
-                  </div>
-                  <span className="qa-app-label">{app.name}</span>
-                </button>
-              ))}
+              {quickAccessApps.map((app) => {
+                const icon = shortcutIconFor(app, programIconByTarget)
+                return (
+                  <button
+                    type="button"
+                    key={app.id}
+                    className={`qa-app-tile${icon ? '' : ' qa-app-tile--iconless'}`}
+                    onClick={() => openShortcut(app)}
+                    title={app.kind === 'program' ? app.target : undefined}
+                  >
+                    <ShortcutIcon className="qa-app-squircle" src={icon} />
+                    <span className="qa-app-label">{app.name}</span>
+                  </button>
+                )
+              })}
 
               <button
                 type="button"
@@ -1187,18 +1239,19 @@ export function DraggableWidgetGrid({
                   ) : visiblePrograms.length > 0 ? (
                     visiblePrograms.map((program) => {
                       const alreadyAdded = addedProgramTargets.has(normalizeProgramTarget(program.path))
+                      const icon = programIconFor(program.path)
                       return (
                         <button
                           key={`${program.source}:${program.path}`}
                           type="button"
-                          className="quick-access-program-picker__item"
+                          className={`quick-access-program-picker__item${icon ? '' : ' is-iconless'}`}
                           data-state={alreadyAdded ? 'success' : undefined}
                           disabled={alreadyAdded}
                           onClick={() => addProgramShortcut(program)}
                           title={program.path}
                           aria-label={alreadyAdded ? `${program.name} zaten hızlı erişimde` : `${program.name} ekle`}
                         >
-                          <span className="quick-access-program-picker__icon" aria-hidden="true">{program.name.slice(0, 2).toUpperCase()}</span>
+                          <ShortcutIcon className="quick-access-program-picker__icon" src={icon} />
                           <span className="quick-access-program-picker__details">
                             <strong>{program.name}</strong>
                             <small>{programSourceLabel(program.source)}</small>
@@ -1269,13 +1322,16 @@ export function DraggableWidgetGrid({
               <span>{quickAccessApps.length}/11</span>
             </div>
             <div className="quick-access-editor__list">
-              {quickAccessApps.map((item) => (
-                <div key={item.id}>
-                  <span className="quick-access-editor__item-icon">{item.kind === 'program' ? <MonitorUp size={13} /> : <Link2 size={13} />}</span>
-                  <span><strong>{item.name}</strong><small>{item.target}</small></span>
-                  <button type="button" onClick={() => persistQuickAccess(quickAccessApps.filter((entry) => entry.id !== item.id))} aria-label={`${item.name} kısayolunu sil`}><Trash2 size={14} /></button>
-                </div>
-              ))}
+              {quickAccessApps.map((item) => {
+                const icon = shortcutIconFor(item, programIconByTarget)
+                return (
+                  <div key={item.id} className={icon ? '' : 'is-iconless'}>
+                    <ShortcutIcon className="quick-access-editor__item-icon" src={icon} />
+                    <span className="quick-access-editor__item-details"><strong>{item.name}</strong><small>{item.target}</small></span>
+                    <button type="button" onClick={() => persistQuickAccess(quickAccessApps.filter((entry) => entry.id !== item.id))} aria-label={`${item.name} kısayolunu sil`}><Trash2 size={14} /></button>
+                  </div>
+                )
+              })}
             </div>
           </section>
 
@@ -1293,6 +1349,21 @@ function programSourceLabel(source: ProgramCandidate['source']) {
   if (source === 'start-menu') return 'Başlat menüsü'
   if (source === 'app-paths') return 'Yüklü uygulama'
   return 'Dosyadan seçildi'
+}
+
+function shortcutIconFor(item: Pick<QuickAppItem, 'kind' | 'target'>, programIcons: Record<string, string | null>) {
+  if (item.kind === 'program') return programIcons[normalizeProgramTarget(item.target)] ?? null
+  return faviconForBrowserUrl(normalizeBrowserInput(item.target))
+}
+
+function ShortcutIcon({ className, src }: { className: string; src: string | null }) {
+  const [failedSource, setFailedSource] = useState<string | null>(null)
+  if (!src || failedSource === src) return null
+  return (
+    <span className={className} aria-hidden="true">
+      <img src={src} alt="" draggable={false} decoding="async" onError={() => setFailedSource(src)} />
+    </span>
+  )
 }
 
 const QUOTES = [
