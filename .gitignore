@@ -10,6 +10,10 @@ release
 .supabase
 supabase/.temp
 
+# Generated vendor build cache/staging.
+vendor/.cache
+vendor/.runtime-*
+
 # IDE & OS
 .idea
 .vscode
