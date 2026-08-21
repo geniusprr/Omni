@@ -12,11 +12,12 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js'
 import Star from 'lucide-react/dist/esm/icons/star.js'
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import Volume2 from 'lucide-react/dist/esm/icons/volume-2.js'
 import VolumeX from 'lucide-react/dist/esm/icons/volume-x.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import { BROWSER_EVENTS, desktop, isElectronRuntime, type BrowserBounds, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRequest, type BrowserTabProjection } from '@/lib/desktop'
-import { addRecentlyClosed, BROWSER_DATA_EVENT, BROWSER_NAVIGATION_EVENT, consumeBrowserNavigation, hostnameFromUrl, loadFavorites, loadRecentlyClosed, normalizeBrowserInput, relativeTime, saveFavorites, type BrowserFavorite, type BrowserRecentItem } from './browserData'
+import { addRecentlyClosed, BROWSER_DATA_EVENT, BROWSER_NAVIGATION_EVENT, consumeBrowserNavigation, hostnameFromUrl, loadFavorites, normalizeBrowserInput, relativeTime, saveFavorites, type BrowserFavorite } from './browserData'
 import { applyTabProjectionState, canStartNativeRestore, closeTabState, faviconForUrl, makeTab, migrateBrowserState, nativeRestoreTasks, nativeViewAction, openTabState, prepareNewTabNavigation, resolveOptimisticClose, selectTabState, serializeBrowserState, type BrowserState, type BrowserTab } from './browserState'
 
 interface BrowserPageProps {
@@ -24,6 +25,7 @@ interface BrowserPageProps {
   theme?: 'light' | 'dark'
   chromeMode?: 'home' | 'browser'
   onEnterBrowser?: () => void
+  onNoTabs?: () => void
   onExecuteCommand?: (query: string) => void
 }
 type BrowserPanel = 'history' | 'downloads' | null
@@ -96,14 +98,14 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
 }
 
-export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBrowser, onExecuteCommand }: BrowserPageProps) {
+export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBrowser, onNoTabs, onExecuteCommand }: BrowserPageProps) {
   const [state, setState] = useState(loadState)
   const [address, setAddress] = useState('')
   const [favorites, setFavorites] = useState<BrowserFavorite[]>(loadFavorites)
-  const [recents, setRecents] = useState<BrowserRecentItem[]>(loadRecentlyClosed)
   const [error, setError] = useState<string | null>(null)
   const [panel, setPanel] = useState<BrowserPanel>(null)
   const [history, setHistory] = useState<BrowserHistoryItem[]>([])
+  const [clearingHistory, setClearingHistory] = useState(false)
   const [downloads, setDownloads] = useState<BrowserDownloadItem[]>([])
   const [permissionRequest, setPermissionRequest] = useState<BrowserPermissionRequest | null>(null)
   const [browserChromeHost, setBrowserChromeHost] = useState<HTMLElement | null>(null)
@@ -112,6 +114,7 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
   const stateRef = useRef(state)
   const liveTabIdsRef = useRef(new Set<string>())
   const pendingBrowserActionRef = useRef<{ tabId?: string; url?: string } | null>(null)
+  const closePendingRef = useRef(false)
   const restoreStarted = useRef(false)
   const sessionHydrated = useRef(!isElectronRuntime())
   stateRef.current = state
@@ -242,6 +245,14 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
     return () => window.cancelAnimationFrame(frame)
   }, [chromeMode, isVisible, navigateTab, nativeRestoreReady, openTab])
 
+  // A browser surface without a real web tab is not a second home page. When
+  // the last tab is gone, return ownership to the application home screen.
+  useEffect(() => {
+    if (chromeMode !== 'browser' || !nativeRestoreReady || !restoreStarted.current || closePendingRef.current || panel !== null) return
+    if (state.tabs.length > 0) return
+    onNoTabs?.()
+  }, [chromeMode, nativeRestoreReady, onNoTabs, panel, state.tabs.length])
+
   useEffect(() => {
     if (!sessionHydrated.current) return
     persist(state)
@@ -293,7 +304,13 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
     }
     const permission = (request: BrowserPermissionRequest) => setPermissionRequest(request)
     const download = (item: BrowserDownloadItem) => setDownloads((current) => [item, ...current.filter((entry) => entry.id !== item.id)])
-    const historyUpdate = (item: BrowserHistoryItem | null) => { if (item) setHistory((current) => [item, ...current.filter((entry) => entry.url !== item.url)]) }
+    const historyUpdate = (item: BrowserHistoryItem | null) => {
+      if (!item) {
+        setHistory([])
+        return
+      }
+      setHistory((current) => [item, ...current.filter((entry) => entry.url !== item.url)])
+    }
     const stops = [
       desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabCreated, created),
       desktop.browser.on<BrowserTabProjection>(BROWSER_EVENTS.tabUpdated, project),
@@ -309,7 +326,7 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
   }, [openTab, project])
 
   useEffect(() => {
-    const sync = () => { setFavorites(loadFavorites()); setRecents(loadRecentlyClosed()) }
+    const sync = () => setFavorites(loadFavorites())
     const requested = (event: Event) => { const url = (event as CustomEvent<{ url?: string }>).detail?.url; if (url) void openTab(url) }
     window.addEventListener(BROWSER_DATA_EVENT, sync)
     window.addEventListener(BROWSER_NAVIGATION_EVENT, requested)
@@ -349,6 +366,7 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
   async function close(id: string) {
     const tab = stateRef.current.tabs.find((item) => item.id === id)
     if (!tab) return
+    closePendingRef.current = true
     const live = liveTabIdsRef.current.has(id)
     const previous = stateRef.current
     const next = closeTabState(previous, id)
@@ -357,7 +375,8 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
     setState(next)
     if (!live) {
       addRecentlyClosed(tab.title, tab.url || '', tab.favicon)
-      setRecents(loadRecentlyClosed())
+      closePendingRef.current = false
+      if (next.tabs.length === 0 && chromeMode === 'browser') onNoTabs?.()
       await synchronizeBrowserSurface(next).catch(() => undefined)
       return
     }
@@ -365,9 +384,11 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
       await desktop.browser.close(id)
       liveTabIdsRef.current.delete(id)
       if (tab.url) addRecentlyClosed(tab.title, tab.url, tab.favicon)
-      setRecents(loadRecentlyClosed())
+      closePendingRef.current = false
+      if (next.tabs.length === 0 && chromeMode === 'browser') onNoTabs?.()
       await synchronizeBrowserSurface(next).catch(() => undefined)
     } catch (cause) {
+      closePendingRef.current = false
       const restoredState = resolveOptimisticClose(previous, next, false)
       stateRef.current = restoredState
       persist(restoredState)
@@ -414,6 +435,19 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
     else setDownloads(await desktop.browser.listDownloads().catch(() => []))
   }
 
+  async function clearHistory() {
+    if (clearingHistory) return
+    setClearingHistory(true)
+    try {
+      await desktop.browser.clearHistory()
+      setHistory([])
+    } catch (cause) {
+      setError(errorMessage(cause, 'Geçmiş temizlenemedi.'))
+    } finally {
+      setClearingHistory(false)
+    }
+  }
+
   async function decidePermission(decision: 'allow' | 'deny') {
     if (!permissionRequest) return
     await desktop.browser.setPermission({ origin: permissionRequest.origin, permission: permissionRequest.permission, decision, requestId: permissionRequest.requestId }).catch(() => undefined)
@@ -427,10 +461,6 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
   const browserChrome = (
     <div className={`edge-browser__chrome ${browserThemeClass} ${shouldPortalChrome ? 'edge-browser__chrome--titlebar' : ''}`} style={{ colorScheme: theme }}>
       <div className="edge-browser__tabs" role="tablist" aria-label="Tarayıcı sekmeleri">
-        <div className="edge-browser__tabs-brand" aria-hidden="true">
-          <span className="edge-browser__tabs-brand-mark">k</span>
-          <span className="edge-browser__tabs-brand-label">web</span>
-        </div>
         <div className="edge-browser__tab-scroll">
           {state.tabs.map((tab) => {
             const media = state.mediaByTabId[tab.id]
@@ -468,45 +498,13 @@ export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBro
     {!shouldPortalChrome ? browserChrome : null}
     {permissionRequest ? <div className="edge-browser__permission" role="dialog" aria-label="Site izni"><ShieldCheck size={16} /><span><strong>{hostnameFromUrl(permissionRequest.origin)}</strong> {permissionRequest.permission} izni istiyor.</span><button type="button" onClick={() => void decidePermission('deny')}>Reddet</button><button type="button" onClick={() => void decidePermission('allow')}>İzin ver</button></div> : null}
     {panel ? <div className="edge-browser__browser-panel" role="dialog" aria-label={panel === 'history' ? 'Tarama geçmişi' : 'İndirmeler'}>
-      <div className="edge-browser__section-title"><h2>{panel === 'history' ? 'Geçmiş' : 'İndirmeler'}</h2><button type="button" onClick={() => setPanel(null)} aria-label="Paneli kapat"><X size={14} /></button></div>
+      <div className="edge-browser__section-title"><h2>{panel === 'history' ? 'Geçmiş' : 'İndirmeler'}</h2><div className="edge-browser__section-title-actions">{panel === 'history' ? <button type="button" className="edge-browser__clear-history" onClick={() => void clearHistory()} disabled={clearingHistory || history.length === 0} aria-label="Geçmişi temizle" title="Geçmişi temizle" aria-busy={clearingHistory}><Trash2 size={14} /><span>{clearingHistory ? 'Temizleniyor…' : 'Temizle'}</span></button> : null}<button type="button" onClick={() => setPanel(null)} aria-label="Paneli kapat"><X size={14} /></button></div></div>
       {panel === 'history' ? (history.length ? history.map((item) => <button key={item.id} type="button" className="edge-browser__recent-row" onClick={() => { void openTab(item.url); setPanel(null) }}>{item.favicon ? <img src={item.favicon} alt="" /> : <Globe2 size={14} />}<span><strong>{item.title}</strong><small>{hostnameFromUrl(item.url)}</small></span><time>{relativeTime(item.visitedAt)}</time></button>) : <p className="edge-browser__empty">Henüz geçmiş kaydı yok.</p>) : (downloads.length ? downloads.map((item) => <div key={item.id} className="edge-browser__download-row"><span><strong>{item.filename}</strong><small>{item.state === 'progressing' ? `${formatBytes(item.receivedBytes)} / ${formatBytes(item.totalBytes)}` : item.state}</small></span><div><button type="button" onClick={() => void desktop.browser.openDownload(item.id)} disabled={item.state !== 'completed'}>Aç</button><button type="button" onClick={() => void desktop.browser.showDownload(item.id)}>Klasör</button></div></div>) : <p className="edge-browser__empty">Henüz indirme yok.</p>)}
     </div> : null}
     {error || active?.error ? <div className="edge-browser__error" role="alert">{error || active?.error}<button type="button" onClick={() => active && void navigateTab(active.id, active.url || address)}>Yeniden dene</button></div> : null}
     <div className="edge-browser__content">
       <div ref={hostRef} className={`edge-browser__native-host ${active?.url ? '' : 'edge-browser__native-host--inactive'}`} />
-      {!active?.url ? (
-        <div className="edge-browser__start">
-          <div className="edge-browser__start-inner">
-            <div className="edge-browser__start-heading">
-              <div>
-                <span className="edge-browser__start-eyebrow">KAPANIŞ. / WEB</span>
-                <h1>Yeni sekme</h1>
-                <p>Web'de ara veya kayıtlı yer imlerinden birini aç.</p>
-              </div>
-            </div>
-            <div className="edge-browser__section-title">
-              <h2>Hızlı erişim</h2>
-            </div>
-            {favorites.length ? (
-              <div className="edge-browser__favorites">
-                {favorites.map((favorite) => <button key={favorite.id} type="button" onClick={() => active ? void navigateTab(active.id, favorite.url) : void openTab(favorite.url)} className="edge-browser__favorite-card">
-                  {favorite.favicon ? <img src={favorite.favicon} alt="" /> : <span style={{ background: favorite.color }}>{favorite.iconText}</span>}
-                  <strong>{favorite.name}</strong>
-                  <small>{hostnameFromUrl(favorite.url)}</small>
-                </button>)}
-              </div>
-            ) : <p className="edge-browser__empty">Yer imlerin burada görünecek.</p>}
-            <div className="edge-browser__recent-panel">
-              <div className="edge-browser__section-title"><h2>Son kapatılanlar</h2></div>
-              {recents.length ? recents.map((recent) => <button key={recent.id} type="button" className="edge-browser__recent-row" onClick={() => void openTab(recent.url)}>
-                {recent.favicon ? <img src={recent.favicon} alt="" /> : <Globe2 size={14} />}
-                <span><strong>{recent.title}</strong><small>{hostnameFromUrl(recent.url)}</small></span>
-                <time>{relativeTime(recent.closedAt)}</time>
-              </button>) : <p className="edge-browser__empty">Kapatılan sekmeler burada görünür.</p>}
-            </div>
-          </div>
-        </div>
-      ) : !isElectronRuntime() ? <div className="edge-browser__web-fallback"><Globe2 size={30} /><p>Gömülü tarayıcı Electron masaüstü sürümünde çalışır.</p></div> : null}
+      {active?.url && !isElectronRuntime() ? <div className="edge-browser__web-fallback"><Globe2 size={30} /><p>Gömülü tarayıcı Electron masaüstü sürümünde çalışır.</p></div> : null}
     </div>
     </section>
   </>

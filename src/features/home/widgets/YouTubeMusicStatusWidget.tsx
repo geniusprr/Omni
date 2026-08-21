@@ -52,7 +52,7 @@ export function SystemMediaStatusWidget() {
   const displayTitle = activeBrowserMedia?.title || session?.title || (available ? 'Arka planda medya yok' : 'Medya servisine ulaşılamadı')
   const displayArtist = activeBrowserMedia?.artist || (session
     ? [session.artist, session.albumTitle].filter(Boolean).join(' · ') || appName
-    : 'Spotify, Edge veya başka bir oynatıcı başlattığında burada görünür.')
+    : 'Spotify veya başka bir oynatıcı başlattığında burada görünür.')
 
   async function handleControl(action: 'toggle-play-pause' | 'next' | 'previous') {
     setBusy(true)

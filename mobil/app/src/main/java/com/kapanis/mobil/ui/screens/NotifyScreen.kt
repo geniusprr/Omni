@@ -104,24 +104,46 @@ fun NotifyScreen(
     var isCreatingAlarm by remember { mutableStateOf(false) }
     var alarmsList by remember { mutableStateOf<List<AlarmItem>>(emptyList()) }
 
+    fun notificationKey(notification: MirroredNotification): String {
+        if (notification.notificationId.isNotBlank()) {
+            return "${notification.appName}::${notification.notificationId}"
+        }
+        if (notification.id.isNotBlank()) return notification.id
+        return "${notification.appName}::${notification.title}::${notification.body}::${notification.timestamp}"
+    }
+
     fun loadMirroredNotifications() {
         scope.launch {
-            if (mode == ConnectionMode.LOCAL) {
-                val token = prefs.getLocalAuthToken(target.host)
-                val res = apiClient.fetchNotifications(target.host, target.port, token)
-                if (res.isSuccess) {
-                    notifications = res.getOrDefault(emptyList())
-                }
-            } else {
+            isLoadingNotifications = true
+            try {
+                val allNotifications = mutableListOf<MirroredNotification>()
+
                 val url = prefs.supabaseUrl
                 val key = prefs.supabaseAnonKey
                 val devId = prefs.pairedDeviceId
-                if (url.isNotEmpty() && key.isNotEmpty() && devId.isNotEmpty()) {
-                    val res = supabaseClient.fetchNotifications(url, key, devId)
-                    if (res.isSuccess) {
-                        notifications = res.getOrDefault(emptyList())
+                val hasCloudPairing = url.isNotEmpty() && key.isNotEmpty() && devId.isNotEmpty()
+                if (hasCloudPairing) {
+                    val cloudResult = supabaseClient.fetchNotifications(url, key, devId)
+                    if (cloudResult.isSuccess) {
+                        allNotifications += cloudResult.getOrDefault(emptyList())
+                    }
+                } else if (mode == ConnectionMode.LOCAL) {
+                    val token = prefs.getLocalAuthToken(target.host)
+                    val localResult = apiClient.fetchNotifications(target.host, target.port, token)
+                    if (localResult.isSuccess) {
+                        allNotifications += localResult.getOrDefault(emptyList())
                     }
                 }
+
+                val unique = linkedMapOf<String, MirroredNotification>()
+                allNotifications
+                    .sortedByDescending { it.timestamp }
+                    .forEach { notification ->
+                        unique.putIfAbsent(notificationKey(notification), notification)
+                    }
+                notifications = unique.values.toList()
+            } finally {
+                isLoadingNotifications = false
             }
         }
     }

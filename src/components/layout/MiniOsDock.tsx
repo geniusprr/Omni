@@ -5,6 +5,8 @@ import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
+import Search from 'lucide-react/dist/esm/icons/search.js'
+import Settings from 'lucide-react/dist/esm/icons/settings.js'
 import Star from 'lucide-react/dist/esm/icons/star.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { RemoteConnectionStatus } from '@/types'
@@ -17,6 +19,7 @@ interface MiniOsDockProps {
   alarmsCount: number
   connectionStatus: RemoteConnectionStatus
   onQuickAction: () => void
+  onOpenQuickSwitcher: () => void
 }
 
 export function MiniOsDock({
@@ -25,6 +28,7 @@ export function MiniOsDock({
   alarmsCount,
   connectionStatus,
   onQuickAction,
+  onOpenQuickSwitcher,
 }: MiniOsDockProps) {
   return (
     <aside className="dock-rail" aria-label="Mini-OS Dock">
@@ -45,6 +49,36 @@ export function MiniOsDock({
             <TooltipContent side="right">Anasayfa</TooltipContent>
           </Tooltip>
 
+          {/* Search / Quick Switcher */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="dock-btn"
+                onClick={onOpenQuickSwitcher}
+                aria-label="Arama ve komutlar"
+              >
+                <Search size={18} strokeWidth={1.8} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Arama ve Komutlar</TooltipContent>
+          </Tooltip>
+
+          {/* Settings */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`dock-btn ${activeMode === 'settings' ? 'dock-btn--active' : ''}`}
+                onClick={() => onSelectMode('settings')}
+                aria-label="Ayarlar"
+              >
+                <Settings size={18} strokeWidth={1.8} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Ayarlar</TooltipContent>
+          </Tooltip>
+
           {/* Browser / Bookmarks / Favorites */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -52,12 +86,12 @@ export function MiniOsDock({
                 type="button"
                 className={`dock-btn ${activeMode === 'browser' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('browser')}
-                aria-label="Edge Tarayıcı, Favoriler ve Kısayollar"
+                aria-label="Tarayıcı, Favoriler ve Kısayollar"
               >
                 <Star size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Edge Tarayıcı & Favoriler</TooltipContent>
+            <TooltipContent side="right">Tarayıcı & Favoriler</TooltipContent>
           </Tooltip>
 
           {/* 3. Clock / Time & Power Management */}

@@ -322,19 +322,16 @@ export default function App() {
           alarmsCount={alarms.length}
           connectionStatus={connectionStatus}
           onQuickAction={() => setQuickActionsOpen(true)}
+          onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
         />
 
         {/* Right Main Working Area */}
         <div className="minios-main-area">
-          {/* Shared browser chrome on Home and Browser; utility screens keep a compact titlebar. */}
+          {/* Browser and home share one titlebar; utility screens keep the same window controls. */}
           <MiniOsHeader
             activeMode={mode}
             onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
-            onOpenPairingModal={() => setPairingModalOpen(true)}
-            onNavigateSettings={() => setMode('settings')}
-            onOpenCustomizeWidgets={() => setIsCustomizeWidgetsOpen(true)}
-            themeMode={themeMode}
-            onToggleTheme={() => setThemeMode((m) => (m === 'dark' ? 'light' : 'dark'))}
+            onExecuteCommand={handleExecuteCommand}
           />
 
           {/* Central Working Screen / Widgets Area */}
@@ -405,6 +402,8 @@ export default function App() {
                   pairedControllers={pairedControllers}
                   onSettingsChange={setSettings}
                   onRefreshControllers={refreshControllers}
+                  themeMode={themeMode}
+                  onToggleTheme={() => setThemeMode((m) => (m === 'dark' ? 'light' : 'dark'))}
                 />
               </div>
             )}
@@ -418,6 +417,7 @@ export default function App() {
                 theme={themeMode}
                 chromeMode={mode === 'browser' ? 'browser' : mode === 'home' ? 'home' : undefined}
                 onEnterBrowser={() => setMode('browser')}
+                onNoTabs={() => setMode('home')}
                 onExecuteCommand={handleExecuteCommand}
               />
             </div>

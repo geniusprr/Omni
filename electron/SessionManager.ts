@@ -138,7 +138,8 @@ export class SessionManager {
 
   clearHistory() {
     this.state.history = []
-    this.scheduleFlush()
+    // Clearing history must survive an immediate restart or application exit.
+    this.flush()
   }
 
   flush() {

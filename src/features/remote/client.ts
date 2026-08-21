@@ -327,6 +327,32 @@ export async function startRemoteEngine({
   const notificationChannel = supabase.channel(`device-notifications:${settings.deviceId}`)
   notificationChannel.subscribe()
 
+  const persistMirroredNotification = (notif: MirroredNotification) => {
+    if (!notif.id) return
+
+    // Keep the desktop notification id as the row id. This makes retries and
+    // the history replay below idempotent instead of creating duplicate rows.
+    void Promise.resolve(
+      supabase
+        .from('device_notifications')
+        .upsert({
+          id: notif.id,
+          device_id: settings.deviceId,
+          notification_id: String(notif.notificationId || notif.id),
+          app_name: notif.appName,
+          title: notif.title,
+          body: notif.body,
+          timestamp: new Date(notif.timestamp).toISOString(),
+        }, { onConflict: 'id', ignoreDuplicates: true })
+    )
+      .then(({ error }) => {
+        if (error) console.error('[remote-notification] Supabase kayıt hatası:', error.message)
+      })
+      .catch((error) => {
+        console.error('[remote-notification] Supabase bağlantı hatası:', error)
+      })
+  }
+
   const stopNotificationListener = desktop.notifications.onMirrored((notif) => {
     if (settings.notificationMirroringEnabled === false) return
 
@@ -337,25 +363,26 @@ export async function startRemoteEngine({
       payload: notif,
     })
 
-    // 2. Insert into Supabase table (best effort)
-    void Promise.resolve(
-      supabase
-        .from('device_notifications')
-        .insert({
-          device_id: settings.deviceId,
-          notification_id: String(notif.notificationId || notif.id),
-          app_name: notif.appName,
-          title: notif.title,
-          body: notif.body,
-          timestamp: new Date(notif.timestamp).toISOString(),
-        })
-    ).catch(() => undefined)
+    // 2. Insert into Supabase table. Android's background service reads this
+    // table over REST, so do not silently discard an insert error.
+    persistMirroredNotification(notif)
 
     // 3. Push to ntfy.sh if enabled
     if (settings.ntfyEnabled && settings.ntfyTopic) {
       void pushNotificationToNtfy(settings.ntfyTopic, notif, settings.ntfyServer)
     }
   })
+
+  // If the listener captured a notification before the renderer finished
+  // connecting, replay the persisted desktop history into Supabase.
+  void desktop.notifications.getHistory()
+    .then((history) => {
+      if (settings.notificationMirroringEnabled === false) return
+      history.forEach(persistMirroredNotification)
+    })
+    .catch((error) => {
+      console.error('[remote-notification] Geçmiş okunamadı:', error)
+    })
 
   // Heartbeat timer interval
   const intervalMs = Math.max(5, settings.heartbeatIntervalSeconds || 15) * 1000
@@ -858,5 +885,3 @@ export async function pairWithPayload(
   saveStoredPC(pcDevice)
   return { success: true, device: pcDevice }
 }
-
-

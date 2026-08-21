@@ -168,6 +168,20 @@ export class TabManager {
     if (safeCanGoForward(record.webContents)) record.webContents.navigationHistory.goForward()
   }
 
+  clearNavigationHistory() {
+    for (const record of this.records.values()) {
+      try {
+        record.webContents.navigationHistory.clear()
+        this.update(record.id, {
+          canGoBack: false,
+          canGoForward: false,
+        })
+      } catch {
+        // A tab can be destroyed while the history is being cleared.
+      }
+    }
+  }
+
   setBounds(id: string, bounds: BrowserBounds) {
     validateBounds(bounds)
     this.require(id).view.setBounds(bounds)

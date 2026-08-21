@@ -141,6 +141,7 @@ export class BrowserManager {
   listHistory(limit?: number) { return this.sessions.listHistory(limit) }
   clearHistory() {
     this.sessions.clearHistory()
+    this.tabs.clearNavigationHistory()
     this.send(BROWSER_EVENTS.historyUpdated, null)
   }
 

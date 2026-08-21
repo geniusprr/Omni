@@ -200,6 +200,18 @@ export function MiniOsDashboard({
     <div className="dashboard-wrapper">
       <div className="dashboard-main-layout">
         <div className="dashboard-widgets-area">
+          <div className="dashboard-widgets-toolbar">
+            <button
+              type="button"
+              className="dashboard-customize-btn"
+              onClick={() => setCustomizeModalOpen(true)}
+              title="Widget ekle"
+              aria-label="Widget ekle"
+            >
+              <LayoutTemplate size={13} aria-hidden="true" />
+              <span>Widget ekle</span>
+            </button>
+          </div>
           <DraggableWidgetGrid
             layout={layout}
             onUpdateLayout={handleUpdateLayout}

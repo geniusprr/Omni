@@ -5,10 +5,13 @@ import Check from 'lucide-react/dist/esm/icons/check.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
 import Laptop from 'lucide-react/dist/esm/icons/laptop.js'
+import Moon from 'lucide-react/dist/esm/icons/moon.js'
+import Palette from 'lucide-react/dist/esm/icons/palette.js'
 import QrCode from 'lucide-react/dist/esm/icons/qr-code.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
 import Shield from 'lucide-react/dist/esm/icons/shield.js'
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js'
+import Sun from 'lucide-react/dist/esm/icons/sun.js'
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import Wifi from 'lucide-react/dist/esm/icons/wifi.js'
 import WifiOff from 'lucide-react/dist/esm/icons/wifi-off.js'
@@ -37,7 +40,19 @@ interface SettingsPageProps {
   pairedControllers: PairedController[]
   onSettingsChange: (newSettings: AppSettings) => void
   onRefreshControllers: () => void
+  themeMode: 'dark' | 'light'
+  onToggleTheme: () => void
 }
+
+const SETTINGS_SECTIONS = [
+  { id: 'general', label: 'Genel', description: 'Başlangıç ve cihaz görünümü', icon: Laptop },
+  { id: 'appearance', label: 'Görünüm', description: 'Tema ve arayüz tercihleri', icon: Palette },
+  { id: 'notifications', label: 'Bildirimler', description: 'Telefon bildirim aktarımı', icon: Bell },
+  { id: 'devices', label: 'Cihazlar', description: 'Eşleştirme ve erişim', icon: Smartphone },
+  { id: 'connection', label: 'Bağlantı', description: 'Supabase ve senkronizasyon', icon: Wifi },
+] as const
+
+type SettingsSection = typeof SETTINGS_SECTIONS[number]['id']
 
 const SUPABASE_SCHEMA_SQL = `-- ============================================================================
 -- kapanış. Supabase Database Schema: Temiz Kurulum & Sıfırlama
@@ -107,6 +122,9 @@ create table public.device_notifications (
   timestamp timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+
+-- PostgREST erişimi RLS'den ayrıdır. Masaüstü INSERT, telefon SELECT kullanır.
+grant select, insert, update, delete on table public.device_notifications to anon, authenticated;
 
 -- 7. İndeksler
 create index if not exists device_commands_pending_idx
@@ -197,7 +215,10 @@ export function SettingsPage({
   pairedControllers,
   onSettingsChange,
   onRefreshControllers,
+  themeMode,
+  onToggleTheme,
 }: SettingsPageProps) {
+  const [activeSection, setActiveSection] = useState<SettingsSection>('general')
   const [url, setUrl] = useState(settings.supabaseUrl)
   const [key, setKey] = useState(settings.supabaseAnonKey)
   const [deviceName, setDeviceName] = useState(settings.deviceName)
@@ -364,10 +385,11 @@ export function SettingsPage({
 
   return (
     <section className="utility-screen settings-screen" aria-labelledby="settings-title">
-      <header className="screen-heading">
+      <header className="screen-heading settings-page-heading">
         <div>
+          <span className="settings-page-heading__eyebrow">KAPANIŞ. / SYSTEM</span>
           <h1 id="settings-title">Ayarlar</h1>
-          <p>Windows başlangıcı, Supabase bağlantısı ve cihaz eşleştirme.</p>
+          <p>Uygulamanın görünümünü, bağlantılarını ve cihaz erişimini yönetin.</p>
         </div>
         <div className="settings-status-badge">
           {connectionStatus === 'connected' ? (
@@ -386,9 +408,44 @@ export function SettingsPage({
         </div>
       </header>
 
-      <div className="settings-scroll-area">
+      <div className="settings-workspace">
+        <aside className="settings-navigation" aria-label="Ayarlar alt menüsü">
+          <div className="settings-navigation__label">Çalışma alanı</div>
+          <nav className="settings-navigation__list">
+            {SETTINGS_SECTIONS.map((section) => {
+              const Icon = section.icon
+              const isActive = activeSection === section.id
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  className={`settings-navigation__item ${isActive ? 'settings-navigation__item--active' : ''}`}
+                  onClick={() => setActiveSection(section.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                >
+                  <span className="settings-navigation__icon"><Icon size={15} /></span>
+                  <span className="settings-navigation__copy">
+                    <strong>{section.label}</strong>
+                    <small>{section.description}</small>
+                  </span>
+                </button>
+              )
+            })}
+          </nav>
+          <div className="settings-navigation__footer">
+            <span className="settings-navigation__footer-dot" />
+            <span>kapanış. masaüstü</span>
+          </div>
+        </aside>
+
+      <div className="settings-scroll-area" data-active-section={activeSection}>
+        <div className="settings-section-intro">
+          <span>{SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.label}</span>
+          <p>{SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.description}</p>
+        </div>
+
         {/* Windows Başlangıcı */}
-        <div className="settings-card">
+        <div className="settings-card" data-settings-section="general">
           <div className="settings-card__header">
             <div className="settings-card__icon"><Laptop size={17} /></div>
             <div>
@@ -411,8 +468,39 @@ export function SettingsPage({
           </div>
         </div>
 
+        {/* Görünüm ve tema */}
+        <div className="settings-card settings-card--appearance" data-settings-section="appearance">
+          <div className="settings-card__header">
+            <div className="settings-card__icon"><Palette size={17} /></div>
+            <div>
+              <h3>Tema ve görünüm</h3>
+              <p>Shutty arayüzünün açık veya koyu görünümünü seçin.</p>
+            </div>
+          </div>
+          <div className="settings-theme-options" role="group" aria-label="Tema seçimi">
+            <button
+              type="button"
+              className={`settings-theme-option ${themeMode === 'light' ? 'settings-theme-option--active' : ''}`}
+              onClick={() => { if (themeMode !== 'light') onToggleTheme() }}
+              aria-pressed={themeMode === 'light'}
+            >
+              <span className="settings-theme-option__preview settings-theme-option__preview--light"><Sun size={17} /></span>
+              <span><strong>Açık tema</strong><small>Gündüz kullanımı için aydınlık arayüz</small></span>
+            </button>
+            <button
+              type="button"
+              className={`settings-theme-option ${themeMode === 'dark' ? 'settings-theme-option--active' : ''}`}
+              onClick={() => { if (themeMode !== 'dark') onToggleTheme() }}
+              aria-pressed={themeMode === 'dark'}
+            >
+              <span className="settings-theme-option__preview settings-theme-option__preview--dark"><Moon size={17} /></span>
+              <span><strong>Koyu tema</strong><small>Gece kullanımı için düşük parlaklık</small></span>
+            </button>
+          </div>
+        </div>
+
         {/* PC Bildirim Aynalama */}
-        <div className="settings-card">
+        <div className="settings-card" data-settings-section="notifications">
           <div className="settings-card__header">
             <div className="settings-card__icon"><Bell size={17} /></div>
             <div>
@@ -492,7 +580,7 @@ export function SettingsPage({
         </div>
 
         {/* Bu Bilgisayar ve Eşleştirme Kodu */}
-        <div className="settings-card settings-card--highlight">
+        <div className="settings-card settings-card--highlight" data-settings-section="devices">
           <div className="settings-card__header">
             <div className="settings-card__icon"><Shield size={17} /></div>
             <div>
@@ -559,7 +647,7 @@ export function SettingsPage({
         </div>
 
         {/* Eşleştirilen Cihazlar Listesi */}
-        <div className="settings-card">
+        <div className="settings-card" data-settings-section="devices">
           <div className="settings-card__header">
             <div className="settings-card__icon"><Smartphone size={17} /></div>
             <div>
@@ -614,7 +702,7 @@ export function SettingsPage({
         </div>
 
         {/* Supabase Bağlantı Ayarları */}
-        <div className="settings-card">
+        <div className="settings-card" data-settings-section="connection">
           <div className="settings-card__header">
             <div className="settings-card__icon"><Wifi size={17} /></div>
             <div>
@@ -674,6 +762,7 @@ export function SettingsPage({
             ) : null}
           </div>
         </div>
+      </div>
       </div>
 
       {/* QR Kod Modalı (Modern Theme-Aware PairingModal) */}

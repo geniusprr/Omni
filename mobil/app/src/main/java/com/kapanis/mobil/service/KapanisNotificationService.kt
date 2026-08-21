@@ -22,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.LinkedHashSet
 
 class KapanisNotificationService : Service() {
 
@@ -30,13 +31,15 @@ class KapanisNotificationService : Service() {
     private val apiClient = KapanisApiClient()
     private val supabaseClient = SupabaseRemoteClient()
 
-    private val seenNotificationIds = mutableSetOf<String>()
+    private val seenNotificationIds = LinkedHashSet<String>()
+    private var activeSourceKey = ""
     private var isFirstSync = true
 
     companion object {
         const val CHANNEL_SERVICE_ID = "kapanis_service_channel"
         const val CHANNEL_MIRRORED_ID = "kapanis_pc_mirrored_channel"
         const val FOREGROUND_NOTIFICATION_ID = 9911
+        private const val SYNC_INTERVAL_MS = 2500L
 
         fun start(context: Context) {
             try {
@@ -65,12 +68,17 @@ class KapanisNotificationService : Service() {
         super.onCreate()
         try {
             prefs = PreferencesManager(this)
-            createNotificationChannels()
-            startForegroundServiceNotification()
-            startNotificationListenerLoop()
         } catch (e: Throwable) {
-            // Prevent service initialization crash
+            stopSelf()
+            return
         }
+
+        // Keep these operations independent. A notification-channel or
+        // foreground-start failure must not prevent the polling loop from being
+        // created when the OS allows the service to continue.
+        runCatching { createNotificationChannels() }
+        runCatching { startForegroundServiceNotification() }
+        startNotificationListenerLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -159,66 +167,100 @@ class KapanisNotificationService : Service() {
         serviceScope.launch {
             while (isActive) {
                 try {
-                    val mode = prefs.mode
-                    if (mode == ConnectionMode.LOCAL) {
-                        syncLocalNotifications()
-                    } else {
-                        syncCloudNotifications()
-                    }
+                    syncNotificationSources()
                 } catch (e: Exception) {
                     // ignore network blips
                 }
-                delay(2500)
+                delay(SYNC_INTERVAL_MS)
             }
         }
     }
 
-    private suspend fun syncLocalNotifications() {
+    private suspend fun syncNotificationSources() {
+        val allNotifications = mutableListOf<MirroredNotification>()
+
+        // Prefer the cloud stream whenever the paired device has Supabase
+        // credentials. A stale LOCAL selection must not block this request
+        // behind a LAN timeout. LAN remains the fallback for local-only pairs.
+        val hasCloudPairing = prefs.supabaseUrl.isNotBlank() &&
+            prefs.supabaseAnonKey.isNotBlank() &&
+            prefs.pairedDeviceId.isNotBlank()
+        if (hasCloudPairing) {
+            allNotifications += fetchCloudNotifications()
+        } else if (prefs.mode == ConnectionMode.LOCAL) {
+            allNotifications += fetchLocalNotifications()
+        }
+
+        switchSourceIfNeeded("notifications:${prefs.pairedDeviceId}:${prefs.host}:${prefs.port}")
+
+        val unique = linkedMapOf<String, MirroredNotification>()
+        allNotifications
+            .sortedByDescending { it.timestamp }
+            .forEach { notification ->
+                unique.putIfAbsent(notificationKey(notification), notification)
+            }
+        processNewNotifications(unique.values.toList())
+    }
+
+    private suspend fun fetchLocalNotifications(): List<MirroredNotification> {
         val host = prefs.host
         val port = prefs.port
-        if (host.isBlank()) return
+        if (host.isBlank()) return emptyList()
 
         val token = prefs.getLocalAuthToken(host)
         val res = apiClient.fetchNotifications(host, port, token)
-        if (res.isSuccess) {
-            val list = res.getOrDefault(emptyList())
-            processNewNotifications(list)
-        }
+        return res.getOrDefault(emptyList())
     }
 
-    private suspend fun syncCloudNotifications() {
+    private suspend fun fetchCloudNotifications(): List<MirroredNotification> {
         val url = prefs.supabaseUrl
         val key = prefs.supabaseAnonKey
         val deviceId = prefs.pairedDeviceId
-        if (url.isBlank() || key.isBlank() || deviceId.isBlank()) return
+        if (url.isBlank() || key.isBlank() || deviceId.isBlank()) return emptyList()
 
         val res = supabaseClient.fetchNotifications(url, key, deviceId)
-        if (res.isSuccess) {
-            val list = res.getOrDefault(emptyList())
-            processNewNotifications(list)
-        }
+        return res.getOrDefault(emptyList())
     }
 
     private fun processNewNotifications(notifications: List<MirroredNotification>) {
         if (isFirstSync) {
             // Populate seen IDs on initial load so we don't spam old history
             notifications.forEach { notif ->
-                val key = if (notif.id.isNotEmpty()) notif.id else "${notif.appName}::${notif.notificationId}::${notif.timestamp}"
-                seenNotificationIds.add(key)
+                seenNotificationIds.add(notificationKey(notif))
             }
             isFirstSync = false
             return
         }
 
         for (notif in notifications) {
-            val key = if (notif.id.isNotEmpty()) notif.id else "${notif.appName}::${notif.notificationId}::${notif.timestamp}"
+            val key = notificationKey(notif)
             if (key.isNotEmpty() && !seenNotificationIds.contains(key)) {
                 seenNotificationIds.add(key)
-                if (seenNotificationIds.size > 500) {
-                    seenNotificationIds.clear()
-                }
+                trimSeenNotificationIds()
                 showSystemNotification(notif)
             }
+        }
+    }
+
+    private fun notificationKey(notif: MirroredNotification): String {
+        if (notif.notificationId.isNotBlank()) return "${notif.appName}::${notif.notificationId}"
+        if (notif.id.isNotBlank()) return notif.id
+        return "${notif.appName}::${notif.title}::${notif.body}::${notif.timestamp}"
+    }
+
+    private fun switchSourceIfNeeded(sourceKey: String) {
+        if (activeSourceKey == sourceKey) return
+        activeSourceKey = sourceKey
+        seenNotificationIds.clear()
+        isFirstSync = true
+    }
+
+    private fun trimSeenNotificationIds() {
+        while (seenNotificationIds.size > 500) {
+            val oldest = seenNotificationIds.iterator()
+            if (!oldest.hasNext()) return
+            oldest.next()
+            oldest.remove()
         }
     }
 
