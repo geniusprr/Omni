@@ -6,7 +6,7 @@ import http from 'node:http'
 import https from 'node:https'
 import dgram from 'node:dgram'
 import { randomUUID } from 'node:crypto'
-import type { ConnectionInfo, LocalSendDevice, LocalSendStatus, ReceivedFileRecord } from '../src/types.js'
+import type { ConnectionInfo, LocalSendDevice, LocalSendStatus, MirroredNotification, ReceivedFileRecord } from '../src/types.js'
 import type { AlarmManager } from './AlarmManager.js'
 import type { ContentManager } from './ContentManager.js'
 import type { SystemManager } from './SystemManager.js'
@@ -21,20 +21,25 @@ export class LocalSendManager {
   private readonly downloadDir: string
   private readonly devicesPath: string
   private readonly filesPath: string
+  private readonly authTokensPath: string
   private readonly emitDevice: (device: LocalSendDevice) => void
   private readonly emitFile: (file: ReceivedFileRecord) => void
   private readonly mobile: MobileHooks
   private readonly devices = new Map<string, LocalSendDevice>()
+  private readonly authorizedTokens = new Set<string>()
   private receivedFiles: ReceivedFileRecord[] = []
   private sessions = new Map<string, UploadSession>()
   private server: http.Server | null = null
   private autoAccept = true
+  private activeSseClients = new Set<http.ServerResponse>()
+  private recentNotifications: MirroredNotification[] = []
 
   constructor(dataDir: string, emitDevice: (device: LocalSendDevice) => void, emitFile: (file: ReceivedFileRecord) => void, mobile: MobileHooks) {
     this.dataDir = dataDir
     this.downloadDir = path.join(app.getPath('downloads'), 'kapanis_received')
     this.devicesPath = path.join(dataDir, 'localsend-devices.json')
     this.filesPath = path.join(dataDir, 'localsend-files.json')
+    this.authTokensPath = path.join(dataDir, 'local-auth-tokens.json')
     this.emitDevice = emitDevice
     this.emitFile = emitFile
     this.mobile = mobile
@@ -42,7 +47,40 @@ export class LocalSendManager {
     for (const device of readArray<LocalSendDevice>(this.devicesPath)) {
       if (device && typeof device.ip === 'string' && typeof device.port === 'number') this.devices.set(device.ip + ':' + device.port, device)
     }
+    for (const token of readArray<string>(this.authTokensPath)) {
+      if (typeof token === 'string' && token) this.authorizedTokens.add(token)
+    }
     this.receivedFiles = readArray<ReceivedFileRecord>(this.filesPath).slice(0, 200)
+  }
+
+  private saveAuthTokens() {
+    try {
+      fs.writeFileSync(this.authTokensPath, JSON.stringify(Array.from(this.authorizedTokens)), 'utf8')
+    } catch {}
+  }
+
+  private isAuthorized(request: http.IncomingMessage, url: URL): boolean {
+    const authHeader = request.headers['authorization'] || request.headers['x-auth-token']
+    let token = ''
+    if (typeof authHeader === 'string') {
+      token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    }
+    if (!token) {
+      token = url.searchParams.get('token') || url.searchParams.get('auth') || ''
+    }
+    return Boolean(token && this.authorizedTokens.has(token))
+  }
+
+  broadcastNotification(notification: MirroredNotification) {
+    this.recentNotifications = [notification, ...this.recentNotifications].slice(0, 50)
+    const payload = `data: ${JSON.stringify(notification)}\n\n`
+    for (const client of this.activeSseClients) {
+      try {
+        client.write(payload)
+      } catch {
+        this.activeSseClients.delete(client)
+      }
+    }
   }
 
   start() {
@@ -164,10 +202,113 @@ export class LocalSendManager {
     if (request.method === 'OPTIONS') { response.statusCode = 204; response.end(); return }
     const senderIp = request.socket.remoteAddress?.replace(/^::ffff:/, '') || 'unknown'
 
-    // Preserve the mobile companion API while keeping the actual state
-    // mutations in dedicated managers.
+    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      const settings = this.mobile.system.getSettings()
+      response.setHeader('Content-Type', 'text/html; charset=utf-8')
+      response.end(renderCompanionHtml(settings?.deviceName || os.hostname() || 'Kapanış Desktop', this.port))
+      return
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/auth/pair') {
+      const body = await readJson(request)
+      const inputCode = String(body?.pairingCode || body?.code || '').trim().toUpperCase()
+      const settings = this.mobile.system.getSettings()
+      const validCode = settings?.pairingCode?.trim().toUpperCase() || ''
+      const validSecret = settings?.pairingSecret?.trim().toUpperCase() || ''
+      if (inputCode && (inputCode === validCode || inputCode === validSecret)) {
+        const token = 'loc_' + randomUUID().replace(/-/g, '')
+        this.authorizedTokens.add(token)
+        this.saveAuthTokens()
+        const clientDevice = this.normalizeDevice(body, senderIp, Number(body?.port) || this.port, 'http')
+        this.saveDevice(clientDevice)
+        sendJson(response, {
+          success: true,
+          authToken: token,
+          deviceName: settings?.deviceName || os.hostname() || 'Windows PC',
+          deviceId: settings?.deviceId,
+          pairingCode: validCode,
+          timerState: this.mobile.system.getTimerStatus(),
+        })
+        return
+      }
+      response.statusCode = 401
+      sendJson(response, { success: false, error: 'Hatalı eşleştirme kodu! Lütfen bilgisayar ekranındaki kodu kontrol edin.' })
+      return
+    }
+
     if (request.method === 'GET' && (url.pathname === '/api/status' || url.pathname === '/api/local/state')) {
-      sendJson(response, { status: 'ok', deviceName: os.hostname() || 'Kapanış Desktop', version: '2.0.0', port: this.port, timerState: this.mobile.system.getTimerStatus(), alarms: this.mobile.alarms.list() })
+      const isAuth = this.isAuthorized(request, url)
+      const settings = this.mobile.system.getSettings()
+      sendJson(response, {
+        status: 'ok',
+        authenticated: isAuth,
+        deviceName: settings?.deviceName || os.hostname() || 'Kapanış Desktop',
+        deviceId: settings?.deviceId,
+        version: '2.0.0',
+        port: this.port,
+        timerState: isAuth ? this.mobile.system.getTimerStatus() : null,
+        alarms: isAuth ? this.mobile.alarms.list() : [],
+      })
+      return
+    }
+
+    // Protected routes check
+    const protectedPaths = [
+      '/api/command',
+      '/api/upload',
+      '/api/notifications',
+      '/api/notifications/stream',
+      '/api/notifications/test',
+      '/api/alarms/create',
+      '/api/alarms/cancel',
+      '/api/notes/create',
+      '/api/clipboard',
+      '/api/notify',
+    ]
+    if (protectedPaths.includes(url.pathname)) {
+      if (!this.isAuthorized(request, url)) {
+        response.statusCode = 401
+        sendJson(response, { success: false, error: 'Bu işlem için PC eşleştirme kodu ile giriş yapmalısınız.', requiresAuth: true })
+        return
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/notifications/stream') {
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      })
+      response.write('event: ready\ndata: {"status":"connected"}\n\n')
+      for (const notif of this.recentNotifications.slice(0, 20).reverse()) {
+        response.write(`data: ${JSON.stringify(notif)}\n\n`)
+      }
+      this.activeSseClients.add(response)
+      const keepAlive = setInterval(() => {
+        try { response.write(': ping\n\n') } catch { clearInterval(keepAlive); this.activeSseClients.delete(response) }
+      }, 20_000)
+      request.on('close', () => {
+        clearInterval(keepAlive)
+        this.activeSseClients.delete(response)
+      })
+      return
+    }
+    if (request.method === 'GET' && url.pathname === '/api/notifications') {
+      sendJson(response, this.recentNotifications)
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/notifications/test') {
+      const testNotif: MirroredNotification = {
+        id: randomUUID(),
+        appName: 'kapanış. Test',
+        title: 'Test Bildirimi',
+        body: 'Yerel ağdan telefonunuza başarıyla iletildi!',
+        timestamp: Date.now(),
+        source: 'test',
+      }
+      this.broadcastNotification(testNotif)
+      sendJson(response, { success: true, notification: testNotif })
       return
     }
     if (request.method === 'POST' && url.pathname === '/api/register') {
@@ -235,6 +376,10 @@ export class LocalSendManager {
       writeJson(this.filesPath, this.receivedFiles)
       this.emitFile(record)
       sendJson(response, { id: record.id, filename: record.fileName, path: record.localPath, size: record.size })
+      return
+    }
+    if (request.method === 'GET' && url.pathname === '/api/received-files') {
+      sendJson(response, this.receivedFiles)
       return
     }
     if (url.pathname.startsWith('/api/vault/')) {
@@ -453,3 +598,521 @@ async function requestRaw(urlValue: string, method: string, body?: Buffer, conte
     request.end()
   })
 }
+
+function renderCompanionHtml(deviceName: string, port: number): string {
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>kapanış. Yerel Panel</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --card: rgba(22, 29, 43, 0.8);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { background-color: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+    
+    /* AUTH SCREEN */
+    #auth-view { display: none; min-height: 100vh; padding: 24px 16px; align-items: center; justify-content: center; }
+    .auth-card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--card-border); border-radius: 20px; padding: 28px 22px; backdrop-filter: blur(16px); text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .auth-icon { width: 60px; height: 60px; border-radius: 16px; background: rgba(56, 189, 248, 0.12); color: var(--accent); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 28px; border: 1px solid rgba(56, 189, 248, 0.25); }
+    .auth-card h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 6px; }
+    .auth-card p { font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 20px; }
+    .pin-input { width: 100%; height: 52px; background: rgba(0,0,0,0.35); border: 2px solid rgba(255,255,255,0.12); border-radius: 12px; color: var(--text); font-size: 1.4rem; font-weight: 700; text-align: center; letter-spacing: 4px; text-transform: uppercase; outline: none; margin-bottom: 16px; transition: border-color 0.2s; }
+    .pin-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .auth-error { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; font-size: 0.82rem; padding: 10px; border-radius: 10px; margin-bottom: 14px; display: none; }
+    
+    /* MAIN APP */
+    #app-view { display: none; flex-direction: column; min-height: 100vh; padding-bottom: 70px; }
+    header {
+      padding: 14px 18px;
+      background: rgba(11, 15, 23, 0.88);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header-brand h1 { font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .status-badge { font-size: 0.75rem; padding: 4px 10px; border-radius: 999px; background: rgba(34, 197, 94, 0.15); color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+    .btn-logout { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.78rem; padding: 4px 8px; border-radius: 6px; }
+    .btn-logout:hover { color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+    
+    .tabs { display: flex; background: rgba(255,255,255,0.04); padding: 4px; margin: 14px 16px 8px; border-radius: 12px; border: 1px solid var(--card-border); }
+    .tab-btn { flex: 1; padding: 9px 4px; background: transparent; border: none; color: var(--text-muted); font-size: 0.82rem; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+    .tab-btn.active { background: var(--card); color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .container { padding: 10px 16px; flex: 1; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    .card { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; backdrop-filter: blur(8px); }
+    .card-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 16px; border-radius: 10px; border: none; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #0b0f17; box-shadow: 0 4px 12px var(--accent-glow); }
+    .btn-secondary { background: rgba(255,255,255,0.08); color: var(--text); }
+    .btn-danger { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .btn-full { width: 100%; margin-top: 8px; }
+    
+    /* NOTIFICATION FILTERS */
+    .filter-scroll { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; scrollbar-width: none; }
+    .filter-scroll::-webkit-scrollbar { display: none; }
+    .filter-pill { font-size: 0.75rem; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--card-border); white-space: nowrap; cursor: pointer; }
+    .filter-pill.active { background: rgba(56, 189, 248, 0.18); color: var(--accent); border-color: rgba(56, 189, 248, 0.35); }
+    
+    .search-input { width: 100%; height: 38px; background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); padding: 0 12px; font-size: 0.82rem; margin-bottom: 12px; outline: none; }
+    .search-input:focus { border-color: var(--accent); }
+    
+    .notif-item { background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 12px; margin-bottom: 8px; animation: slideIn 0.2s ease-out; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+    .notif-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .notif-app { font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+    .notif-time { font-size: 0.7rem; color: var(--text-muted); }
+    .notif-title { font-size: 0.88rem; font-weight: 600; margin-bottom: 2px; }
+    .notif-body { font-size: 0.8rem; color: var(--text-muted); line-height: 1.35; word-break: break-word; }
+    
+    .upload-box { border: 2px dashed rgba(56, 189, 248, 0.35); border-radius: var(--radius); padding: 28px 16px; text-align: center; cursor: pointer; transition: all 0.2s; background: rgba(56, 189, 248, 0.02); }
+    .upload-box:hover, .upload-box:active { border-color: var(--accent); background: rgba(56, 189, 248, 0.06); }
+    .progress-bar { width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; margin-top: 12px; display: none; }
+    .progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.1s; }
+    .textarea { width: 100%; height: 90px; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: 10px; color: var(--text); padding: 12px; font-size: 0.88rem; resize: none; outline: none; }
+    .textarea:focus { border-color: var(--accent); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .empty-state { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 0.85rem; }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+  <!-- SCREEN 1: PIN AUTHENTICATION GATE -->
+  <div id="auth-view">
+    <div class="auth-card">
+      <div class="auth-icon">🔒</div>
+      <h2>${deviceName}</h2>
+      <p>Bilgisayar ekranındaki <strong>Eşleştirme Kodunu</strong> girerek bağlanın.</p>
+      
+      <div class="auth-error" id="auth-error">Hatalı kod! Lütfen kontrol edin.</div>
+      
+      <input type="text" id="pin-input" class="pin-input" placeholder="KAP-XXXX" maxlength="12" autofocus autocomplete="off" />
+      <button class="btn btn-primary btn-full" id="auth-btn" onclick="submitPairing()">Eşleştir ve Bağlan</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: MAIN DASHBOARD -->
+  <div id="app-view">
+    <header>
+      <div class="header-brand">
+        <h1>kapanış. <span style="font-weight:400; font-size:0.82rem; color:var(--text-muted);">Yerel</span></h1>
+      </div>
+      <div class="header-right">
+        <div class="status-badge">
+          <span class="status-dot"></span>
+          <span id="pc-name-display">${deviceName}</span>
+        </div>
+        <button class="btn-logout" onclick="logout()" title="Eşleştirmeyi Kaldır">Çıkış</button>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('notifications')">🔔 Bildirimler <span id="notif-count-badge"></span></button>
+      <button class="tab-btn" onclick="switchTab('power')">⚡ Güç</button>
+      <button class="tab-btn" onclick="switchTab('upload')">📁 Dosya & Pano</button>
+    </div>
+
+    <main class="container">
+      <!-- TAB 1: NOTIFICATIONS -->
+      <section id="tab-notifications" class="tab-content active">
+        <div class="card">
+          <div class="card-title">
+            <span>PC Bildirim Aynalama</span>
+            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;" onclick="clearNotifs()">Temizle</button>
+          </div>
+          <div class="toggle-row">
+            <span>Telefonda Pop-up Bildirim</span>
+            <button class="btn btn-secondary" style="padding:5px 10px; font-size:0.78rem;" id="perm-btn" onclick="requestNotificationPermission()">İzni Aç</button>
+          </div>
+          <div class="toggle-row">
+            <span>Bildirim Sesi</span>
+            <input type="checkbox" id="sound-toggle" checked style="accent-color:var(--accent); width:18px; height:18px;" />
+          </div>
+        </div>
+
+        <!-- Filter Chips -->
+        <div class="filter-scroll" id="filter-container">
+          <button class="filter-pill active" onclick="setFilter('all')">Tümü</button>
+          <button class="filter-pill" onclick="setFilter('WhatsApp')">WhatsApp</button>
+          <button class="filter-pill" onclick="setFilter('Discord')">Discord</button>
+          <button class="filter-pill" onclick="setFilter('Chrome')">Chrome</button>
+          <button class="filter-pill" onclick="setFilter('Outlook')">Outlook</button>
+          <button class="filter-pill" onclick="setFilter('Sistem')">Sistem</button>
+        </div>
+
+        <input type="text" class="search-input" id="search-input" placeholder="Bildirimlerde ara..." oninput="handleSearch(this.value)" />
+
+        <div id="notif-list">
+          <div class="empty-state" id="notif-empty">
+            <div style="font-size: 1.8rem; margin-bottom: 6px;">🔔</div>
+            PC'ye bildirim geldiğinde burada anlık görünecektir.<br>Uygulama arka plandayken de aktiftir.
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: POWER -->
+      <section id="tab-power" class="tab-content">
+        <div class="card">
+          <div class="card-title">Windows Güç Kontrolleri</div>
+          <div class="grid-2">
+            <button class="btn btn-danger" onclick="sendCommand('shutdown', 0)">🔴 Şimdi Kapat</button>
+            <button class="btn btn-secondary" onclick="sendCommand('restart', 0)">🔄 Yeniden Başlat</button>
+          </div>
+          <div class="grid-2" style="margin-top:8px;">
+            <button class="btn btn-secondary" onclick="sendCommand('shutdown', 1800)">⏳ 30 Dk Sonra Kapat</button>
+            <button class="btn btn-secondary" onclick="sendCommand('shutdown', 3600)">⏳ 1 Saat Sonra Kapat</button>
+          </div>
+          <button class="btn btn-secondary btn-full" style="margin-top:10px;" onclick="sendCommand('cancel', 0)">❌ Aktif Planı İptal Et</button>
+          <div id="power-status" style="margin-top:10px; font-size:0.82rem; text-align:center;"></div>
+        </div>
+      </section>
+
+      <!-- TAB 3: FILE & CLIPBOARD -->
+      <section id="tab-upload" class="tab-content">
+        <div class="card">
+          <div class="card-title">Bilgisayara Dosya Gönder</div>
+          <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:12px;">
+            Dosyalarınız doğrudan PC'deki <strong>İndirilenler/kapanis_received</strong> klasörüne aktarılır.
+          </p>
+
+          <div class="upload-box" onclick="document.getElementById('file-input').click()">
+            <div style="font-size: 2rem; margin-bottom: 6px;">📤</div>
+            <div style="font-weight:600; font-size:0.9rem; margin-bottom:2px;">Fotoğraf veya Dosya Seç</div>
+            <div style="font-size:0.75rem; color:var(--text-muted);">Dokunun veya sürükleyip bırakın</div>
+            <input type="file" id="file-input" multiple style="display:none" onchange="handleFiles(this.files)">
+          </div>
+
+          <div class="progress-bar" id="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <div id="upload-status" style="margin-top:10px; font-size:0.82rem; text-align:center;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">PC Panosuna Metin Gönder</div>
+          <textarea id="clip-text" class="textarea" placeholder="Buraya link, not veya metin yapıştırın..."></textarea>
+          <button class="btn btn-primary btn-full" onclick="sendClipboard()">PC'ye Gönder</button>
+          <div id="clip-status" style="margin-top:8px; font-size:0.8rem; text-align:center;"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let authToken = localStorage.getItem('kapanis_local_token') || '';
+    const allNotifications = [];
+    let currentFilter = 'all';
+    let searchQuery = '';
+
+    function checkAuth() {
+      if (!authToken) {
+        document.getElementById('auth-view').style.display = 'flex';
+        document.getElementById('app-view').style.display = 'none';
+      } else {
+        document.getElementById('auth-view').style.display = 'none';
+        document.getElementById('app-view').style.display = 'flex';
+        connectSse();
+      }
+    }
+
+    async function submitPairing() {
+      const pin = document.getElementById('pin-input').value.trim();
+      const errEl = document.getElementById('auth-error');
+      const btn = document.getElementById('auth-btn');
+      if (!pin) return;
+      
+      btn.disabled = true;
+      btn.textContent = 'Eşleştiriliyor...';
+      errEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/auth/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pairingCode: pin, deviceName: navigator.userAgent.includes('iPhone') ? 'iPhone' : navigator.userAgent.includes('Android') ? 'Android' : 'Tarayıcı' })
+        });
+        const json = await res.json();
+        if (json.success && json.authToken) {
+          authToken = json.authToken;
+          localStorage.setItem('kapanis_local_token', authToken);
+          if (json.deviceName) document.getElementById('pc-name-display').textContent = json.deviceName;
+          checkAuth();
+        } else {
+          errEl.textContent = json.error || 'Hatalı eşleştirme kodu!';
+          errEl.style.display = 'block';
+        }
+      } catch (e) {
+        errEl.textContent = 'PC ile bağlantı kurulamadı.';
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Eşleştir ve Bağlan';
+      }
+    }
+
+    function logout() {
+      if (confirm('Bu cihazın eşleştirmesini kaldırmak istiyor musunuz?')) {
+        localStorage.removeItem('kapanis_local_token');
+        authToken = '';
+        checkAuth();
+      }
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.getAttribute('onclick').includes(tabId));
+      });
+      document.querySelectorAll('.tab-content').forEach(el => {
+        el.classList.toggle('active', el.id === 'tab-' + tabId);
+      });
+    }
+
+    function playChime() {
+      if (!document.getElementById('sound-toggle').checked) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.45);
+      } catch (e) {}
+    }
+
+    function requestNotificationPermission() {
+      if (!('Notification' in window)) return;
+      Notification.requestPermission().then(perm => {
+        updatePermButton();
+        if (perm === 'granted') {
+          new Notification('kapanış. Yerel', { body: 'PC bildirimleri telefonunuza başarıyla bağlandı!' });
+        }
+      });
+    }
+
+    function updatePermButton() {
+      const btn = document.getElementById('perm-btn');
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'granted') {
+        btn.textContent = '✓ İzin Verildi';
+        btn.style.color = 'var(--success)';
+        btn.disabled = true;
+      }
+    }
+    updatePermButton();
+
+    function addNotification(item) {
+      if (allNotifications.some(n => n.id === item.id)) return;
+      allNotifications.unshift(item);
+      playChime();
+
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(item.appName || 'PC Bildirimi', {
+            body: (item.title ? item.title + ': ' : '') + (item.body || '')
+          });
+        } catch (e) {}
+      }
+
+      renderNotifications();
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-pill').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick').includes(filter));
+      });
+      renderNotifications();
+    }
+
+    function handleSearch(query) {
+      searchQuery = (query || '').toLowerCase().trim();
+      renderNotifications();
+    }
+
+    function renderNotifications() {
+      const list = document.getElementById('notif-list');
+      const empty = document.getElementById('notif-empty');
+      
+      const filtered = allNotifications.filter(n => {
+        if (currentFilter !== 'all' && !(n.appName || '').toLowerCase().includes(currentFilter.toLowerCase())) {
+          return false;
+        }
+        if (searchQuery) {
+          const matchTitle = (n.title || '').toLowerCase().includes(searchQuery);
+          const matchBody = (n.body || '').toLowerCase().includes(searchQuery);
+          const matchApp = (n.appName || '').toLowerCase().includes(searchQuery);
+          return matchTitle || matchBody || matchApp;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        empty.style.display = 'block';
+        list.innerHTML = '';
+        list.appendChild(empty);
+        return;
+      }
+      empty.style.display = 'none';
+      list.innerHTML = filtered.map(n => \`
+        <div class="notif-item">
+          <div class="notif-header">
+            <span class="notif-app">\${escapeHtml(n.appName || 'Sistem')}</span>
+            <span class="notif-time">\${new Date(n.timestamp).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})}</span>
+          </div>
+          \${n.title ? \`<div class="notif-title">\${escapeHtml(n.title)}</div>\` : ''}
+          \${n.body ? \`<div class="notif-body">\${escapeHtml(n.body)}</div>\` : ''}
+        </div>
+      \`).join('');
+    }
+
+    function clearNotifs() {
+      allNotifications.length = 0;
+      renderNotifications();
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function connectSse() {
+      if (!authToken) return;
+      const sse = new EventSource('/api/notifications/stream?token=' + encodeURIComponent(authToken));
+      sse.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.title !== undefined) {
+            addNotification(data);
+          }
+        } catch (e) {}
+      };
+      sse.onerror = () => {
+        sse.close();
+        setTimeout(connectSse, 4000);
+      };
+    }
+
+    async function handleFiles(files) {
+      if (!files || files.length === 0) return;
+      const statusEl = document.getElementById('upload-status');
+      const progressEl = document.getElementById('progress-bar');
+      const fillEl = document.getElementById('progress-fill');
+      progressEl.style.display = 'block';
+      fillEl.style.width = '0%';
+      statusEl.style.color = 'var(--text)';
+      statusEl.textContent = files.length + ' dosya yükleniyor...';
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/upload', true);
+          xhr.setRequestHeader('Authorization', 'Bearer ' + authToken);
+          xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              fillEl.style.width = percent + '%';
+            }
+          };
+          await new Promise((resolve, reject) => {
+            xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr.response) : reject(new Error('Yükleme hatası (' + xhr.status + ')'));
+            xhr.onerror = () => reject(new Error('Ağ hatası'));
+            xhr.send(file);
+          });
+        } catch (err) {
+          statusEl.style.color = 'var(--danger)';
+          statusEl.textContent = 'Hata: ' + (err.message || 'Dosya gönderilemedi');
+          return;
+        }
+      }
+
+      fillEl.style.width = '100%';
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = '✓ ' + files.length + ' dosya başarıyla PC\\\'ye aktarıldı!';
+      setTimeout(() => { progressEl.style.display = 'none'; }, 2500);
+    }
+
+    async function sendClipboard() {
+      const text = document.getElementById('clip-text').value.trim();
+      const status = document.getElementById('clip-status');
+      if (!text) return;
+      try {
+        const res = await fetch('/api/clipboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+          body: JSON.stringify({ text })
+        });
+        if (res.ok) {
+          status.style.color = 'var(--success)';
+          status.textContent = '✓ Metin PC panosuna iletildi!';
+          document.getElementById('clip-text').value = '';
+          setTimeout(() => { status.textContent = ''; }, 3000);
+        } else {
+          status.style.color = 'var(--danger)';
+          status.textContent = 'Gönderilemedi.';
+        }
+      } catch {
+        status.style.color = 'var(--danger)';
+        status.textContent = 'Bağlantı hatası.';
+      }
+    }
+
+    async function sendCommand(command, delaySeconds) {
+      const status = document.getElementById('power-status');
+      if (command !== 'cancel' && !confirm('Bu güç komutu uygulansın mı?')) return;
+      try {
+        const res = await fetch('/api/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+          body: JSON.stringify({ command, delaySeconds })
+        });
+        const json = await res.json();
+        if (json.success) {
+          status.style.color = 'var(--success)';
+          status.textContent = '✓ Komut başarıyla uygulandı!';
+          setTimeout(() => { status.textContent = ''; }, 3000);
+        } else {
+          status.style.color = 'var(--danger)';
+          status.textContent = json.error || 'Komut başarısız.';
+        }
+      } catch {
+        status.style.color = 'var(--danger)';
+        status.textContent = 'Bağlantı hatası.';
+      }
+    }
+
+    checkAuth();
+  </script>
+</body>
+</html>`
+}
+

@@ -5,6 +5,7 @@ import type {
   CreateAlarmInput,
   LocalSendDevice,
   LocalSendStatus,
+  MirroredNotification,
   MobileNotification,
   NoteItem,
   ReceivedFileRecord,
@@ -36,6 +37,7 @@ export const APP_EVENTS = {
   mobileNote: 'mobile:note',
   mobileFile: 'mobile:file',
   mobileNotification: 'mobile:notification',
+  notificationMirrored: 'notification:mirrored',
   localSendDevice: 'localsend:device-discovered',
   localSendFile: 'localsend:file-received',
   vaultFsChange: 'vault:fs-change',
@@ -295,6 +297,10 @@ export type IpcChannel =
   | 'vault:start-watcher'
   | 'vault:stop-watcher'
   | 'vault:set-window-mode'
+  | 'notifications:get-history'
+  | 'notifications:test'
+  | 'notifications:get-status'
+  | 'notifications:clear-history'
 
 export interface ElectronDesktopBridge {
   invoke(channel: IpcChannel, payload?: unknown): Promise<unknown>
@@ -308,6 +314,7 @@ export type SharedAppPayload =
   | CreateAlarmInput
   | LocalSendDevice
   | LocalSendStatus
+  | MirroredNotification
   | MobileNotification
   | NoteItem
   | ReceivedFileRecord

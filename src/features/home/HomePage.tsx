@@ -366,10 +366,10 @@ export function HomePage({
               <button
                 type="button"
                 className="widget-action-pill widget-action-pill--violet"
-                onClick={() => onNavigate('remote')}
+                onClick={() => onNavigate('settings')}
               >
                 <Smartphone size={13} />
-                <span>Mobil Bağlantı</span>
+                <span>Mobil Eşleştirme</span>
               </button>
             </div>
           </div>

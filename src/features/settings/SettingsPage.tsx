@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react'
+import Bell from 'lucide-react/dist/esm/icons/bell.js'
+import BellRing from 'lucide-react/dist/esm/icons/bell-ring.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
@@ -12,11 +14,13 @@ import Wifi from 'lucide-react/dist/esm/icons/wifi.js'
 import WifiOff from 'lucide-react/dist/esm/icons/wifi-off.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import QRCode from 'qrcode'
+import { PairingModal } from '@/components/PairingModal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
+  createPairingPayload,
   generatePairingCode,
   generatePairingSecret,
   removePairedController,
@@ -40,6 +44,7 @@ const SUPABASE_SCHEMA_SQL = `-- ================================================
 -- ============================================================================
 
 -- 1. Eski Çakışan Tablo ve Tipleri Güvenle Temizleme
+drop table if exists public.device_notifications cascade;
 drop table if exists public.device_commands cascade;
 drop table if exists public.paired_controllers cascade;
 drop table if exists public.devices cascade;
@@ -91,7 +96,19 @@ create table public.device_commands (
   completed_at timestamptz
 );
 
--- 6. İndeksler
+-- 6. Bildirimler Tablosu (PC'den Telefona Bildirim Aynalama)
+create table public.device_notifications (
+  id uuid primary key default gen_random_uuid(),
+  device_id uuid not null references public.devices(id) on delete cascade,
+  notification_id text,
+  app_name text not null default 'Sistem',
+  title text,
+  body text,
+  timestamp timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+-- 7. İndeksler
 create index if not exists device_commands_pending_idx
   on public.device_commands (device_id, created_at)
   where status = 'pending';
@@ -102,12 +119,16 @@ create index if not exists devices_pairing_code_idx
 create index if not exists paired_controllers_device_idx
   on public.paired_controllers (device_id);
 
--- 7. RLS (Row Level Security) Etkinleştirme
+create index if not exists device_notifications_device_idx
+  on public.device_notifications (device_id, timestamp desc);
+
+-- 8. RLS (Row Level Security) Etkinleştirme
 alter table public.devices enable row level security;
 alter table public.paired_controllers enable row level security;
 alter table public.device_commands enable row level security;
+alter table public.device_notifications enable row level security;
 
--- 8. İzin Politikaları (Drop & Create)
+-- 9. İzin Politikaları (Drop & Create)
 drop policy if exists "Allow public access to devices" on public.devices;
 create policy "Allow public access to devices"
   on public.devices for all
@@ -129,7 +150,14 @@ create policy "Allow public access to device_commands"
   using (true)
   with check (true);
 
--- 9. Supabase Realtime Yayınları
+drop policy if exists "Allow public access to device_notifications" on public.device_notifications;
+create policy "Allow public access to device_notifications"
+  on public.device_notifications for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+-- 10. Supabase Realtime Yayınları
 do $$
 begin
   if not exists (
@@ -152,6 +180,13 @@ begin
   ) then
     alter publication supabase_realtime add table public.paired_controllers;
   end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'device_notifications'
+  ) then
+    alter publication supabase_realtime add table public.device_notifications;
+  end if;
 end
 $$;`
 
@@ -167,19 +202,32 @@ export function SettingsPage({
   const [key, setKey] = useState(settings.supabaseAnonKey)
   const [deviceName, setDeviceName] = useState(settings.deviceName)
   const [autostart, setAutostart] = useState(settings.autostart)
+  const [notifMirroring, setNotifMirroring] = useState(settings.notificationMirroringEnabled !== false)
+  const [ntfyEnabled, setNtfyEnabled] = useState(Boolean(settings.ntfyEnabled))
+  const [ntfyTopic, setNtfyTopic] = useState(settings.ntfyTopic || `kapanis_${settings.deviceId.slice(0, 8)}`)
+  const [listenerStatus, setListenerStatus] = useState<{ running: boolean; accessGranted: boolean; historyCount: number }>({ running: false, accessGranted: false, historyCount: 0 })
+  const [testNotifSent, setTestNotifSent] = useState(false)
   const [saving, setSaving] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
   const [copiedSql, setCopiedSql] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
+  const [copiedLocalLink, setCopiedLocalLink] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [testingConnection, setTestingConnection] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [localQrDataUrl, setLocalQrDataUrl] = useState<string | null>(null)
+  const [qrModalTab, setQrModalTab] = useState<'cloud' | 'local'>('cloud')
   const [showQrModal, setShowQrModal] = useState(false)
   const [showSqlModal, setShowSqlModal] = useState(false)
   const [heartbeatAgo, setHeartbeatAgo] = useState<string>('')
   const [localDevices, setLocalDevices] = useState<import('@/types').LocalSendDevice[]>([])
+  const [localIps, setLocalIps] = useState<string[]>([])
 
   useEffect(() => {
+    void desktop.localsend.getStatus().then((st) => {
+      if (st && st.allIps && st.allIps.length > 0) setLocalIps(st.allIps)
+      else if (st && st.localIp) setLocalIps([st.localIp])
+    }).catch(() => undefined)
     void desktop.localsend.getDevices().then(setLocalDevices).catch(() => undefined)
     const unlisten = desktop.localsend.onDeviceDiscovered(() => {
       void desktop.localsend.getDevices().then(setLocalDevices).catch(() => undefined)
@@ -189,21 +237,33 @@ export function SettingsPage({
     }
   }, [])
 
-  const remoteUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/?mode=remote&pair=${encodeURIComponent(settings.pairingCode)}&supabaseUrl=${encodeURIComponent(url)}&supabaseKey=${encodeURIComponent(key)}`
+  useEffect(() => {
+    void desktop.notifications.getStatus().then(setListenerStatus).catch(() => undefined)
+    const interval = setInterval(() => {
+      void desktop.notifications.getStatus().then(setListenerStatus).catch(() => undefined)
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const cloudPayload = createPairingPayload(settings, localIps, 53317)
+  const cloudRemoteUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/?mode=remote&pair_data=${encodeURIComponent(cloudPayload)}`
     : ''
+  const localCompanionUrl = localIps.length > 0 ? `http://${localIps[0]}:53317` : 'http://localhost:53317'
 
   useEffect(() => {
     setUrl(settings.supabaseUrl)
     setKey(settings.supabaseAnonKey)
     setDeviceName(settings.deviceName)
     setAutostart(settings.autostart)
+    setNotifMirroring(settings.notificationMirroringEnabled !== false)
+    setNtfyEnabled(Boolean(settings.ntfyEnabled))
+    setNtfyTopic(settings.ntfyTopic || `kapanis_${settings.deviceId.slice(0, 8)}`)
   }, [settings])
 
   useEffect(() => {
-    if (!settings.pairingCode) return
-    const payload = remoteUrl || `kapanis://pair?code=${settings.pairingCode}`
-    void QRCode.toDataURL(payload, {
+    if (!cloudRemoteUrl) return
+    void QRCode.toDataURL(cloudRemoteUrl, {
       margin: 2,
       width: 240,
       color: {
@@ -211,7 +271,19 @@ export function SettingsPage({
         light: '#141822',
       },
     }).then(setQrDataUrl).catch(() => undefined)
-  }, [settings.pairingCode, remoteUrl])
+  }, [cloudRemoteUrl])
+
+  useEffect(() => {
+    if (!localCompanionUrl) return
+    void QRCode.toDataURL(localCompanionUrl, {
+      margin: 2,
+      width: 240,
+      color: {
+        dark: '#ffffff',
+        light: '#141822',
+      },
+    }).then(setLocalQrDataUrl).catch(() => undefined)
+  }, [localCompanionUrl])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -236,6 +308,9 @@ export function SettingsPage({
       supabaseAnonKey: key.trim(),
       deviceName: deviceName.trim() || 'Windows PC',
       autostart,
+      notificationMirroringEnabled: notifMirroring,
+      ntfyEnabled,
+      ntfyTopic: ntfyTopic.trim(),
       lastSavedAt: Date.now(),
     }
     try {
@@ -247,6 +322,12 @@ export function SettingsPage({
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleSendTestNotification() {
+    await desktop.notifications.test('kapanış. Test Bildirimi', 'Bilgisayarınızdan telefonunuza başarıyla iletildi!')
+    setTestNotifSent(true)
+    setTimeout(() => setTestNotifSent(false), 2500)
   }
 
   async function handleTestConnection() {
@@ -330,6 +411,86 @@ export function SettingsPage({
           </div>
         </div>
 
+        {/* PC Bildirim Aynalama */}
+        <div className="settings-card">
+          <div className="settings-card__header">
+            <div className="settings-card__icon"><Bell size={17} /></div>
+            <div>
+              <h3>PC Bildirim Aynalama (Telefona İletim)</h3>
+              <p>Windows'a gelen WhatsApp, Chrome, Discord, Sistem vb. bildirimleri telefona aktar.</p>
+            </div>
+          </div>
+          <div className="settings-card__body">
+            <div className="settings-row" style={{ marginBottom: '14px' }}>
+              <div>
+                <Label htmlFor="notif-mirror-toggle" style={{ fontWeight: 600 }}>Bildirim Aynalama Aktif</Label>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '2px 0 0' }}>
+                  {listenerStatus.running ? '✓ Windows bildirim dinleyicisi arka planda çalışıyor' : 'Dinleyici başlatılıyor...'}
+                </p>
+              </div>
+              <Switch
+                id="notif-mirror-toggle"
+                checked={notifMirroring}
+                onCheckedChange={(val) => {
+                  setNotifMirroring(val)
+                  const updated = { ...settings, notificationMirroringEnabled: val }
+                  void saveEffectiveSettings(updated)
+                  onSettingsChange(updated)
+                }}
+              />
+            </div>
+
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px', marginTop: '10px' }}>
+              <div className="settings-row" style={{ marginBottom: '10px' }}>
+                <div>
+                  <Label htmlFor="ntfy-toggle" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <BellRing size={14} color="#38bdf8" /> ntfy.sh Kilit Ekranı Bildirimi (Dışarıdayken)
+                  </Label>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0' }}>
+                    Telefon kilitliyken ve tarayıcı kapalıyken bile sesli/titreşimli push bildirimi gönderir.
+                  </p>
+                </div>
+                <Switch
+                  id="ntfy-toggle"
+                  checked={ntfyEnabled}
+                  onCheckedChange={(val) => {
+                    setNtfyEnabled(val)
+                    const updated = { ...settings, ntfyEnabled: val }
+                    void saveEffectiveSettings(updated)
+                    onSettingsChange(updated)
+                  }}
+                />
+              </div>
+
+              {ntfyEnabled && (
+                <div className="compact-field" style={{ marginTop: '8px' }}>
+                  <Label htmlFor="ntfy-topic-input">ntfy.sh Gizli Kanal Adı (Topic)</Label>
+                  <Input
+                    id="ntfy-topic-input"
+                    value={ntfyTopic}
+                    placeholder="kapanis_xxxxxx"
+                    onChange={(e) => setNtfyTopic(e.target.value)}
+                  />
+                  <span className="field-hint">
+                    Telefondaki ücretsiz ntfy uygulamasından bu kanala abone olarak kilit ekranında bildirim alabilirsiniz.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: '14px', display: 'flex', gap: '10px' }}>
+              <Button
+                variant="soft"
+                size="compact"
+                onClick={() => void handleSendTestNotification()}
+              >
+                {testNotifSent ? <Check size={14} /> : <Bell size={14} />}
+                {testNotifSent ? 'Test Bildirimi Gönderildi!' : 'Test Bildirimi Gönder'}
+              </Button>
+            </div>
+          </div>
+        </div>
+
         {/* Bu Bilgisayar ve Eşleştirme Kodu */}
         <div className="settings-card settings-card--highlight">
           <div className="settings-card__header">
@@ -367,9 +528,17 @@ export function SettingsPage({
                 <Button
                   size="compact"
                   variant="soft"
+                  onClick={() => copyText(cloudRemoteUrl, setCopiedLink)}
+                >
+                  {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                  {copiedLink ? 'Link Kopyalandı' : 'Eşleştirme Linki'}
+                </Button>
+                <Button
+                  size="compact"
+                  variant="accent"
                   onClick={() => setShowQrModal(true)}
                 >
-                  <QrCode size={14} /> QR Kod
+                  <QrCode size={14} /> QR Kod ile Bağlan
                 </Button>
                 <Button
                   size="compact"
@@ -402,7 +571,7 @@ export function SettingsPage({
             {pairedControllers.length === 0 && localDevices.length === 0 ? (
               <div className="paired-empty">
                 <Smartphone size={22} />
-                <span>Henüz eşleşmiş bir cihaz yok. Telefondan eşleştirme kodunu girin veya aynı Wi-Fi ağından bağlanın.</span>
+                <span>Henüz eşleşmiş bir cihaz yok. Telefondan QR kodu okutun veya aynı Wi-Fi ağından bağlanın.</span>
               </div>
             ) : (
               <div className="paired-list">
@@ -412,7 +581,7 @@ export function SettingsPage({
                       <Smartphone size={15} />
                     </div>
                     <div className="paired-item__info">
-                      <strong>{dev.alias || 'Yerel Android Cihaz'}</strong>
+                      <strong>{dev.alias || 'Yerel Cihaz'}</strong>
                       <small>Yerel Ağ (Wi-Fi) · {dev.ip}:{dev.port} · {dev.deviceModel || 'Mobil'}</small>
                     </div>
                     <span className="status-badge status-badge--online" style={{ fontSize: '11px', padding: '2px 8px' }}>
@@ -507,38 +676,15 @@ export function SettingsPage({
         </div>
       </div>
 
-      {/* QR Kod Modalı */}
-      {showQrModal ? (
-        <div className="settings-modal-overlay" onClick={() => setShowQrModal(false)}>
-          <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
-            <header className="settings-modal__header">
-              <h3>Telefondan Tara & Eşleştir</h3>
-              <Button size="compact" variant="icon" onClick={() => setShowQrModal(false)}>
-                <X size={15} />
-              </Button>
-            </header>
-            <div className="settings-modal__body">
-              <p>Telefonunuzun kamerasını açarak QR kodu okutun. Uzaktan kontrol ekranı otomatik açılacaktır.</p>
-              {qrDataUrl ? (
-                <div className="qr-container">
-                  <img src={qrDataUrl} alt="Eşleştirme QR Kodu" className="qr-image" />
-                </div>
-              ) : null}
-              <div className="qr-code-text">
-                <span>Eşleştirme Kodu:</span>
-                <strong>{settings.pairingCode}</strong>
-              </div>
-              <Button
-                variant="soft"
-                onClick={() => copyText(remoteUrl, setCopiedLink)}
-              >
-                {copiedLink ? <Check size={14} /> : <Copy size={14} />}
-                {copiedLink ? 'Link Kopyalandı' : 'Kumanda Web Linkini Kopyala'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* QR Kod Modalı (Modern Theme-Aware PairingModal) */}
+      <PairingModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        settings={settings}
+        connectionStatus={connectionStatus}
+        pairedControllers={pairedControllers}
+        onSettingsChange={onSettingsChange}
+      />
 
       {/* SQL Şeması Modalı */}
       {showSqlModal ? (

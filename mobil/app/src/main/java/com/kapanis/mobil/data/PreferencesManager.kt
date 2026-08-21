@@ -78,6 +78,20 @@ class PreferencesManager(context: Context) {
         get() = prefs.getLong("last_connected_at", 0L)
         set(value) = prefs.edit().putLong("last_connected_at", value).apply()
 
+    // Local Auth Token (PIN gate token loc_...)
+    fun getLocalAuthToken(host: String): String {
+        return prefs.getString("local_auth_token_$host", "") ?: ""
+    }
+
+    fun saveLocalAuthToken(host: String, token: String) {
+        prefs.edit().putString("local_auth_token_$host", token).apply()
+    }
+
+    // Active Device ID
+    var activeDeviceId: String
+        get() = prefs.getString("active_device_id", "") ?: ""
+        set(value) = prefs.edit().putString("active_device_id", value).apply()
+
     // Paired Devices History
     fun getPairedDevices(): List<PairedDeviceItem> {
         val raw = prefs.getString("paired_devices_json", "[]") ?: "[]"
@@ -88,6 +102,15 @@ class PreferencesManager(context: Context) {
                 val obj = array.getJSONObject(i)
                 val modeStr = obj.optString("mode", ConnectionMode.LOCAL.name)
                 val mode = try { ConnectionMode.valueOf(modeStr) } catch (e: Exception) { ConnectionMode.LOCAL }
+                
+                val ipsArray = obj.optJSONArray("localIps")
+                val ipsList = mutableListOf<String>()
+                if (ipsArray != null) {
+                    for (j in 0 until ipsArray.length()) {
+                        ipsList.add(ipsArray.getString(j))
+                    }
+                }
+
                 list.add(
                     PairedDeviceItem(
                         id = obj.optString("id", UUID.randomUUID().toString()),
@@ -97,6 +120,12 @@ class PreferencesManager(context: Context) {
                         mode = mode,
                         wifiSsid = obj.optString("wifiSsid", ""),
                         pairingCode = obj.optString("pairingCode", ""),
+                        pairingSecret = obj.optString("pairingSecret", ""),
+                        supabaseUrl = obj.optString("supabaseUrl", ""),
+                        supabaseAnonKey = obj.optString("supabaseAnonKey", ""),
+                        localIps = ipsList,
+                        ntfyTopic = obj.optString("ntfyTopic", ""),
+                        localAuthToken = obj.optString("localAuthToken", ""),
                         lastConnectedAt = obj.optLong("lastConnectedAt", System.currentTimeMillis()),
                         isOnline = obj.optBoolean("isOnline", false),
                         osInfo = obj.optString("osInfo", "Windows 11")
@@ -112,18 +141,21 @@ class PreferencesManager(context: Context) {
     fun savePairedDevice(device: PairedDeviceItem) {
         val current = getPairedDevices().toMutableList()
         val existingIndex = current.indexOfFirst {
-            if (device.mode == ConnectionMode.LOCAL) it.host == device.host && it.port == device.port
+            if (device.id.isNotEmpty() && it.id == device.id) true
+            else if (device.mode == ConnectionMode.LOCAL) it.host == device.host && it.port == device.port
             else it.pairingCode == device.pairingCode && it.pairingCode.isNotEmpty()
         }
 
+        val updated = device.copy(lastConnectedAt = System.currentTimeMillis())
         if (existingIndex != -1) {
-            current[existingIndex] = device.copy(lastConnectedAt = System.currentTimeMillis())
+            current[existingIndex] = updated
         } else {
-            current.add(0, device.copy(lastConnectedAt = System.currentTimeMillis()))
+            current.add(0, updated)
         }
+        activeDeviceId = updated.id
 
         val array = JSONArray()
-        for (item in current.take(20)) {
+        for (item in current.take(30)) {
             val obj = JSONObject().apply {
                 put("id", item.id.ifEmpty { UUID.randomUUID().toString() })
                 put("name", item.name)
@@ -132,9 +164,17 @@ class PreferencesManager(context: Context) {
                 put("mode", item.mode.name)
                 put("wifiSsid", item.wifiSsid)
                 put("pairingCode", item.pairingCode)
+                put("pairingSecret", item.pairingSecret)
+                put("supabaseUrl", item.supabaseUrl)
+                put("supabaseAnonKey", item.supabaseAnonKey)
+                put("ntfyTopic", item.ntfyTopic)
+                put("localAuthToken", item.localAuthToken)
                 put("lastConnectedAt", item.lastConnectedAt)
                 put("isOnline", item.isOnline)
                 put("osInfo", item.osInfo)
+                val ipsArr = JSONArray()
+                item.localIps.forEach { ipsArr.put(it) }
+                put("localIps", ipsArr)
             }
             array.put(obj)
         }
@@ -153,12 +193,101 @@ class PreferencesManager(context: Context) {
                 put("mode", item.mode.name)
                 put("wifiSsid", item.wifiSsid)
                 put("pairingCode", item.pairingCode)
+                put("pairingSecret", item.pairingSecret)
+                put("supabaseUrl", item.supabaseUrl)
+                put("supabaseAnonKey", item.supabaseAnonKey)
+                put("ntfyTopic", item.ntfyTopic)
+                put("localAuthToken", item.localAuthToken)
                 put("lastConnectedAt", item.lastConnectedAt)
                 put("isOnline", item.isOnline)
                 put("osInfo", item.osInfo)
+                val ipsArr = JSONArray()
+                item.localIps.forEach { ipsArr.put(it) }
+                put("localIps", ipsArr)
             }
             array.put(obj)
         }
         prefs.edit().putString("paired_devices_json", array.toString()).apply()
+        if (activeDeviceId == id) {
+            activeDeviceId = filtered.firstOrNull()?.id ?: ""
+        }
+    }
+
+    companion object {
+        fun parsePairingPayload(input: String?): PairingPayload? {
+            if (input.isNullOrBlank()) return null
+            var raw = input.trim()
+
+            if (raw.contains("pair_data=")) {
+                val match = Regex("pair_data=([^&]+)").find(raw)
+                if (match != null) {
+                    raw = java.net.URLDecoder.decode(match.groupValues[1], "UTF-8")
+                }
+            }
+
+            // 1. Try Base64 decode
+            try {
+                var base64 = raw.replace('-', '+').replace('_', '/')
+                while (base64.length % 4 != 0) {
+                    base64 += "="
+                }
+                val decodedBytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+                val decodedStr = String(decodedBytes, Charsets.UTF_8)
+                val obj = JSONObject(decodedStr)
+                if (obj.has("id") || obj.has("code") || obj.has("url")) {
+                    val ipsList = mutableListOf<String>()
+                    val ipsArr = obj.optJSONArray("ips")
+                    if (ipsArr != null) {
+                        for (i in 0 until ipsArr.length()) {
+                            ipsList.add(ipsArr.getString(i))
+                        }
+                    }
+                    return PairingPayload(
+                        v = obj.optInt("v", 2),
+                        id = obj.optString("id", ""),
+                        name = obj.optString("name", "Windows PC"),
+                        code = obj.optString("code", ""),
+                        secret = obj.optString("secret", ""),
+                        url = obj.optString("url", ""),
+                        key = obj.optString("key", ""),
+                        ips = ipsList,
+                        port = obj.optInt("port", 53317),
+                        ntfy = obj.optString("ntfy", "")
+                    )
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+
+            // 2. Try raw JSON decode
+            try {
+                val obj = JSONObject(raw)
+                if (obj.has("id") || obj.has("code") || obj.has("url")) {
+                    val ipsList = mutableListOf<String>()
+                    val ipsArr = obj.optJSONArray("ips")
+                    if (ipsArr != null) {
+                        for (i in 0 until ipsArr.length()) {
+                            ipsList.add(ipsArr.getString(i))
+                        }
+                    }
+                    return PairingPayload(
+                        v = obj.optInt("v", 2),
+                        id = obj.optString("id", ""),
+                        name = obj.optString("name", "Windows PC"),
+                        code = obj.optString("code", ""),
+                        secret = obj.optString("secret", ""),
+                        url = obj.optString("url", ""),
+                        key = obj.optString("key", ""),
+                        ips = ipsList,
+                        port = obj.optInt("port", 53317),
+                        ntfy = obj.optString("ntfy", "")
+                    )
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+
+            return null
+        }
     }
 }

@@ -3,7 +3,10 @@ import { desktop } from '@/lib/desktop'
 import type {
   AppSettings,
   DeviceRecord,
+  MirroredNotification,
   PairedController,
+  PairedPcDevice,
+  PairingPayload,
   RemoteCommand,
   RemoteCommandKind,
   RemoteConnectionStatus,
@@ -320,6 +323,40 @@ export async function startRemoteEngine({
     )
     .subscribe()
 
+  // Realtime broadcast channel for notifications
+  const notificationChannel = supabase.channel(`device-notifications:${settings.deviceId}`)
+  notificationChannel.subscribe()
+
+  const stopNotificationListener = desktop.notifications.onMirrored((notif) => {
+    if (settings.notificationMirroringEnabled === false) return
+
+    // 1. Broadcast over Supabase Realtime channel
+    void notificationChannel.send({
+      type: 'broadcast',
+      event: 'notification',
+      payload: notif,
+    })
+
+    // 2. Insert into Supabase table (best effort)
+    void Promise.resolve(
+      supabase
+        .from('device_notifications')
+        .insert({
+          device_id: settings.deviceId,
+          notification_id: String(notif.notificationId || notif.id),
+          app_name: notif.appName,
+          title: notif.title,
+          body: notif.body,
+          timestamp: new Date(notif.timestamp).toISOString(),
+        })
+    ).catch(() => undefined)
+
+    // 3. Push to ntfy.sh if enabled
+    if (settings.ntfyEnabled && settings.ntfyTopic) {
+      void pushNotificationToNtfy(settings.ntfyTopic, notif, settings.ntfyServer)
+    }
+  })
+
   // Heartbeat timer interval
   const intervalMs = Math.max(5, settings.heartbeatIntervalSeconds || 15) * 1000
   const timerInterval = window.setInterval(() => {
@@ -328,8 +365,10 @@ export async function startRemoteEngine({
 
   return () => {
     window.clearInterval(timerInterval)
+    stopNotificationListener()
     void supabase.removeChannel(commandChannel)
     void supabase.removeChannel(controllerChannel)
+    void supabase.removeChannel(notificationChannel)
     // Mark device offline on cleanup
     void supabase
       .from('devices')
@@ -430,28 +469,50 @@ export async function sendRemoteCommand(
   url: string,
   anonKey: string,
   deviceId: string,
-  controllerId: string,
   command: RemoteCommandKind,
-  delaySeconds: number,
+  delaySeconds: number = 0,
+  controllerId?: string,
 ): Promise<{ success: boolean; command?: RemoteCommand; message?: string }> {
   const client = getSupabaseClient(url, anonKey)
   if (!client) return { success: false, message: 'Supabase istemcisi oluşturulamadı.' }
 
+  const cid = controllerId || (typeof localStorage !== 'undefined' ? localStorage.getItem('kapanis_controller_id') : null) || 'ctrl-web'
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
   const { data, error } = await client
     .from('device_commands')
     .insert({
       device_id: deviceId,
-      controller_id: controllerId,
+      controller_id: cid,
       command,
-      delay_seconds: delaySeconds,
+      delay_seconds: Math.max(0, Math.round(delaySeconds)),
       status: 'pending',
       expires_at: expiresAt,
     })
-    .select()
+    .select('*')
     .single()
 
-  if (error) return { success: false, message: `Komut iletilemedi: ${error.message}` }
+  if (error) {
+    return { success: false, message: `Komut kaydedilemedi: ${error.message}` }
+  }
+
+  // Also broadcast via Realtime channel for instant sub-second trigger
+  try {
+    const channel = client.channel(`device-commands:${deviceId}`)
+    void channel.send({
+      type: 'broadcast',
+      event: 'command',
+      payload: {
+        id: data.id,
+        deviceId: data.device_id,
+        controllerId: data.controller_id,
+        command: data.command,
+        delaySeconds: data.delay_seconds,
+        status: data.status,
+        createdAt: data.created_at,
+        expiresAt: data.expires_at,
+      },
+    })
+  } catch {}
 
   // Update controller last active
   void client
@@ -532,3 +593,270 @@ export function subscribeToDeviceUpdates(
     void client.removeChannel(channel)
   }
 }
+
+export async function pushNotificationToNtfy(
+  topic: string,
+  notif: MirroredNotification,
+  serverUrl = 'https://ntfy.sh',
+): Promise<boolean> {
+  if (!topic || !topic.trim()) return false
+  const cleanTopic = topic.trim().replace(/^\/+/, '')
+  const baseUrl = (serverUrl || 'https://ntfy.sh').replace(/\/+$/, '')
+  const target = `${baseUrl}/${cleanTopic}`
+
+  try {
+    const res = await fetch(target, {
+      method: 'POST',
+      body: notif.body || notif.title,
+      headers: {
+        'Title': `[${notif.appName}] ${notif.title}`,
+        'Priority': 'default',
+        'Tags': 'bell,desktop',
+      },
+    })
+    return res.ok
+  } catch (e) {
+    console.error('ntfy push failed:', e)
+    return false
+  }
+}
+
+export async function fetchDeviceNotifications(
+  url: string,
+  anonKey: string,
+  deviceId: string,
+  limit = 50,
+): Promise<MirroredNotification[]> {
+  const client = getSupabaseClient(url, anonKey)
+  if (!client) return []
+  try {
+    const { data, error } = await client
+      .from('device_notifications')
+      .select('*')
+      .eq('device_id', deviceId)
+      .order('timestamp', { ascending: false })
+      .limit(limit)
+
+    if (error || !data) return []
+    return data.map((row) => ({
+      id: row.id,
+      notificationId: row.notification_id,
+      appName: row.app_name || 'Sistem',
+      title: row.title || '',
+      body: row.body || '',
+      timestamp: new Date(row.timestamp).getTime(),
+      source: 'windows',
+    }))
+  } catch {
+    return []
+  }
+}
+
+export function subscribeToDeviceNotifications(
+  url: string,
+  anonKey: string,
+  deviceId: string,
+  onNotification: (notification: MirroredNotification) => void,
+): () => void {
+  const client = getSupabaseClient(url, anonKey)
+  if (!client) return () => undefined
+
+  const channel = client.channel(`device-notifications:${deviceId}`)
+
+  // 1. Broadcast event listener (instant push)
+  channel.on('broadcast', { event: 'notification' }, (payload) => {
+    if (payload?.payload) {
+      onNotification(payload.payload as MirroredNotification)
+    }
+  })
+
+  // 2. Postgres changes fallback listener
+  channel.on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'device_notifications', filter: `device_id=eq.${deviceId}` },
+    (payload) => {
+      const row = payload.new as any
+      if (row) {
+        onNotification({
+          id: row.id,
+          notificationId: row.notification_id,
+          appName: row.app_name || 'Sistem',
+          title: row.title || '',
+          body: row.body || '',
+          timestamp: new Date(row.timestamp).getTime(),
+          source: 'windows',
+        })
+      }
+    },
+  )
+
+  channel.subscribe()
+
+  return () => {
+    void client.removeChannel(channel)
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Multi-PC Management & Zero-Config Pairing Helpers
+// ----------------------------------------------------------------------------
+
+export function createPairingPayload(settings: AppSettings, localIps: string[] = [], port = 53317): string {
+  const payload: PairingPayload = {
+    v: 2,
+    id: settings.deviceId,
+    name: settings.deviceName || 'Windows PC',
+    code: settings.pairingCode,
+    secret: settings.pairingSecret,
+    url: settings.supabaseUrl || '',
+    key: settings.supabaseAnonKey || '',
+    ips: localIps,
+    port,
+    ntfy: settings.ntfyTopic || `kapanis_${settings.deviceId.slice(0, 8)}`,
+  }
+  const jsonStr = JSON.stringify(payload)
+  try {
+    if (typeof btoa !== 'undefined') {
+      return btoa(unescape(encodeURIComponent(jsonStr)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '')
+    }
+  } catch {}
+  return Buffer.from(jsonStr).toString('base64url')
+}
+
+export function parsePairingPayload(input: string): PairingPayload | null {
+  if (!input || typeof input !== 'string') return null
+  let raw = input.trim()
+
+  if (raw.includes('pair_data=')) {
+    try {
+      const parsedUrl = new URL(raw, 'http://dummy.com')
+      raw = parsedUrl.searchParams.get('pair_data') || raw
+    } catch {
+      const match = raw.match(/pair_data=([^&]+)/)
+      if (match) raw = decodeURIComponent(match[1])
+    }
+  }
+
+  // 1. Try base64url decode
+  try {
+    let base64 = raw.replace(/-/g, '+').replace(/_/g, '/')
+    while (base64.length % 4) base64 += '='
+    const decoded = typeof atob !== 'undefined'
+      ? decodeURIComponent(escape(atob(base64)))
+      : Buffer.from(base64, 'base64').toString('utf8')
+    const obj = JSON.parse(decoded) as PairingPayload
+    if (obj && obj.id && (obj.code || obj.secret)) return obj
+  } catch {}
+
+  // 2. Try raw JSON
+  try {
+    const obj = JSON.parse(raw) as PairingPayload
+    if (obj && obj.id && (obj.code || obj.secret)) return obj
+  } catch {}
+
+  return null
+}
+
+const STORAGE_KEY_PCS = 'kapanis_paired_pcs_v2'
+const STORAGE_KEY_ACTIVE_PC = 'kapanis_active_pc_id_v2'
+
+export function getStoredPCs(): PairedPcDevice[] {
+  if (typeof localStorage === 'undefined') return []
+  try {
+    const item = localStorage.getItem(STORAGE_KEY_PCS)
+    return item ? JSON.parse(item) : []
+  } catch {
+    return []
+  }
+}
+
+export function saveStoredPC(pc: PairedPcDevice): void {
+  if (typeof localStorage === 'undefined') return
+  const pcs = getStoredPCs()
+  const idx = pcs.findIndex((p) => p.id === pc.id)
+  if (idx >= 0) {
+    pcs[idx] = { ...pcs[idx], ...pc, lastConnectedAt: Date.now() }
+  } else {
+    pcs.unshift({ ...pc, lastConnectedAt: Date.now() })
+  }
+  localStorage.setItem(STORAGE_KEY_PCS, JSON.stringify(pcs))
+  setActivePCId(pc.id)
+}
+
+export function removeStoredPC(pcId: string): void {
+  if (typeof localStorage === 'undefined') return
+  const pcs = getStoredPCs().filter((p) => p.id !== pcId)
+  localStorage.setItem(STORAGE_KEY_PCS, JSON.stringify(pcs))
+  const active = getActivePCId()
+  if (active === pcId) {
+    setActivePCId(pcs.length > 0 ? pcs[0].id : '')
+  }
+}
+
+export function getActivePCId(): string | null {
+  if (typeof localStorage === 'undefined') return null
+  return localStorage.getItem(STORAGE_KEY_ACTIVE_PC) || null
+}
+
+export function setActivePCId(pcId: string): void {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(STORAGE_KEY_ACTIVE_PC, pcId)
+}
+
+export function getActivePC(): PairedPcDevice | null {
+  const pcs = getStoredPCs()
+  if (pcs.length === 0) return null
+  const activeId = getActivePCId()
+  return pcs.find((p) => p.id === activeId) || pcs[0]
+}
+
+export async function pairWithPayload(
+  payload: PairingPayload,
+  controllerName?: string,
+): Promise<{ success: boolean; device?: PairedPcDevice; error?: string }> {
+  const name = controllerName || (typeof navigator !== 'undefined' && /iPhone|Android|iPad/i.test(navigator.userAgent) ? 'Mobil Cihaz' : 'Tarayıcı')
+
+  // 1. Try Supabase cloud pairing if URL & Key exist
+  if (payload.url && payload.key) {
+    const result = await pairWithDeviceByCode(payload.url, payload.key, payload.code || payload.secret, name)
+    if (result.success && result.device) {
+      const pcDevice: PairedPcDevice = {
+        id: result.device.id,
+        name: result.device.name || payload.name || 'Windows PC',
+        pairingCode: result.device.pairingCode || payload.code,
+        pairingSecret: result.device.pairingSecret || payload.secret,
+        supabaseUrl: payload.url,
+        supabaseAnonKey: payload.key,
+        localIps: payload.ips,
+        localPort: payload.port || 53317,
+        ntfyTopic: payload.ntfy || `kapanis_${result.device.id.slice(0, 8)}`,
+        isOnline: result.device.isOnline,
+        lastSeenAt: result.device.lastSeenAt,
+        authSource: 'cloud',
+      }
+      saveStoredPC(pcDevice)
+      return { success: true, device: pcDevice }
+    }
+  }
+
+  // 2. Fallback: Save local configuration directly
+  const pcDevice: PairedPcDevice = {
+    id: payload.id,
+    name: payload.name || 'Windows PC',
+    pairingCode: payload.code,
+    pairingSecret: payload.secret,
+    supabaseUrl: payload.url || '',
+    supabaseAnonKey: payload.key || '',
+    localIps: payload.ips,
+    localPort: payload.port || 53317,
+    ntfyTopic: payload.ntfy || `kapanis_${payload.id.slice(0, 8)}`,
+    authSource: payload.url ? 'cloud' : 'local',
+  }
+  saveStoredPC(pcDevice)
+  return { success: true, device: pcDevice }
+}
+
+

@@ -94,6 +94,7 @@ interface DraggableWidgetGridProps {
   connectionStatus?: RemoteConnectionStatus
   pairedControllers?: PairedController[]
   onRefreshControllers?: () => void
+  onOpenPairingModal?: () => void
 }
 
 interface DragState {
@@ -131,6 +132,7 @@ export function DraggableWidgetGrid({
   connectionStatus = 'disconnected',
   pairedControllers = [],
   onRefreshControllers,
+  onOpenPairingModal,
 }: DraggableWidgetGridProps) {
   // POINTER-BASED DRAG & DROP ENGINE (100% reliable in Electron renderers)
   const [dragState, setDragState] = useState<DragState | null>(null)
@@ -798,9 +800,9 @@ export function DraggableWidgetGrid({
                 <button
                   type="button"
                   className="card-pill-btn"
-                  onClick={() => onNavigate('remote')}
+                  onClick={() => (onOpenPairingModal ? onOpenPairingModal() : onNavigate('settings'))}
                 >
-                  Yönet
+                  Eşleştir & QR
                 </button>
                 <button
                   type="button"
@@ -829,7 +831,12 @@ export function DraggableWidgetGrid({
                   </div>
                 </div>
 
-                <div className="widget-pairing-badge" title="Eşleşme Kodu">
+                <div
+                  className="widget-pairing-badge"
+                  title="Telefon ile Eşleştir (QR Kod Aç)"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => (onOpenPairingModal ? onOpenPairingModal() : onNavigate('settings'))}
+                >
                   <QrCode size={11} className="text-sky-400" />
                   <span className="font-mono font-bold text-sky-400">{pairingCode}</span>
                 </div>
@@ -863,9 +870,9 @@ export function DraggableWidgetGrid({
                     <button
                       type="button"
                       className="widget-mini-link-btn"
-                      onClick={() => onNavigate('remote')}
+                      onClick={() => (onOpenPairingModal ? onOpenPairingModal() : onNavigate('settings'))}
                     >
-                      + Mobil Eşle
+                      + QR ile Eşle
                     </button>
                   </div>
                 )}
@@ -876,10 +883,10 @@ export function DraggableWidgetGrid({
                 <button
                   type="button"
                   className="widget-device-action-pill"
-                  onClick={() => onNavigate('remote')}
+                  onClick={() => (onOpenPairingModal ? onOpenPairingModal() : onNavigate('settings'))}
                 >
-                  <Wifi size={11} />
-                  <span>Mobil Panel</span>
+                  <QrCode size={11} />
+                  <span>QR / Kumanda</span>
                 </button>
                 <button
                   type="button"

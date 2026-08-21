@@ -5,6 +5,7 @@ import type {
   CreateAlarmInput,
   LocalSendDevice,
   LocalSendStatus,
+  MirroredNotification,
   MobileNotification,
   NoteItem,
   ReceivedFileRecord,
@@ -207,5 +208,12 @@ export const desktop = {
     stopWatcher: () => optionalInvoke<void>('vault:stop-watcher', undefined),
     setWindowMode: (mode: 'notes' | 'compact') => optionalInvoke<void>('vault:set-window-mode', undefined, { mode }),
     onFsChange: (callback: (payload: { kind: string; path: string }) => void) => listen(APP_EVENTS.vaultFsChange, callback),
+  },
+  notifications: {
+    getHistory: () => optionalInvoke<MirroredNotification[]>('notifications:get-history', []),
+    clearHistory: () => optionalInvoke<boolean>('notifications:clear-history', true),
+    getStatus: () => optionalInvoke<{ running: boolean; accessGranted: boolean; historyCount: number }>('notifications:get-status', { running: false, accessGranted: false, historyCount: 0 }),
+    test: (title?: string, body?: string) => optionalInvoke<MirroredNotification | null>('notifications:test', null, { title, body }),
+    onMirrored: (callback: (notification: MirroredNotification) => void) => listen(APP_EVENTS.notificationMirrored, callback),
   },
 }

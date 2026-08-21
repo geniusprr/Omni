@@ -38,6 +38,50 @@ export interface AppSettings {
   autostart: boolean
   heartbeatIntervalSeconds: number
   lastSavedAt: number
+  notificationMirroringEnabled?: boolean
+  ntfyEnabled?: boolean
+  ntfyTopic?: string
+  ntfyServer?: string
+}
+
+export interface MirroredNotification {
+  id: string
+  notificationId?: number | string
+  appName: string
+  title: string
+  body: string
+  timestamp: number
+  source: 'windows' | 'test' | 'manual'
+}
+
+export interface PairedPcDevice {
+  id: string
+  name: string
+  pairingCode: string
+  pairingSecret: string
+  supabaseUrl: string
+  supabaseAnonKey: string
+  localIps?: string[]
+  localPort?: number
+  ntfyTopic?: string
+  lastConnectedAt?: number
+  isOnline?: boolean
+  lastSeenAt?: string
+  timerState?: TimerState | null
+  authSource?: 'cloud' | 'local'
+}
+
+export interface PairingPayload {
+  v: number
+  id: string
+  name: string
+  code: string
+  secret: string
+  url: string
+  key: string
+  ips?: string[]
+  port?: number
+  ntfy?: string
 }
 
 export interface PairedController {

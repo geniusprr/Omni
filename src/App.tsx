@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
 import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
-import { RingingOverlay } from '@/components/RingingOverlay'
+import { PairingModal } from '@/components/PairingModal'
 import { QuickActionsPanel } from '@/components/QuickActionsPanel'
+import { RingingOverlay } from '@/components/RingingOverlay'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
 import { BrowserPage } from '@/features/browser/BrowserPage'
 import { requestBrowserNavigation } from '@/features/browser/browserData'
@@ -43,6 +44,7 @@ export default function App() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light')
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
   const [quickActionsOpen, setQuickActionsOpen] = useState(false)
+  const [pairingModalOpen, setPairingModalOpen] = useState(false)
   const [isCustomizeWidgetsOpen, setIsCustomizeWidgetsOpen] = useState(false)
 
   // Power & Alarm states
@@ -324,17 +326,15 @@ export default function App() {
 
         {/* Right Main Working Area */}
         <div className="minios-main-area">
-          {/* Top Header with Clock on Home, or Compact Bar with Mini Player on Other Screens */}
+          {/* Shared browser chrome on Home and Browser; utility screens keep a compact titlebar. */}
           <MiniOsHeader
-            userName={settings?.deviceName || 'Genius'}
             activeMode={mode}
-            onSelectMode={(m) => setMode(m)}
             onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
+            onOpenPairingModal={() => setPairingModalOpen(true)}
             onNavigateSettings={() => setMode('settings')}
             onOpenCustomizeWidgets={() => setIsCustomizeWidgetsOpen(true)}
             themeMode={themeMode}
             onToggleTheme={() => setThemeMode((m) => (m === 'dark' ? 'light' : 'dark'))}
-            onExecuteCommand={handleExecuteCommand}
           />
 
           {/* Central Working Screen / Widgets Area */}
@@ -351,6 +351,7 @@ export default function App() {
                 connectionStatus={connectionStatus}
                 pairedControllers={pairedControllers}
                 onRefreshControllers={refreshControllers}
+                onOpenPairingModal={() => setPairingModalOpen(true)}
                 isCustomizeOpen={isCustomizeWidgetsOpen}
                 onToggleCustomizeOpen={setIsCustomizeWidgetsOpen}
               />
@@ -412,7 +413,13 @@ export default function App() {
               className={`minios-subscreen minios-subscreen--full edge-browser-persistent-screen ${mode === 'browser' ? '' : 'edge-browser-persistent-screen--hidden'}`}
               aria-hidden={mode !== 'browser'}
             >
-              <BrowserPage isVisible={browserSurfaceVisible} theme={themeMode} />
+              <BrowserPage
+                isVisible={browserSurfaceVisible}
+                theme={themeMode}
+                chromeMode={mode === 'browser' ? 'browser' : mode === 'home' ? 'home' : undefined}
+                onEnterBrowser={() => setMode('browser')}
+                onExecuteCommand={handleExecuteCommand}
+              />
             </div>
           </main>
         </div>
@@ -422,6 +429,16 @@ export default function App() {
       <QuickSwitcherModal
         isOpen={quickSwitcherOpen}
         onClose={() => setQuickSwitcherOpen(false)}
+      />
+
+      {/* Global Pairing Modal (Zero-Config QR & Local PIN) */}
+      <PairingModal
+        isOpen={pairingModalOpen}
+        onClose={() => setPairingModalOpen(false)}
+        settings={settings}
+        connectionStatus={connectionStatus}
+        pairedControllers={pairedControllers}
+        onSettingsChange={setSettings}
       />
 
       <QuickActionsPanel

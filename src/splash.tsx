@@ -7,15 +7,34 @@ import '@fontsource-variable/outfit'
 import '@fontsource-variable/plus-jakarta-sans'
 import './styles/compact.css'
 
+document.documentElement.classList.add('splash-page')
+
 function Splash() {
   return (
-    <div className="splash-window" data-window-drag>
-      <div className="splash-lockup" data-window-drag>
-        <span className="splash-mark" aria-hidden="true" />
-        <strong>kapanış.</strong>
-        <span>yerel Windows aracı</span>
+    <main className="splash-window" data-window-drag role="status" aria-live="polite">
+      <div className="splash-topline" data-window-drag>
+        <span className="splash-kicker">KAPANIŞ. / DESKTOP</span>
+        <span className="splash-status"><i aria-hidden="true" /> başlatılıyor</span>
       </div>
-    </div>
+
+      <div className="splash-content" data-window-drag>
+        <div className="splash-mark" aria-hidden="true"><span>k</span></div>
+        <div className="splash-lockup">
+          <h1>kapanış<span>.</span></h1>
+          <p>Sakin bir çalışma alanı hazırlanıyor.</p>
+        </div>
+      </div>
+
+      <div className="splash-bottom" data-window-drag>
+        <div className="splash-progress" aria-hidden="true"><span /></div>
+        <div className="splash-meta">
+          <span className="splash-meta__dot" aria-hidden="true" />
+          <span>yerel oturum</span>
+          <span className="splash-meta__separator">/</span>
+          <span>güvenli başlatma</span>
+        </div>
+      </div>
+    </main>
   )
 }
 

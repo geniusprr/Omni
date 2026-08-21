@@ -27,6 +27,7 @@ const allowedChannels: ReadonlySet<string> = new Set([
   'vault:write-file', 'vault:create-file', 'vault:create-folder', 'vault:rename-entry',
   'vault:delete-entry', 'vault:reveal-in-explorer', 'vault:start-watcher', 'vault:stop-watcher',
   'vault:set-window-mode',
+  'notifications:get-history', 'notifications:test', 'notifications:get-status', 'notifications:clear-history',
 ])
 
 // Keep the allowlist literal in the isolated preload so a remote page can never
@@ -35,7 +36,7 @@ const allowedEvents: ReadonlySet<string> = new Set([
   'browser:tab-created', 'browser:tab-updated', 'browser:tab-destroyed', 'browser:media-updated',
   'browser:open-request', 'browser:renderer-failed', 'browser:permission-request', 'browser:fullscreen-changed',
   'browser:download-updated', 'browser:history-updated', 'alarm:triggered', 'alarm:created', 'alarm:cancelled',
-  'remote:command', 'mobile:note', 'mobile:file', 'mobile:notification', 'localsend:device-discovered',
+  'remote:command', 'mobile:note', 'mobile:file', 'mobile:notification', 'notification:mirrored', 'localsend:device-discovered',
   'localsend:file-received', 'vault:fs-change', 'youtube-music-state',
 ])
 

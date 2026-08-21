@@ -802,8 +802,29 @@ fun MainScreen(
                             }
                         }
 
+                        NavTab.NOTIFY -> {
+                            // TAB 2: PC BİLDİRİM MERKEZİ (Aynalama & Filtreleme)
+                            NotifyScreen(
+                                target = target,
+                                prefs = prefs,
+                                apiClient = apiClient,
+                                supabaseClient = supabaseClient,
+                                mode = mode
+                            )
+                        }
+
+                        NavTab.TRANSFER -> {
+                            // TAB 3: DOSYA AKTARMA (LocalSend & Pano)
+                            TransferScreen(
+                                target = target,
+                                apiClient = apiClient,
+                                transfers = transfers,
+                                onTransfersUpdated = { updated -> transfers = updated }
+                            )
+                        }
+
                         NavTab.NOTES -> {
-                            // TAB 2: NOTLAR (PC Defter Vault)
+                            // TAB 4: NOTLAR (PC Defter Vault)
                             DefterScreen(
                                 target = target,
                                 apiClient = apiClient,
@@ -819,13 +840,15 @@ fun MainScreen(
                             )
                         }
 
-                        NavTab.TRANSFER -> {
-                            // TAB 3: DOSYA AKTARMA (LocalSend & Pano)
-                            TransferScreen(
+                        NavTab.CONNECT -> {
+                            // TAB 5: CİHAZLAR & ÇOKLU PC YÖNETİMİ (QR & PIN)
+                            ConnectScreen(
                                 target = target,
+                                prefs = prefs,
                                 apiClient = apiClient,
-                                transfers = transfers,
-                                onTransfersUpdated = { updated -> transfers = updated }
+                                supabaseClient = supabaseClient,
+                                onTargetChanged = { newTarget -> target = newTarget },
+                                onModeChanged = { newMode -> mode = newMode }
                             )
                         }
                     }

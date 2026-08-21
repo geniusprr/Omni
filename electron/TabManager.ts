@@ -37,6 +37,7 @@ export class TabManager {
   private readonly window: BrowserWindow
   private readonly sessions: SessionManager
   private readonly callbacks: TabManagerCallbacks
+  private theme: 'light' | 'dark' = 'light'
 
   constructor(window: BrowserWindow, sessions: SessionManager, callbacks: TabManagerCallbacks) {
     this.window = window
@@ -173,11 +174,8 @@ export class TabManager {
   }
 
   setTheme(theme: 'light' | 'dark') {
-    const value = JSON.stringify(theme)
-    for (const record of this.records.values()) {
-      if (record.webContents.isDestroyed()) continue
-      void record.webContents.executeJavaScript(`document.documentElement.style.colorScheme = ${value}`, true).catch(() => undefined)
-    }
+    this.theme = theme
+    for (const record of this.records.values()) this.applyTheme(record)
   }
 
   setPinned(id: string, pinned: boolean) {
@@ -275,6 +273,7 @@ export class TabManager {
   private bindEvents(record: TabRecord) {
     const { id, webContents } = record
     const onStart = () => this.update(id, { loading: true, error: null })
+    const onDomReady = () => this.applyTheme(record)
     const onStop = () => {
       const currentUrl = webContents.getURL() || record.projection.url
       this.update(id, {
@@ -349,6 +348,7 @@ export class TabManager {
     const onEnterFullscreen = () => this.callbacks.onFullscreen(id, true)
     const onLeaveFullscreen = () => this.callbacks.onFullscreen(id, false)
     webContents.on('did-start-loading', onStart)
+    webContents.on('dom-ready', onDomReady)
     webContents.on('did-stop-loading', onStop)
     webContents.on('did-navigate', onNavigate)
     webContents.on('did-navigate-in-page', onInPageNavigate)
@@ -367,6 +367,7 @@ export class TabManager {
     webContents.on('leave-html-full-screen', onLeaveFullscreen)
     return () => {
       webContents.removeListener('did-start-loading', onStart)
+      webContents.removeListener('dom-ready', onDomReady)
       webContents.removeListener('did-stop-loading', onStop)
       webContents.removeListener('did-navigate', onNavigate)
       webContents.removeListener('did-navigate-in-page', onInPageNavigate)
@@ -391,6 +392,15 @@ export class TabManager {
     record.projection = { ...record.projection, ...patch }
     this.emit(record)
     return { ...record.projection }
+  }
+
+  private applyTheme(record: TabRecord) {
+    if (record.webContents.isDestroyed()) return
+    const value = JSON.stringify(this.theme)
+    void record.webContents.executeJavaScript(
+      `document.documentElement.style.setProperty('color-scheme', ${value}, 'important')`,
+      true,
+    ).catch(() => undefined)
   }
 
   private emit(record: TabRecord) {

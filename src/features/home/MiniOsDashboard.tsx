@@ -45,6 +45,7 @@ interface MiniOsDashboardProps {
   connectionStatus?: RemoteConnectionStatus
   pairedControllers?: PairedController[]
   onRefreshControllers?: () => void
+  onOpenPairingModal?: () => void
   isCustomizeOpen?: boolean
   onToggleCustomizeOpen?: (open: boolean) => void
 }
@@ -59,8 +60,9 @@ export function MiniOsDashboard({
   pairingCode = 'KAP-XXXX',
   connectionStatus = 'disconnected',
   pairedControllers = [],
-  onRefreshControllers,
-  isCustomizeOpen,
+  onRefreshControllers = () => {},
+  onOpenPairingModal,
+  isCustomizeOpen = false,
   onToggleCustomizeOpen,
 }: MiniOsDashboardProps) {
   const { entries } = useVault()
@@ -225,6 +227,7 @@ export function MiniOsDashboard({
             connectionStatus={connectionStatus}
             pairedControllers={pairedControllers}
             onRefreshControllers={onRefreshControllers}
+            onOpenPairingModal={onOpenPairingModal}
           />
         </div>
 

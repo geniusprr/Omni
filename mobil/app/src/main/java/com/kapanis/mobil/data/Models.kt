@@ -67,9 +67,38 @@ data class PairedDeviceItem(
     val mode: ConnectionMode = ConnectionMode.LOCAL,
     val wifiSsid: String = "",
     val pairingCode: String = "",
+    val pairingSecret: String = "",
+    val supabaseUrl: String = "",
+    val supabaseAnonKey: String = "",
+    val localIps: List<String> = emptyList(),
+    val ntfyTopic: String = "",
+    val localAuthToken: String = "",
     val lastConnectedAt: Long = System.currentTimeMillis(),
     val isOnline: Boolean = false,
     val osInfo: String = "Windows 11"
+)
+
+data class MirroredNotification(
+    val id: String = "",
+    val notificationId: String = "",
+    val appName: String = "Sistem",
+    val title: String = "",
+    val body: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val source: String = "windows"
+)
+
+data class PairingPayload(
+    val v: Int = 2,
+    val id: String = "",
+    val name: String = "Windows PC",
+    val code: String = "",
+    val secret: String = "",
+    val url: String = "",
+    val key: String = "",
+    val ips: List<String> = emptyList(),
+    val port: Int = 53317,
+    val ntfy: String = ""
 )
 
 data class OnlineDeviceState(
@@ -87,3 +116,4 @@ data class RemoteTimerState(
     val targetAt: Long = 0L,
     val durationSeconds: Long = 0L
 )
+

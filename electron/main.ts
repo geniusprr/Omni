@@ -6,6 +6,7 @@ import { AlarmManager } from './AlarmManager.js'
 import { BrowserManager } from './BrowserManager.js'
 import { ContentManager } from './ContentManager.js'
 import { LocalSendManager } from './LocalSendManager.js'
+import { NotificationListenerManager } from './NotificationListenerManager.js'
 import { SystemManager } from './SystemManager.js'
 import { WindowManager } from './WindowManager.js'
 import { runBrowserLifecycleSmoke } from './browser-smoke.js'
@@ -21,6 +22,7 @@ if (!app.requestSingleInstanceLock()) {
   let system: SystemManager
   let content: ContentManager
   let localSend: LocalSendManager
+  let notifications: NotificationListenerManager
   let quitting = false
   let requestedExitCode = 0
 
@@ -37,9 +39,10 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     const devServer = process.env.ELECTRON_START_URL || (app.isPackaged ? null : 'http://127.0.0.1:5173')
     const rendererTarget = devServer || pathToFileURL(path.join(app.getAppPath(), 'dist', 'index.html')).toString()
+    const splashTarget = devServer || pathToFileURL(path.join(app.getAppPath(), 'dist', 'splash.html')).toString()
     windows = new WindowManager(path.join(moduleDirectory, 'preload.cjs'))
+    windows.createSplash(splashTarget)
     const mainWindow = windows.createMainWindow(rendererTarget)
-    windows.createSplash(devServer || pathToFileURL(path.join(app.getAppPath(), 'dist', 'splash.html')).toString())
     windows.configureTray(() => windows.quit())
 
     browser = new BrowserManager(windows, mainWindow)
@@ -63,8 +66,16 @@ if (!app.requestSingleInstanceLock()) {
       },
       { system, alarms, content, emit: send },
     )
+    notifications = new NotificationListenerManager({
+      dataDir: browser.sessions.dataDir,
+      onNotification: (notif) => {
+        send('notification:mirrored', notif)
+        localSend.broadcastNotification(notif)
+      },
+    })
     localSend.start()
     alarms.start()
+    notifications.start()
     system.restoreTimer()
     registerIpc(mainWindow.webContents)
     mainWindow.webContents.once('did-finish-load', () => windows.finishSplash())
@@ -96,6 +107,7 @@ if (!app.requestSingleInstanceLock()) {
       alarms?.destroy()
       content?.stopWatcher()
       localSend?.stop()
+      notifications?.stop()
       app.exit(requestedExitCode)
     })().catch((error) => {
       console.error('[shutdown] cleanup failed', error)
@@ -228,6 +240,16 @@ if (!app.requestSingleInstanceLock()) {
     handle('vault:start-watcher', (payload) => content.startWatcher(readString(payload, 'vaultPath'), (event) => send('vault:fs-change', event)))
     handle('vault:stop-watcher', () => content.stopWatcher())
     handle('vault:set-window-mode', (payload) => content.setWindowMode(readString(payload, 'mode') as 'notes' | 'compact'))
+
+    handle('notifications:get-history', () => notifications?.getHistory() || [])
+    handle('notifications:clear-history', () => { notifications?.clearHistory(); return true })
+    handle('notifications:get-status', () => notifications?.getStatus() || { running: false, accessGranted: false, historyCount: 0 })
+    handle('notifications:test', (payload) => {
+      const obj = payload && typeof payload === 'object' ? payload as any : {}
+      const title = typeof obj.title === 'string' && obj.title ? obj.title : 'kapanış. Test Bildirimi'
+      const body = typeof obj.body === 'string' && obj.body ? obj.body : 'Bilgisayarınızdan telefonunuza iletildi!'
+      return notifications?.sendTestNotification(title, body)
+    })
   }
 
   function send(event: string, payload: unknown) {

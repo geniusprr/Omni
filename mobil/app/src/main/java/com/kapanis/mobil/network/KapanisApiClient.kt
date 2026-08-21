@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.kapanis.mobil.data.AlarmItem
 import com.kapanis.mobil.data.LocalDeviceState
+import com.kapanis.mobil.data.MirroredNotification
 import com.kapanis.mobil.data.NoteItem
 import com.kapanis.mobil.data.RemoteTimerState
 import com.kapanis.mobil.data.ServerStatus
@@ -180,11 +181,103 @@ class KapanisApiClient {
         }
     }
 
+    suspend fun authenticatePairingPin(
+        host: String,
+        port: Int,
+        pin: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/auth/pair"
+            val json = JSONObject().apply {
+                put("code", pin.trim().uppercase())
+            }
+            val body = json.toString().toRequestBody(jsonMediaType)
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response ->
+                val respBody = response.body?.string().orEmpty()
+                if (response.isSuccessful) {
+                    val respJson = JSONObject(respBody)
+                    val token = respJson.optString("token", "")
+                    if (token.isNotEmpty()) {
+                        Result.success(token)
+                    } else {
+                        Result.failure(Exception("Yetki anahtarı üretilemedi"))
+                    }
+                } else {
+                    val msg = try { JSONObject(respBody).optString("error", "Geçersiz şifre / PIN kodu") } catch (e: Exception) { "Eşleştirme başarısız" }
+                    Result.failure(Exception(msg))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchNotifications(
+        host: String,
+        port: Int,
+        token: String? = null
+    ): Result<List<MirroredNotification>> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/notifications"
+            val reqBuilder = Request.Builder().url(url).get()
+            if (!token.isNullOrEmpty()) {
+                reqBuilder.addHeader("Authorization", "Bearer $token")
+            }
+            client.newCall(reqBuilder.build()).execute().use { response ->
+                if (response.isSuccessful) {
+                    val respBody = response.body?.string().orEmpty()
+                    val array = JSONArray(respBody)
+                    val list = mutableListOf<MirroredNotification>()
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i) ?: continue
+                        list.add(
+                            MirroredNotification(
+                                id = obj.optString("id", ""),
+                                notificationId = obj.optString("notificationId", ""),
+                                appName = obj.optString("appName", "Sistem"),
+                                title = obj.optString("title", ""),
+                                body = obj.optString("body", ""),
+                                timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                                source = obj.optString("source", "windows")
+                            )
+                        )
+                    }
+                    Result.success(list)
+                } else {
+                    Result.failure(Exception("Bildirimler alınamadı (${response.code})"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun clearNotifications(
+        host: String,
+        port: Int,
+        token: String? = null
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$host:$port/api/notifications"
+            val reqBuilder = Request.Builder().url(url).delete()
+            if (!token.isNullOrEmpty()) {
+                reqBuilder.addHeader("Authorization", "Bearer $token")
+            }
+            client.newCall(reqBuilder.build()).execute().use { response ->
+                Result.success(response.isSuccessful)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun sendCommand(
         host: String,
         port: Int,
         command: String,
-        delaySeconds: Long
+        delaySeconds: Long,
+        token: String? = null
     ): Result<RemoteTimerState?> = withContext(Dispatchers.IO) {
         try {
             val url = "http://$host:$port/api/command"
@@ -193,8 +286,11 @@ class KapanisApiClient {
                 put("delay_seconds", delaySeconds)
             }
             val body = json.toString().toRequestBody(jsonMediaType)
-            val request = Request.Builder().url(url).post(body).build()
-            client.newCall(request).execute().use { response ->
+            val reqBuilder = Request.Builder().url(url).post(body)
+            if (!token.isNullOrEmpty()) {
+                reqBuilder.addHeader("Authorization", "Bearer $token")
+            }
+            client.newCall(reqBuilder.build()).execute().use { response ->
                 if (response.isSuccessful) {
                     val respBody = response.body?.string().orEmpty()
                     val respJson = JSONObject(respBody)

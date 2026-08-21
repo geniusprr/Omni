@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
@@ -18,7 +19,13 @@ import { BROWSER_EVENTS, desktop, isElectronRuntime, type BrowserBounds, type Br
 import { addRecentlyClosed, BROWSER_DATA_EVENT, BROWSER_NAVIGATION_EVENT, consumeBrowserNavigation, hostnameFromUrl, loadFavorites, loadRecentlyClosed, normalizeBrowserInput, relativeTime, saveFavorites, type BrowserFavorite, type BrowserRecentItem } from './browserData'
 import { applyTabProjectionState, canStartNativeRestore, closeTabState, faviconForUrl, makeTab, migrateBrowserState, nativeRestoreTasks, nativeViewAction, openTabState, prepareNewTabNavigation, resolveOptimisticClose, selectTabState, serializeBrowserState, type BrowserState, type BrowserTab } from './browserState'
 
-interface BrowserPageProps { isVisible: boolean; theme?: 'light' | 'dark' }
+interface BrowserPageProps {
+  isVisible: boolean
+  theme?: 'light' | 'dark'
+  chromeMode?: 'home' | 'browser'
+  onEnterBrowser?: () => void
+  onExecuteCommand?: (query: string) => void
+}
 type BrowserPanel = 'history' | 'downloads' | null
 const TABS_KEY = 'minios_browser_tabs_v2'
 const ACTIVE_KEY = 'minios_browser_active_tab_v2'
@@ -89,7 +96,7 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
 }
 
-export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
+export function BrowserPage({ isVisible, theme = 'light', chromeMode, onEnterBrowser, onExecuteCommand }: BrowserPageProps) {
   const [state, setState] = useState(loadState)
   const [address, setAddress] = useState('')
   const [favorites, setFavorites] = useState<BrowserFavorite[]>(loadFavorites)
@@ -99,9 +106,12 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
   const [history, setHistory] = useState<BrowserHistoryItem[]>([])
   const [downloads, setDownloads] = useState<BrowserDownloadItem[]>([])
   const [permissionRequest, setPermissionRequest] = useState<BrowserPermissionRequest | null>(null)
+  const [browserChromeHost, setBrowserChromeHost] = useState<HTMLElement | null>(null)
+  const [nativeRestoreReady, setNativeRestoreReady] = useState(!isElectronRuntime())
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef(state)
   const liveTabIdsRef = useRef(new Set<string>())
+  const pendingBrowserActionRef = useRef<{ tabId?: string; url?: string } | null>(null)
   const restoreStarted = useRef(false)
   const sessionHydrated = useRef(!isElectronRuntime())
   stateRef.current = state
@@ -128,11 +138,19 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
     project(projection)
   }, [project])
 
+  const requestBrowserMode = useCallback((action: { tabId?: string; url?: string }) => {
+    if (chromeMode !== 'home' || !onEnterBrowser) return false
+    pendingBrowserActionRef.current = action
+    onEnterBrowser()
+    return true
+  }, [chromeMode, onEnterBrowser])
+
   const navigateTab = useCallback(async (id: string, input: string) => {
     const url = normalizeBrowserInput(input)
     const tab = stateRef.current.tabs.find((item) => item.id === id)
     if (!tab) { setError('Sekme bulunamadı.'); return false }
     if (url === 'about:blank') { setError('Bir adres veya arama metni girin.'); return false }
+    if (requestBrowserMode({ tabId: id, url })) return true
     try {
       if (!isElectronRuntime()) {
         project({ id, url, title: hostnameFromUrl(url), favicon: faviconForUrl(url), loading: false, canGoBack: false, canGoForward: false, error: null, label: `browser-${id}`, muted: tab.muted === true, pinned: tab.pinned === true })
@@ -154,9 +172,10 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
       setError(errorMessage(cause, 'Sayfa açılamadı.'))
       return false
     }
-  }, [createBrowserTab, isVisible, project])
+  }, [createBrowserTab, isVisible, project, requestBrowserMode])
 
   const openTab = useCallback(async (url?: string) => {
+    if (requestBrowserMode({ url })) return
     const tab = makeTab()
     const previous = stateRef.current
     const prepared = url
@@ -177,12 +196,13 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
       setState(restoredState)
       await synchronizeBrowserSurface(restoredState).catch(() => undefined)
     }
-  }, [navigateTab, synchronizeBrowserSurface])
+  }, [navigateTab, requestBrowserMode, synchronizeBrowserSurface])
 
   // Electron owns the persisted session. The localStorage copy is only a fast
   // renderer fallback for browser preview and is never used to create fake pages.
   useEffect(() => {
     if (!isVisible || restoreStarted.current) return
+    setNativeRestoreReady(false)
     let cancelled = false
     void (async () => {
       const bounds = await waitForBounds(hostRef.current)
@@ -202,10 +222,25 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
         if (cancelled) return
         await navigateTab(task.tabId, task.url)
       }
+      if (cancelled) return
+      setNativeRestoreReady(true)
       await synchronizeBrowserSurface(stateRef.current).catch(() => undefined)
     })()
     return () => { cancelled = true }
   }, [isVisible, navigateTab, synchronizeBrowserSurface])
+
+  useEffect(() => {
+    if (!isVisible || chromeMode !== 'browser' || !nativeRestoreReady) return
+    const pending = pendingBrowserActionRef.current
+    if (!pending) return
+    const frame = window.requestAnimationFrame(() => {
+      pendingBrowserActionRef.current = null
+      if (pending.tabId && pending.url) void navigateTab(pending.tabId, pending.url)
+      else if (pending.url) void openTab(pending.url)
+      else void openTab()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [chromeMode, isVisible, navigateTab, nativeRestoreReady, openTab])
 
   useEffect(() => {
     if (!sessionHydrated.current) return
@@ -214,6 +249,30 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
   }, [state])
 
   useEffect(() => setAddress(active?.url ?? ''), [active?.id, active?.url])
+
+  const chromeHostId = chromeMode === 'browser'
+    ? 'browser-titlebar-slot'
+    : chromeMode === 'home'
+      ? 'browser-home-titlebar-slot'
+      : null
+
+  useEffect(() => {
+    const hostId = chromeHostId
+    if (!hostId || typeof document === 'undefined') {
+      setBrowserChromeHost(null)
+      return
+    }
+
+    let cancelled = false
+    const frame = window.requestAnimationFrame(() => {
+      if (!cancelled) setBrowserChromeHost(document.getElementById(hostId))
+    })
+
+    return () => {
+      cancelled = true
+      window.cancelAnimationFrame(frame)
+    }
+  }, [chromeHostId])
 
   useEffect(() => {
     const created = (projection: BrowserTabProjection) => { liveTabIdsRef.current.add(projection.id); project(projection) }
@@ -319,8 +378,22 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    if (active) void navigateTab(active.id, address)
-    else void openTab(address)
+    const query = address.trim()
+    if (!query) return
+    const lower = query.toLocaleLowerCase('tr-TR')
+    const isCommand = lower.startsWith('/')
+      || lower.startsWith('kapat')
+      || lower.startsWith('alarm')
+      || lower.startsWith('not')
+      || lower.startsWith('paylas')
+      || lower.startsWith('paylaş')
+    if (isCommand && onExecuteCommand) {
+      setAddress('')
+      onExecuteCommand(query)
+      return
+    }
+    if (active) void navigateTab(active.id, query)
+    else void openTab(query)
   }
 
   function toggleFavorite() {
@@ -334,6 +407,7 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
   }
 
   async function togglePanel(next: Exclude<BrowserPanel, null>) {
+    if (chromeMode === 'home' && onEnterBrowser) onEnterBrowser()
     if (panel === next) { setPanel(null); return }
     setPanel(next)
     if (next === 'history') setHistory(await desktop.browser.listHistory().catch(() => []))
@@ -347,34 +421,51 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
   }
 
   const isFavorite = Boolean(active?.url && favorites.some((item) => item.url === active.url))
-  const activeMedia = active ? state.mediaByTabId[active.id] : null
+  const browserThemeClass = theme === 'dark' ? 'edge-browser--dark' : 'edge-browser--light'
+  const shouldPortalChrome = chromeHostId !== null && browserChromeHost?.id === chromeHostId
 
-  return <section className="edge-browser" aria-label="Gömülü tarayıcı">
-    <div className="edge-browser__tabs" role="tablist">
-      <div className="edge-browser__tab-scroll">
-        {state.tabs.map((tab) => {
-          const media = state.mediaByTabId[tab.id]
-          const isMuted = tab.muted === true
-          return <button key={tab.id} type="button" role="tab" aria-selected={tab.id === active?.id} className={`edge-browser__tab ${tab.id === active?.id ? 'edge-browser__tab--active' : ''}`} onClick={() => void select(tab.id)} onContextMenu={(event) => { event.preventDefault(); void desktop.browser.showTabMenu(tab.id) }}>
-            {tab.favicon ? <img src={tab.favicon} alt="" /> : <Globe2 size={12} />}
-            <span>{tab.title}</span>
-            {tab.pinned ? <Pin size={11} aria-label="Sabitlenmiş sekme" /> : null}
-            {media?.playing ? <span className="edge-browser__tab-media" title={isMuted ? 'Sessiz medya' : 'Medya oynatılıyor'} onClick={(event) => { event.stopPropagation(); void desktop.browser.setMuted(tab.id, !isMuted) }}>{isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</span> : null}
-            {tab.loading ? <LoaderCircle className="edge-browser__spinner" size={11} /> : null}
-            <span role="button" tabIndex={0} className="edge-browser__tab-close" aria-label={`${tab.title} sekmesini kapat`} onClick={(event) => { event.stopPropagation(); void close(tab.id) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void close(tab.id) } }}><X size={11} /></span>
-          </button>
-        })}
+  const browserChrome = (
+    <div className={`edge-browser__chrome ${browserThemeClass} ${shouldPortalChrome ? 'edge-browser__chrome--titlebar' : ''}`} style={{ colorScheme: theme }}>
+      <div className="edge-browser__tabs" role="tablist" aria-label="Tarayıcı sekmeleri">
+        <div className="edge-browser__tabs-brand" aria-hidden="true">
+          <span className="edge-browser__tabs-brand-mark">k</span>
+          <span className="edge-browser__tabs-brand-label">web</span>
+        </div>
+        <div className="edge-browser__tab-scroll">
+          {state.tabs.map((tab) => {
+            const media = state.mediaByTabId[tab.id]
+            const isMuted = tab.muted === true
+            return <button key={tab.id} type="button" role="tab" aria-selected={tab.id === active?.id} className={`edge-browser__tab ${tab.id === active?.id ? 'edge-browser__tab--active' : ''}`} onClick={() => void select(tab.id)} onContextMenu={(event) => { event.preventDefault(); void desktop.browser.showTabMenu(tab.id) }}>
+              {tab.favicon ? <img src={tab.favicon} alt="" /> : <Globe2 size={12} />}
+              <span>{tab.title}</span>
+              {tab.pinned ? <Pin size={11} aria-label="Sabitlenmiş sekme" /> : null}
+              {media?.playing ? <span className="edge-browser__tab-media" title={isMuted ? 'Sessiz medya' : 'Medya oynatılıyor'} onClick={(event) => { event.stopPropagation(); void desktop.browser.setMuted(tab.id, !isMuted) }}>{isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</span> : null}
+              {tab.loading ? <LoaderCircle className="edge-browser__spinner" size={11} /> : null}
+              <span role="button" tabIndex={0} className="edge-browser__tab-close" aria-label={`${tab.title} sekmesini kapat`} onClick={(event) => { event.stopPropagation(); void close(tab.id) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void close(tab.id) } }}><X size={11} /></span>
+            </button>
+          })}
+        </div>
+        <button type="button" className="edge-browser__new-tab" onClick={() => void openTab()} aria-label="Yeni sekme"><Plus size={14} /></button>
       </div>
-      <button type="button" className="edge-browser__new-tab" onClick={() => void openTab()} aria-label="Yeni sekme"><Plus size={14} /></button>
+      <div className="edge-browser__toolbar">
+        <div className="edge-browser__navigation-tools">
+          <button type="button" className="edge-browser__tool" disabled={!active?.canGoBack} onClick={() => active && void desktop.browser.back(active.id)} aria-label="Geri"><ArrowLeft size={15} /></button>
+          <button type="button" className="edge-browser__tool" disabled={!active?.canGoForward} onClick={() => active && void desktop.browser.forward(active.id)} aria-label="İleri"><ArrowRight size={15} /></button>
+          <button type="button" className="edge-browser__tool" disabled={!active?.url} onClick={() => active && void desktop.browser.reload(active.id)} aria-label="Yenile"><RefreshCw size={14} /></button>
+        </div>
+        <form className="edge-browser__address" onSubmit={submit}><Search size={14} /><input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Web'de ara veya adres yaz" aria-label="Adres ve arama" /><button type="button" onClick={toggleFavorite} className={isFavorite ? 'edge-browser__favorite--active' : ''} aria-label={isFavorite ? 'Favorilerden kaldır' : 'Favorilere ekle'}><Star size={14} fill={isFavorite ? 'currentColor' : 'none'} /></button></form>
+        <div className="edge-browser__toolbar-actions">
+          <button type="button" className={`edge-browser__tool ${panel === 'history' ? 'edge-browser__tool--active' : ''}`} onClick={() => void togglePanel('history')} aria-label="Geçmiş"><History size={14} /></button>
+          <button type="button" className={`edge-browser__tool ${panel === 'downloads' ? 'edge-browser__tool--active' : ''}`} onClick={() => void togglePanel('downloads')} aria-label="İndirmeler"><Download size={14} /></button>
+        </div>
+      </div>
     </div>
-    <div className="edge-browser__toolbar">
-      <button type="button" className="edge-browser__tool" disabled={!active?.canGoBack} onClick={() => active && void desktop.browser.back(active.id)} aria-label="Geri"><ArrowLeft size={15} /></button>
-      <button type="button" className="edge-browser__tool" disabled={!active?.canGoForward} onClick={() => active && void desktop.browser.forward(active.id)} aria-label="İleri"><ArrowRight size={15} /></button>
-      <button type="button" className="edge-browser__tool" disabled={!active?.url} onClick={() => active && void desktop.browser.reload(active.id)} aria-label="Yenile"><RefreshCw size={14} /></button>
-      <form className="edge-browser__address" onSubmit={submit}><Search size={14} /><input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Web'de ara veya adres yaz" aria-label="Adres ve arama" /><button type="button" onClick={toggleFavorite} className={isFavorite ? 'edge-browser__favorite--active' : ''} aria-label={isFavorite ? 'Favorilerden kaldır' : 'Favorilere ekle'}><Star size={14} fill={isFavorite ? 'currentColor' : 'none'} /></button></form>
-      <button type="button" className={`edge-browser__tool ${panel === 'history' ? 'edge-browser__tool--active' : ''}`} onClick={() => void togglePanel('history')} aria-label="Geçmiş"><History size={14} /></button>
-      <button type="button" className={`edge-browser__tool ${panel === 'downloads' ? 'edge-browser__tool--active' : ''}`} onClick={() => void togglePanel('downloads')} aria-label="İndirmeler"><Download size={14} /></button>
-    </div>
+  )
+
+  return <>
+    {shouldPortalChrome ? createPortal(browserChrome, browserChromeHost) : null}
+    <section className={`edge-browser ${browserThemeClass} ${shouldPortalChrome ? 'edge-browser--chrome-external' : ''}`} style={{ colorScheme: theme }} aria-label="Gömülü tarayıcı">
+    {!shouldPortalChrome ? browserChrome : null}
     {permissionRequest ? <div className="edge-browser__permission" role="dialog" aria-label="Site izni"><ShieldCheck size={16} /><span><strong>{hostnameFromUrl(permissionRequest.origin)}</strong> {permissionRequest.permission} izni istiyor.</span><button type="button" onClick={() => void decidePermission('deny')}>Reddet</button><button type="button" onClick={() => void decidePermission('allow')}>İzin ver</button></div> : null}
     {panel ? <div className="edge-browser__browser-panel" role="dialog" aria-label={panel === 'history' ? 'Tarama geçmişi' : 'İndirmeler'}>
       <div className="edge-browser__section-title"><h2>{panel === 'history' ? 'Geçmiş' : 'İndirmeler'}</h2><button type="button" onClick={() => setPanel(null)} aria-label="Paneli kapat"><X size={14} /></button></div>
@@ -383,7 +474,40 @@ export function BrowserPage({ isVisible, theme = 'light' }: BrowserPageProps) {
     {error || active?.error ? <div className="edge-browser__error" role="alert">{error || active?.error}<button type="button" onClick={() => active && void navigateTab(active.id, active.url || address)}>Yeniden dene</button></div> : null}
     <div className="edge-browser__content">
       <div ref={hostRef} className={`edge-browser__native-host ${active?.url ? '' : 'edge-browser__native-host--inactive'}`} />
-      {!active?.url ? <div className="edge-browser__start"><div className="edge-browser__start-heading"><div><h1>Yeni sekme</h1><p>Web'de ara veya kayıtlı yer imlerinden birini aç.</p></div></div><div className="edge-browser__favorites">{favorites.map((favorite) => <button key={favorite.id} type="button" onClick={() => active ? void navigateTab(active.id, favorite.url) : void openTab(favorite.url)} className="edge-browser__favorite-card">{favorite.favicon ? <img src={favorite.favicon} alt="" /> : <span>{favorite.iconText}</span>}<strong>{favorite.name}</strong><small>{hostnameFromUrl(favorite.url)}</small></button>)}</div><div className="edge-browser__recent-panel"><div className="edge-browser__section-title"><h2>Son kapatılanlar</h2></div>{recents.length ? recents.map((recent) => <button key={recent.id} type="button" className="edge-browser__recent-row" onClick={() => void openTab(recent.url)}>{recent.favicon ? <img src={recent.favicon} alt="" /> : <Globe2 size={14} />}<span><strong>{recent.title}</strong><small>{hostnameFromUrl(recent.url)}</small></span><time>{relativeTime(recent.closedAt)}</time></button>) : <p className="edge-browser__empty">Kapatılan sekmeler burada görünür.</p>}</div></div> : !isElectronRuntime() ? <div className="edge-browser__web-fallback"><Globe2 size={30} /><p>Gömülü tarayıcı Electron masaüstü sürümünde çalışır.</p></div> : null}
+      {!active?.url ? (
+        <div className="edge-browser__start">
+          <div className="edge-browser__start-inner">
+            <div className="edge-browser__start-heading">
+              <div>
+                <span className="edge-browser__start-eyebrow">KAPANIŞ. / WEB</span>
+                <h1>Yeni sekme</h1>
+                <p>Web'de ara veya kayıtlı yer imlerinden birini aç.</p>
+              </div>
+            </div>
+            <div className="edge-browser__section-title">
+              <h2>Hızlı erişim</h2>
+            </div>
+            {favorites.length ? (
+              <div className="edge-browser__favorites">
+                {favorites.map((favorite) => <button key={favorite.id} type="button" onClick={() => active ? void navigateTab(active.id, favorite.url) : void openTab(favorite.url)} className="edge-browser__favorite-card">
+                  {favorite.favicon ? <img src={favorite.favicon} alt="" /> : <span style={{ background: favorite.color }}>{favorite.iconText}</span>}
+                  <strong>{favorite.name}</strong>
+                  <small>{hostnameFromUrl(favorite.url)}</small>
+                </button>)}
+              </div>
+            ) : <p className="edge-browser__empty">Yer imlerin burada görünecek.</p>}
+            <div className="edge-browser__recent-panel">
+              <div className="edge-browser__section-title"><h2>Son kapatılanlar</h2></div>
+              {recents.length ? recents.map((recent) => <button key={recent.id} type="button" className="edge-browser__recent-row" onClick={() => void openTab(recent.url)}>
+                {recent.favicon ? <img src={recent.favicon} alt="" /> : <Globe2 size={14} />}
+                <span><strong>{recent.title}</strong><small>{hostnameFromUrl(recent.url)}</small></span>
+                <time>{relativeTime(recent.closedAt)}</time>
+              </button>) : <p className="edge-browser__empty">Kapatılan sekmeler burada görünür.</p>}
+            </div>
+          </div>
+        </div>
+      ) : !isElectronRuntime() ? <div className="edge-browser__web-fallback"><Globe2 size={30} /><p>Gömülü tarayıcı Electron masaüstü sürümünde çalışır.</p></div> : null}
     </div>
-  </section>
+    </section>
+  </>
 }

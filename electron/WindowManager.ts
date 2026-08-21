@@ -22,6 +22,7 @@ function isHttpUrl(value: string) {
 export class WindowManager {
   private mainWindow: BrowserWindow | null = null
   private splashWindow: BrowserWindow | null = null
+  private splashTimer: NodeJS.Timeout | null = null
   private tray: Tray | null = null
   private allowClose = false
   private rendererUrl: string | null = null
@@ -65,6 +66,7 @@ export class WindowManager {
       this.mainWindow = null
     })
     window.webContents.on('did-finish-load', () => {
+      if (this.splashWindow) this.finishSplash()
       if (!this.splashWindow && !app.commandLine.hasSwitch('background')) window.showInactive()
     })
     window.webContents.on('did-fail-load', (_event, errorCode, description, validatedURL, isMainFrame) => {
@@ -81,13 +83,15 @@ export class WindowManager {
 
   createSplash(rendererUrl: string) {
     if (app.commandLine.hasSwitch('background')) return
+    if (this.splashTimer) clearTimeout(this.splashTimer)
     this.splashWindow = new BrowserWindow({
-      width: 330,
-      height: 210,
+      width: 380,
+      height: 240,
       title: 'kapanış.',
-      show: true,
+      show: false,
       frame: false,
       transparent: true,
+      backgroundColor: '#00000000',
       resizable: false,
       maximizable: false,
       minimizable: false,
@@ -102,24 +106,43 @@ export class WindowManager {
         sandbox: true,
       },
     })
-    this.splashWindow.on('closed', () => { this.splashWindow = null })
+    const splash = this.splashWindow
+    const showSplash = () => {
+      if (!splash.isDestroyed() && !splash.isVisible()) splash.show()
+    }
+    splash.once('ready-to-show', showSplash)
+    splash.webContents.once('did-finish-load', showSplash)
+    splash.on('closed', () => {
+      if (this.splashWindow === splash) this.splashWindow = null
+    })
     const splashTarget = rendererUrl.startsWith('file:')
       ? pathToSplashFile(rendererUrl)
       : `${rendererUrl.replace(/\/$/, '')}/splash.html`
     if (splashTarget.startsWith('http:') || splashTarget.startsWith('https:')) {
-      void this.splashWindow.loadURL(splashTarget).catch(() => undefined)
+      void splash.loadURL(splashTarget).catch(() => undefined)
     } else {
-      void this.splashWindow.loadFile(splashTarget).catch(() => undefined)
+      void splash.loadFile(splashTarget).catch(() => undefined)
     }
-    setTimeout(() => this.finishSplash(), 900)
+    this.splashTimer = setTimeout(() => this.finishSplash(), 5_000)
+    this.splashTimer.unref?.()
   }
 
   finishSplash() {
+    if (this.splashTimer) {
+      clearTimeout(this.splashTimer)
+      this.splashTimer = null
+    }
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       if (!app.commandLine.hasSwitch('background')) this.mainWindow.show()
     }
-    if (this.splashWindow && !this.splashWindow.isDestroyed()) this.splashWindow.close()
+    const splash = this.splashWindow
     this.splashWindow = null
+    if (splash && !splash.isDestroyed()) {
+      try { splash.hide() } catch { /* best effort */ }
+      // The splash is a non-interactive startup surface. destroy() avoids the
+      // native close-to-tray handler and guarantees the window cannot linger.
+      try { splash.destroy() } catch { /* best effort */ }
+    }
   }
 
   getMainWindow() {
