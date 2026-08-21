@@ -3,7 +3,7 @@ import type { DesktopEventName, ElectronDesktopBridge, IpcChannel } from '../sha
 
 const allowedChannels: ReadonlySet<string> = new Set([
   'window:minimize', 'window:toggle-maximize', 'window:is-maximized', 'window:close', 'window:show',
-  'open-external', 'launch-program',
+  'open-external', 'launch-program', 'programs:list', 'programs:pick',
   'system:get-timer-status', 'system:schedule-shutdown', 'system:cancel-shutdown', 'system:get-info',
   'system:get-autostart', 'system:set-autostart', 'settings:get', 'settings:save',
   'alarms:list', 'alarms:get-active', 'alarms:create', 'alarms:cancel', 'alarms:stop-sound',

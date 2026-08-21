@@ -44,7 +44,7 @@ export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecu
   }
 
   const windowControls = (
-    <div className="window-control-strip" data-window-drag>
+    <div className="window-control-strip window-control-strip--top-right" data-window-drag>
       <TooltipProvider delayDuration={400}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -91,8 +91,11 @@ export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecu
     </div>
   )
 
-  if (activeMode === 'home' || activeMode === 'browser') {
-    const isHome = activeMode === 'home'
+  if (activeMode === 'browser') {
+    return null
+  }
+
+  if (activeMode === 'home') {
     const timeFormatted = `${String(clockNow.getHours()).padStart(2, '0')}:${String(clockNow.getMinutes()).padStart(2, '0')}`
     const dateFormatted = clockNow.toLocaleDateString('tr-TR', {
       weekday: 'long',
@@ -102,55 +105,41 @@ export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecu
 
     return (
       <header
-        className={`header-compact-subscreen-bar header-compact-subscreen-bar--browser ${isHome ? 'header-compact-subscreen-bar--home-browser' : ''}`}
+        className="header-compact-subscreen-bar header-compact-subscreen-bar--home-browser"
         data-window-drag
         onDoubleClick={handleDoubleClick}
       >
-        <div className="header-browser-chrome-row">
-          <div
-            id={isHome ? 'browser-home-titlebar-slot' : 'browser-titlebar-slot'}
-            className="browser-titlebar-slot"
-            data-window-drag
-            aria-label={isHome ? 'Ana sayfa tarayıcı başlık çubuğu' : 'Tarayıcı başlık çubuğu'}
-          />
-          <div className="header-compact-right" data-window-drag>
-            {windowControls}
-          </div>
-        </div>
-
-        {isHome ? (
-          <div className="header-home-dashboard-row" data-window-drag>
-            <div className="header-home-dashboard-spacer" aria-hidden="true" />
-            <div className="header-center-col" data-window-drag>
-              <div className="center-clock-block" data-window-drag aria-label={`Saat ${timeFormatted}`}>
-                <div className="big-clock-digits" data-window-drag>
-                  <span className="digits-main">{timeFormatted}</span>
-                </div>
-                <div className="clock-date-line" data-window-drag>{dateFormatted}</div>
+        <div className="header-home-dashboard-row" data-window-drag>
+          <div className="header-home-dashboard-spacer" aria-hidden="true" />
+          <div className="header-center-col" data-window-drag>
+            <div className="center-clock-block" data-window-drag aria-label={`Saat ${timeFormatted}`}>
+              <div className="big-clock-digits" data-window-drag>
+                <span className="digits-main">{timeFormatted}</span>
               </div>
-              <form className="spotlight-bar-card spotlight-bar-card--inapp" onSubmit={handleSearchSubmit}>
-                <Search size={18} className="spotlight-glass-icon" aria-hidden="true" />
-                <input
-                  className="spotlight-glass-input"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Web'de ara veya adres yaz; /alarm, /kapat ve /not komutlarını kullan..."
-                  aria-label="Web'de ara veya komut çalıştır"
-                />
-                <button
-                  type="button"
-                  className="spotlight-key-badge"
-                  onClick={onOpenQuickSwitcher}
-                  aria-label="Arama ve komut paletini aç"
-                  title="Arama ve komut paleti (Ctrl+K)"
-                >
-                  ⌘K
-                </button>
-              </form>
+              <div className="clock-date-line" data-window-drag>{dateFormatted}</div>
             </div>
-            <div className="header-home-dashboard-spacer" aria-hidden="true" />
+            <form className="spotlight-bar-card spotlight-bar-card--inapp" onSubmit={handleSearchSubmit}>
+              <Search size={18} className="spotlight-glass-icon" aria-hidden="true" />
+              <input
+                className="spotlight-glass-input"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Web'de ara veya adres yaz; /alarm, /kapat ve /not komutlarını kullan..."
+                aria-label="Web'de ara veya komut çalıştır"
+              />
+              <button
+                type="button"
+                className="spotlight-key-badge"
+                onClick={onOpenQuickSwitcher}
+                aria-label="Arama ve komut paletini aç"
+                title="Arama ve komut paleti (Ctrl+K)"
+              >
+                ⌘K
+              </button>
+            </form>
           </div>
-        ) : null}
+          <div className="header-compact-right" data-window-drag />
+        </div>
       </header>
     )
   }
@@ -163,9 +152,7 @@ export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecu
     >
       <div className="header-compact-left" data-window-drag />
       <div className="header-compact-center" data-window-drag />
-      <div className="header-compact-right" data-window-drag>
-        {windowControls}
-      </div>
+      <div className="header-compact-right" data-window-drag />
     </header>
   )
 }

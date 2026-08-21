@@ -200,18 +200,6 @@ export function MiniOsDashboard({
     <div className="dashboard-wrapper">
       <div className="dashboard-main-layout">
         <div className="dashboard-widgets-area">
-          <div className="dashboard-widgets-toolbar">
-            <button
-              type="button"
-              className="dashboard-customize-btn"
-              onClick={() => setCustomizeModalOpen(true)}
-              title="Widget ekle"
-              aria-label="Widget ekle"
-            >
-              <LayoutTemplate size={13} aria-hidden="true" />
-              <span>Widget ekle</span>
-            </button>
-          </div>
           <DraggableWidgetGrid
             layout={layout}
             onUpdateLayout={handleUpdateLayout}
@@ -241,6 +229,18 @@ export function MiniOsDashboard({
             onRefreshControllers={onRefreshControllers}
             onOpenPairingModal={onOpenPairingModal}
           />
+          <div className="dashboard-widgets-toolbar dashboard-widgets-toolbar--bottom">
+            <button
+              type="button"
+              className="dashboard-customize-btn"
+              onClick={() => setCustomizeModalOpen(true)}
+              title="Widget ekle"
+              aria-label="Widget ekle"
+            >
+              <LayoutTemplate size={13} aria-hidden="true" />
+              <span>Widget ekle</span>
+            </button>
+          </div>
         </div>
 
         <div className="dashboard-music-sticky-col">

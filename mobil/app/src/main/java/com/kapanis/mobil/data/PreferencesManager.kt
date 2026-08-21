@@ -79,12 +79,42 @@ class PreferencesManager(context: Context) {
         set(value) = prefs.edit().putLong("last_connected_at", value).apply()
 
     // Local Auth Token (PIN gate token loc_...)
-    fun getLocalAuthToken(host: String): String {
-        return prefs.getString("local_auth_token_$host", "") ?: ""
+    fun getLocalAuthToken(key: String): String {
+        if (key.isBlank()) return prefs.getString("last_active_local_auth_token", "") ?: ""
+        val direct = prefs.getString("local_auth_token_$key", "") ?: ""
+        if (direct.isNotEmpty()) return direct
+
+        // Search in paired devices by ID or host
+        val devices = getPairedDevices()
+        val match = devices.firstOrNull { it.id == key || it.host == key || it.localIps.contains(key) }
+        if (match != null && match.localAuthToken.isNotEmpty()) {
+            return match.localAuthToken
+        }
+
+        // Active device fallback
+        val activeId = activeDeviceId
+        if (activeId.isNotEmpty() && activeId != key) {
+            val activeToken = prefs.getString("local_auth_token_$activeId", "") ?: ""
+            if (activeToken.isNotEmpty()) return activeToken
+        }
+
+        return prefs.getString("last_active_local_auth_token", "") ?: ""
     }
 
-    fun saveLocalAuthToken(host: String, token: String) {
-        prefs.edit().putString("local_auth_token_$host", token).apply()
+    fun saveLocalAuthToken(key: String, token: String) {
+        if (token.isBlank()) return
+        prefs.edit()
+            .putString("local_auth_token_$key", token)
+            .putString("last_active_local_auth_token", token)
+            .apply()
+
+        // Also persist in paired devices record
+        val devices = getPairedDevices().toMutableList()
+        val index = devices.indexOfFirst { it.id == key || it.host == key || it.localIps.contains(key) }
+        if (index != -1) {
+            devices[index] = devices[index].copy(localAuthToken = token)
+            savePairedDevice(devices[index])
+        }
     }
 
     // Active Device ID
@@ -142,17 +172,29 @@ class PreferencesManager(context: Context) {
         val current = getPairedDevices().toMutableList()
         val existingIndex = current.indexOfFirst {
             if (device.id.isNotEmpty() && it.id == device.id) true
-            else if (device.mode == ConnectionMode.LOCAL) it.host == device.host && it.port == device.port
+            else if (device.mode == ConnectionMode.LOCAL) (it.host == device.host && it.port == device.port) || (device.localIps.isNotEmpty() && it.localIps.any { ip -> device.localIps.contains(ip) })
             else it.pairingCode == device.pairingCode && it.pairingCode.isNotEmpty()
         }
 
-        val updated = device.copy(lastConnectedAt = System.currentTimeMillis())
+        // Merge localIps
+        val combinedIps = (device.localIps + (if (existingIndex != -1) current[existingIndex].localIps else emptyList()) + listOf(device.host)).filter { it.isNotBlank() && it != "localhost" && it != "127.0.0.1" }.distinct()
+        val tokenToKeep = if (device.localAuthToken.isNotEmpty()) device.localAuthToken else if (existingIndex != -1) current[existingIndex].localAuthToken else getLocalAuthToken(device.id)
+
+        val updated = device.copy(
+            localIps = combinedIps,
+            localAuthToken = tokenToKeep,
+            lastConnectedAt = System.currentTimeMillis()
+        )
+
         if (existingIndex != -1) {
             current[existingIndex] = updated
         } else {
             current.add(0, updated)
         }
         activeDeviceId = updated.id
+        if (tokenToKeep.isNotEmpty()) {
+            prefs.edit().putString("local_auth_token_${updated.id}", tokenToKeep).putString("local_auth_token_${updated.host}", tokenToKeep).apply()
+        }
 
         val array = JSONArray()
         for (item in current.take(30)) {
@@ -218,10 +260,15 @@ class PreferencesManager(context: Context) {
             if (input.isNullOrBlank()) return null
             var raw = input.trim()
 
+            // Handle query parameter pair_data
             if (raw.contains("pair_data=")) {
                 val match = Regex("pair_data=([^&]+)").find(raw)
                 if (match != null) {
-                    raw = java.net.URLDecoder.decode(match.groupValues[1], "UTF-8")
+                    try {
+                        raw = java.net.URLDecoder.decode(match.groupValues[1], "UTF-8")
+                    } catch (e: Exception) {
+                        raw = match.groupValues[1]
+                    }
                 }
             }
 
@@ -234,7 +281,7 @@ class PreferencesManager(context: Context) {
                 val decodedBytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
                 val decodedStr = String(decodedBytes, Charsets.UTF_8)
                 val obj = JSONObject(decodedStr)
-                if (obj.has("id") || obj.has("code") || obj.has("url")) {
+                if (obj.has("id") || obj.has("code") || obj.has("url") || obj.has("secret") || obj.has("ips")) {
                     val ipsList = mutableListOf<String>()
                     val ipsArr = obj.optJSONArray("ips")
                     if (ipsArr != null) {
@@ -262,7 +309,7 @@ class PreferencesManager(context: Context) {
             // 2. Try raw JSON decode
             try {
                 val obj = JSONObject(raw)
-                if (obj.has("id") || obj.has("code") || obj.has("url")) {
+                if (obj.has("id") || obj.has("code") || obj.has("url") || obj.has("secret") || obj.has("ips")) {
                     val ipsList = mutableListOf<String>()
                     val ipsArr = obj.optJSONArray("ips")
                     if (ipsArr != null) {
@@ -287,6 +334,72 @@ class PreferencesManager(context: Context) {
                 // ignore
             }
 
+            // 3. Handle kapanis:// deep links or HTTP URL (e.g. http://192.168.1.50:53317)
+            try {
+                val uri = android.net.Uri.parse(raw)
+                val scheme = uri.scheme?.lowercase()
+                if (scheme == "kapanis" || scheme == "http" || scheme == "https") {
+                    val host = uri.host ?: ""
+                    val port = if (uri.port != -1) uri.port else 53317
+                    val code = uri.getQueryParameter("code") ?: uri.getQueryParameter("pin") ?: ""
+                    val name = uri.getQueryParameter("name") ?: uri.getQueryParameter("alias") ?: "Windows PC"
+                    val secret = uri.getQueryParameter("secret") ?: ""
+                    val supabaseUrl = uri.getQueryParameter("supabaseUrl") ?: uri.getQueryParameter("url") ?: ""
+                    val supabaseKey = uri.getQueryParameter("supabaseKey") ?: uri.getQueryParameter("key") ?: ""
+                    val id = uri.getQueryParameter("id") ?: uri.getQueryParameter("deviceId") ?: ""
+
+                    if (host.isNotEmpty() || code.isNotEmpty() || supabaseUrl.isNotEmpty()) {
+                        return PairingPayload(
+                            v = 2,
+                            id = id,
+                            name = name,
+                            code = code,
+                            secret = secret,
+                            url = supabaseUrl,
+                            key = supabaseKey,
+                            ips = if (host.isNotEmpty()) listOf(host) else emptyList(),
+                            port = port
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+
+            // 4. Handle raw IP:Port string (e.g. "192.168.1.50:53317" or "192.168.1.50")
+            val ipMatch = Regex("""^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d+))?$""").find(raw)
+            if (ipMatch != null) {
+                val host = ipMatch.groupValues[1]
+                val port = ipMatch.groupValues[2].toIntOrNull() ?: 53317
+                return PairingPayload(
+                    v = 2,
+                    id = "",
+                    name = "Windows PC",
+                    code = "",
+                    secret = "",
+                    url = "",
+                    key = "",
+                    ips = listOf(host),
+                    port = port
+                )
+            }
+
+            // 5. Handle simple pairing code (e.g. "KAP-ABCD" or "ABCD")
+            val codeMatch = Regex("""^(?:KAP-)?[A-Za-z0-9]{4,12}$""").find(raw)
+            if (codeMatch != null) {
+                val cleanCode = raw.uppercase().let { if (it.startsWith("KAP-")) it else "KAP-$it" }
+                return PairingPayload(
+                    v = 2,
+                    id = "",
+                    name = "Windows PC",
+                    code = cleanCode,
+                    secret = "",
+                    url = "",
+                    key = "",
+                    ips = emptyList(),
+                    port = 53317
+                )
+            }
             return null
         }
     }

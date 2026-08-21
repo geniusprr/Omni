@@ -66,6 +66,7 @@ export interface BrowserTabProjection {
   label: string
   muted?: boolean
   pinned?: boolean
+  incognito?: boolean
 }
 
 export interface BrowserMediaProjection {
@@ -91,6 +92,13 @@ export interface BrowserDebugSnapshot {
   mediaIds: string[]
   closingIds: string[]
   listenerCount: number
+  viewStates: Array<{
+    id: string
+    bounds: BrowserBounds
+    visible: boolean
+    url: string
+    loading: boolean
+  }>
 }
 
 export interface BrowserSessionTab {
@@ -100,6 +108,7 @@ export interface BrowserSessionTab {
   favicon: string | null
   pinned: boolean
   muted: boolean
+  incognito?: boolean
 }
 
 export interface BrowserSessionSnapshot {
@@ -207,6 +216,12 @@ export interface YouTubeMusicState {
   artworkUrl: string | null
 }
 
+export interface ProgramCandidate {
+  name: string
+  path: string
+  source: 'start-menu' | 'app-paths' | 'manual'
+}
+
 export type IpcChannel =
   | 'window:minimize'
   | 'window:toggle-maximize'
@@ -215,6 +230,8 @@ export type IpcChannel =
   | 'window:show'
   | 'open-external'
   | 'launch-program'
+  | 'programs:list'
+  | 'programs:pick'
   | 'system:get-timer-status'
   | 'system:schedule-shutdown'
   | 'system:cancel-shutdown'

@@ -88,6 +88,7 @@ import com.kapanis.mobil.data.PreferencesManager
 import com.kapanis.mobil.data.RemoteTimerState
 import com.kapanis.mobil.data.TransferItem
 import com.kapanis.mobil.network.KapanisApiClient
+import com.kapanis.mobil.network.LanScanner
 import com.kapanis.mobil.network.NetworkUtils
 import com.kapanis.mobil.network.SupabaseRemoteClient
 import com.kapanis.mobil.ui.components.BottomNavBar
@@ -114,6 +115,7 @@ fun MainScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+    val scanner = remember { LanScanner(apiClient) }
     val colors = KapanisTheme.colors
 
     // Active Navigation Tab
@@ -203,22 +205,117 @@ fun MainScreen(
         }
     }
 
-    // Periodic synchronization loop (2s)
-    LaunchedEffect(mode, target.host, target.port, prefs.pairedDeviceId) {
+    // Periodic synchronization loop (2s) with Auto-IP Recovery & Discovery
+    LaunchedEffect(mode, target.host, target.port, prefs.pairedDeviceId, prefs.activeDeviceId) {
+        var consecutiveFailures = 0
+        var isAutoRecovering = false
+        var nextLocalAuthAttemptAt = 0L
+
         while (isActive) {
             if (mode == ConnectionMode.LOCAL) {
-                val res = apiClient.fetchLocalState(target.host, target.port)
+                var currentToken = prefs.getLocalAuthToken(prefs.activeDeviceId.ifEmpty { target.host })
+                val res = apiClient.fetchLocalState(target.host, target.port, currentToken)
                 if (res.isSuccess) {
-                    val state = res.getOrNull()
+                    consecutiveFailures = 0
+                    var state = res.getOrNull()
+                    var isAuthenticated = state?.authenticated == true
+
+                    // A status response is public so that nearby PCs can be discovered.
+                    // Do not display a usable connection until the local pairing token is
+                    // present. QR/deep-link pairs already contain the PIN, so recover a
+                    // missing token automatically instead of leaving file transfer blocked.
+                    if (!isAuthenticated && System.currentTimeMillis() >= nextLocalAuthAttemptAt) {
+                        nextLocalAuthAttemptAt = System.currentTimeMillis() + 15_000L
+                        val savedDevice = prefs.getPairedDevices().firstOrNull {
+                            it.id == prefs.activeDeviceId || it.host == target.host || it.localIps.contains(target.host)
+                        }
+                        val pairingCredential = listOf(
+                            savedDevice?.pairingCode.orEmpty(),
+                            savedDevice?.pairingSecret.orEmpty(),
+                            prefs.pairingCode
+                        ).firstOrNull { it.isNotBlank() }.orEmpty()
+
+                        if (pairingCredential.isNotBlank()) {
+                            val authResult = apiClient.authenticatePairingPin(target.host, target.port, pairingCredential)
+                            if (authResult.isSuccess) {
+                                currentToken = authResult.getOrDefault("")
+                                val knownDeviceId = state?.deviceId.orEmpty().ifEmpty { savedDevice?.id.orEmpty() }
+                                if (knownDeviceId.isNotBlank()) {
+                                    prefs.saveLocalAuthToken(knownDeviceId, currentToken)
+                                    prefs.activeDeviceId = knownDeviceId
+                                }
+                                prefs.saveLocalAuthToken(target.host, currentToken)
+
+                                val verified = apiClient.fetchLocalState(target.host, target.port, currentToken)
+                                if (verified.isSuccess) {
+                                    state = verified.getOrNull()
+                                    isAuthenticated = state?.authenticated == true
+                                }
+                            }
+                        }
+                    }
+
+                    val devName = state?.deviceName ?: target.deviceName
+                    val devId = state?.deviceId.orEmpty()
+                    if (devId.isNotEmpty() && prefs.activeDeviceId.isEmpty()) {
+                        prefs.activeDeviceId = devId
+                    }
                     target = target.copy(
-                        deviceName = state?.deviceName ?: target.deviceName,
-                        isConnected = true,
+                        deviceName = devName,
+                        isConnected = isAuthenticated,
                         wifiSsid = NetworkUtils.getCurrentWifiName(context)
                     )
-                    activeTimer = state?.timerState
-                    alarmsList = state?.alarms ?: emptyList()
+                    activeTimer = if (isAuthenticated) state?.timerState else null
+                    alarmsList = if (isAuthenticated) state?.alarms ?: emptyList() else emptyList()
                 } else {
-                    target = target.copy(isConnected = false)
+                    consecutiveFailures++
+                    // If unreachable after 2 consecutive checks, trigger Auto-Recovery!
+                    if (consecutiveFailures >= 2 && !isAutoRecovering) {
+                        isAutoRecovering = true
+                        scope.launch {
+                            val savedDev = prefs.getPairedDevices().firstOrNull {
+                                it.id == prefs.activeDeviceId || it.host == target.host || it.localIps.contains(target.host)
+                            }
+                            val candidateIps = (savedDev?.localIps.orEmpty() + listOf(target.host)).distinct()
+                            val devId = savedDev?.id.orEmpty().ifEmpty { prefs.activeDeviceId }
+                            val pCode = savedDev?.pairingCode.orEmpty().ifEmpty { prefs.pairingCode }
+
+                            val recovered = scanner.findDeviceInSubnet(
+                                context = context,
+                                targetDeviceId = devId,
+                                pairingCode = pCode,
+                                preferredIps = candidateIps,
+                                port = target.port,
+                                token = currentToken
+                            )
+
+                            if (recovered != null) {
+                                val (newHost, newStatus) = recovered
+                                target = target.copy(
+                                    host = newHost,
+                                    port = newStatus.port,
+                                    deviceName = newStatus.deviceName.ifEmpty { target.deviceName },
+                                    isConnected = true
+                                )
+                                prefs.host = newHost
+                                prefs.port = newStatus.port
+                                if (savedDev != null) {
+                                    val updatedDev = savedDev.copy(
+                                        host = newHost,
+                                        port = newStatus.port,
+                                        localIps = (savedDev.localIps + listOf(newHost)).distinct()
+                                    )
+                                    prefs.savePairedDevice(updatedDev)
+                                }
+                                consecutiveFailures = 0
+                            } else {
+                                target = target.copy(isConnected = false)
+                            }
+                            isAutoRecovering = false
+                        }
+                    } else if (consecutiveFailures >= 3) {
+                        target = target.copy(isConnected = false)
+                    }
                 }
 
                 val notesRes = apiClient.fetchNotes(target.host, target.port)
@@ -266,7 +363,8 @@ fun MainScreen(
 
         scope.launch {
             if (mode == ConnectionMode.LOCAL) {
-                val res = apiClient.sendCommand(target.host, target.port, action, durationSecs)
+                val token = prefs.getLocalAuthToken(prefs.activeDeviceId.ifEmpty { target.host })
+                val res = apiClient.sendCommand(target.host, target.port, action, durationSecs, token)
                 isSendingPowerCmd = false
                 if (res.isSuccess) activeTimer = res.getOrNull()
             } else {
@@ -802,6 +900,15 @@ fun MainScreen(
                             }
                         }
 
+                        NavTab.TERMINAL -> {
+                            TerminalScreen(
+                                target = target,
+                                mode = mode,
+                                prefs = prefs,
+                                apiClient = apiClient
+                            )
+                        }
+
                         NavTab.NOTIFY -> {
                             // TAB 2: PC BİLDİRİM MERKEZİ (Aynalama & Filtreleme)
                             NotifyScreen(
@@ -817,6 +924,7 @@ fun MainScreen(
                             // TAB 3: DOSYA AKTARMA (LocalSend & Pano)
                             TransferScreen(
                                 target = target,
+                                prefs = prefs,
                                 apiClient = apiClient,
                                 transfers = transfers,
                                 onTransfersUpdated = { updated -> transfers = updated }
@@ -1177,6 +1285,12 @@ fun MainScreen(
                         mode = ConnectionMode.LOCAL
                         prefs.mode = ConnectionMode.LOCAL
                     } else {
+                        val localHost = dev.host.takeIf { it.isNotBlank() && it != "192.168.1.100" }
+                        if (localHost != null) {
+                            prefs.host = localHost
+                            prefs.port = dev.port
+                            target = target.copy(host = localHost, port = dev.port)
+                        }
                         mode = ConnectionMode.ONLINE
                         prefs.mode = ConnectionMode.ONLINE
                     }

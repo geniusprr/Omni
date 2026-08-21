@@ -8,7 +8,9 @@ import com.kapanis.mobil.data.LocalDeviceState
 import com.kapanis.mobil.data.MirroredNotification
 import com.kapanis.mobil.data.NoteItem
 import com.kapanis.mobil.data.RemoteTimerState
+import com.kapanis.mobil.data.RemoteTerminalStatus
 import com.kapanis.mobil.data.ServerStatus
+import com.kapanis.mobil.data.TerminalCommandResult
 import com.kapanis.mobil.data.TransferItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,14 +33,36 @@ class KapanisApiClient {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private val fastProbeClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(600, TimeUnit.MILLISECONDS)
+        .readTimeout(1200, TimeUnit.MILLISECONDS)
+        .writeTimeout(1200, TimeUnit.MILLISECONDS)
+        .build()
+
+    private val terminalClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(35, TimeUnit.SECONDS)
+        .writeTimeout(35, TimeUnit.SECONDS)
+        .build()
+
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-    suspend fun ping(host: String, port: Int): Result<ServerStatus> = withContext(Dispatchers.IO) {
+    suspend fun ping(
+        host: String,
+        port: Int,
+        token: String? = null,
+        useFastTimeout: Boolean = false
+    ): Result<ServerStatus> = withContext(Dispatchers.IO) {
+        val httpClient = if (useFastTimeout) fastProbeClient else client
+
         // 1. Try /api/status or /api/local/state
         try {
             val url = "http://$host:$port/api/status"
-            val request = Request.Builder().url(url).get().build()
-            client.newCall(request).execute().use { response ->
+            val reqBuilder = Request.Builder().url(url).get()
+            if (!token.isNullOrEmpty()) {
+                reqBuilder.addHeader("Authorization", "Bearer $token")
+            }
+            httpClient.newCall(reqBuilder.build()).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string().orEmpty()
                     val json = JSONObject(body)
@@ -57,6 +81,9 @@ class KapanisApiClient {
                     val status = ServerStatus(
                         status = json.optString("status", "ok"),
                         deviceName = json.optString("deviceName", "Windows PC"),
+                        deviceId = json.optString("deviceId", ""),
+                        pairingCode = json.optString("pairingCode", ""),
+                        authenticated = json.optBoolean("authenticated", false),
                         version = json.optString("version", "2.0.0"),
                         port = json.optInt("port", port),
                         timerState = timerState,
@@ -73,13 +100,14 @@ class KapanisApiClient {
         try {
             val url = "http://$host:$port/api/localsend/v2/info"
             val request = Request.Builder().url(url).get().build()
-            client.newCall(request).execute().use { response ->
+            httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string().orEmpty()
                     val json = JSONObject(body)
                     val status = ServerStatus(
                         status = "ok",
                         deviceName = json.optString("alias", "kapanış. PC"),
+                        deviceId = json.optString("fingerprint", ""),
                         version = json.optString("version", "2.0"),
                         port = json.optInt("port", port)
                     )
@@ -98,7 +126,9 @@ class KapanisApiClient {
         port: Int,
         alias: String,
         model: String,
-        wifiName: String = ""
+        wifiName: String = "",
+        transferPort: Int = 53317,
+        fingerprint: String = "android-" + System.currentTimeMillis().rem(100000)
     ): Result<LocalDeviceState> = withContext(Dispatchers.IO) {
         try {
             val url = "http://$host:$port/api/register"
@@ -106,9 +136,9 @@ class KapanisApiClient {
                 put("alias", alias)
                 put("deviceModel", model)
                 put("deviceType", "mobile")
-                put("port", 53317)
+                put("port", transferPort)
                 put("wifiName", wifiName)
-                put("fingerprint", "android-${System.currentTimeMillis() % 100000}")
+                put("fingerprint", fingerprint)
                 put("protocol", "http")
             }
             val body = json.toString().toRequestBody(jsonMediaType)
@@ -129,6 +159,7 @@ class KapanisApiClient {
                     val state = LocalDeviceState(
                         status = "ok",
                         deviceName = respJson.optString("deviceName", "Windows PC"),
+                        deviceId = respJson.optString("deviceId", ""),
                         version = respJson.optString("version", "2.0.0"),
                         port = respJson.optInt("port", port),
                         timerState = timerState,
@@ -144,11 +175,18 @@ class KapanisApiClient {
         }
     }
 
-    suspend fun fetchLocalState(host: String, port: Int): Result<LocalDeviceState> = withContext(Dispatchers.IO) {
+    suspend fun fetchLocalState(
+        host: String,
+        port: Int,
+        token: String? = null
+    ): Result<LocalDeviceState> = withContext(Dispatchers.IO) {
         try {
             val url = "http://$host:$port/api/status"
-            val request = Request.Builder().url(url).get().build()
-            client.newCall(request).execute().use { response ->
+            val reqBuilder = Request.Builder().url(url).get()
+            if (!token.isNullOrEmpty()) {
+                reqBuilder.addHeader("Authorization", "Bearer $token")
+            }
+            client.newCall(reqBuilder.build()).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string().orEmpty()
                     val json = JSONObject(body)
@@ -166,6 +204,9 @@ class KapanisApiClient {
                     val state = LocalDeviceState(
                         status = "ok",
                         deviceName = json.optString("deviceName", "Windows PC"),
+                        deviceId = json.optString("deviceId", ""),
+                        pairingCode = json.optString("pairingCode", ""),
+                        authenticated = json.optBoolean("authenticated", false),
                         version = json.optString("version", "2.0.0"),
                         port = json.optInt("port", port),
                         timerState = timerState,
@@ -188,8 +229,10 @@ class KapanisApiClient {
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val url = "http://$host:$port/api/auth/pair"
+            val cleanCode = pin.trim().uppercase()
             val json = JSONObject().apply {
-                put("code", pin.trim().uppercase())
+                put("code", cleanCode)
+                put("pairingCode", cleanCode)
             }
             val body = json.toString().toRequestBody(jsonMediaType)
             val request = Request.Builder().url(url).post(body).build()
@@ -197,7 +240,7 @@ class KapanisApiClient {
                 val respBody = response.body?.string().orEmpty()
                 if (response.isSuccessful) {
                     val respJson = JSONObject(respBody)
-                    val token = respJson.optString("token", "")
+                    val token = respJson.optString("authToken", respJson.optString("token", ""))
                     if (token.isNotEmpty()) {
                         Result.success(token)
                     } else {
@@ -306,6 +349,78 @@ class KapanisApiClient {
                 } else {
                     Result.failure(Exception("Komut gönderilemedi (${response.code})"))
                 }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchTerminalStatus(
+        host: String,
+        port: Int,
+        token: String
+    ): Result<RemoteTerminalStatus> = withContext(Dispatchers.IO) {
+        if (token.isBlank()) return@withContext Result.failure(Exception("CMD için önce PC ile eşleştirme yapmalısınız."))
+        try {
+            val request = Request.Builder()
+                .url("http://$host:$port/api/terminal/status")
+                .addHeader("Authorization", "Bearer $token")
+                .get()
+                .build()
+            terminalClient.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val message = try { JSONObject(responseBody).optString("error", "CMD durumu alınamadı (${response.code})") } catch (_: Exception) { "CMD durumu alınamadı (${response.code})" }
+                    return@withContext Result.failure(Exception(message))
+                }
+                val json = JSONObject(responseBody)
+                Result.success(
+                    RemoteTerminalStatus(
+                        available = json.optBoolean("available", false),
+                        isElevated = json.optBoolean("isElevated", false),
+                        requiresElevation = json.optBoolean("requiresElevation", true),
+                        timeoutSeconds = json.optInt("timeoutSeconds", 30),
+                        maxCommandLength = json.optInt("maxCommandLength", 4096)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun executeTerminalCommand(
+        host: String,
+        port: Int,
+        command: String,
+        token: String
+    ): Result<TerminalCommandResult> = withContext(Dispatchers.IO) {
+        if (token.isBlank()) return@withContext Result.failure(Exception("CMD için önce PC ile eşleştirme yapmalısınız."))
+        try {
+            val payload = JSONObject().put("command", command)
+            val request = Request.Builder()
+                .url("http://$host:$port/api/terminal/execute")
+                .addHeader("Authorization", "Bearer $token")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            terminalClient.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                val json = try { JSONObject(responseBody) } catch (_: Exception) { JSONObject() }
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception(json.optString("error", "CMD komutu çalıştırılamadı (${response.code})")))
+                }
+
+                Result.success(
+                    TerminalCommandResult(
+                        success = json.optBoolean("success", false),
+                        exitCode = if (json.has("exitCode") && !json.isNull("exitCode")) json.optInt("exitCode") else null,
+                        stdout = json.optString("stdout", ""),
+                        stderr = json.optString("stderr", ""),
+                        timedOut = json.optBoolean("timedOut", false),
+                        truncated = json.optBoolean("truncated", false),
+                        error = json.optString("error", "")
+                    )
+                )
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -646,6 +761,7 @@ class KapanisApiClient {
         host: String,
         port: Int,
         uri: Uri,
+        token: String? = null,
         onProgress: (Float) -> Unit = {}
     ): Result<TransferItem> = withContext(Dispatchers.IO) {
         try {
@@ -678,12 +794,15 @@ class KapanisApiClient {
 
             val encodedFilename = URLEncoder.encode(filename, "UTF-8")
             val url = "http://$host:$port/api/upload"
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(url)
                 .addHeader("x-filename", encodedFilename)
                 .addHeader("Content-Type", mimeType)
                 .post(requestBody)
-                .build()
+            if (!token.isNullOrEmpty()) {
+                requestBuilder.addHeader("Authorization", "Bearer $token")
+            }
+            val request = requestBuilder.build()
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
@@ -748,4 +867,3 @@ class KapanisApiClient {
         return Pair(name, size)
     }
 }
-

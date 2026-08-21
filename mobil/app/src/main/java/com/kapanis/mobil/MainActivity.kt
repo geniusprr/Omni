@@ -44,16 +44,15 @@ class MainActivity : ComponentActivity() {
         prefs = PreferencesManager(this)
         val initialTarget = parseIntentUri(intent?.data)
 
-        // Safe Notification Service start
+        // Keep the local transfer receiver alive independently of notification
+        // permission. Android may hide its notification when permission is
+        // denied, but starting from this foreground Activity is still allowed.
         try {
+            KapanisNotificationService.start(this)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                    KapanisNotificationService.start(this)
-                } else {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
-            } else {
-                KapanisNotificationService.start(this)
             }
         } catch (e: Throwable) {
             // Prevent startup crash
@@ -133,6 +132,10 @@ class MainActivity : ComponentActivity() {
                         ntfyTopic = payload.ntfy
                     )
                     prefs.savePairedDevice(item)
+                    if (item.host.isNotBlank() && item.host != "192.168.1.100") {
+                        prefs.host = item.host
+                        prefs.port = item.port
+                    }
                     if (item.mode == ConnectionMode.ONLINE) {
                         prefs.mode = ConnectionMode.ONLINE
                         prefs.supabaseUrl = item.supabaseUrl
@@ -188,4 +191,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-

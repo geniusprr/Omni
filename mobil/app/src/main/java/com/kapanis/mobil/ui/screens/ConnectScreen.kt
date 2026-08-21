@@ -130,8 +130,20 @@ fun ConnectScreen(
             prefs.pairedDeviceId = device.id
             prefs.pairingCode = device.pairingCode
             prefs.deviceName = device.name
+            val localHost = device.host.takeIf { it.isNotBlank() && it != "192.168.1.100" }
+            if (localHost != null) {
+                prefs.host = localHost
+                prefs.port = device.port
+            }
             onModeChanged(ConnectionMode.ONLINE)
-            onTargetChanged(target.copy(deviceName = device.name, isConnected = true))
+            onTargetChanged(
+                target.copy(
+                    host = localHost ?: target.host,
+                    port = if (localHost != null) device.port else target.port,
+                    deviceName = device.name,
+                    isConnected = true
+                )
+            )
         } else {
             prefs.mode = ConnectionMode.LOCAL
             prefs.host = device.host
@@ -153,20 +165,65 @@ fun ConnectScreen(
         scope.launch {
             val payload = PreferencesManager.parsePairingPayload(raw)
             if (payload != null) {
-                val pairRes = supabaseClient.pairWithPayload(payload, prefs.controllerId, prefs.controllerName)
-                if (pairRes.isSuccess) {
-                    val pairedItem = pairRes.getOrThrow()
-                    prefs.savePairedDevice(pairedItem)
-                    selectDevice(pairedItem)
+                // If payload has Cloud info (url & key)
+                if (payload.url.isNotEmpty() && payload.key.isNotEmpty()) {
+                    val pairRes = supabaseClient.pairWithPayload(payload, prefs.controllerId, prefs.controllerName)
+                    if (pairRes.isSuccess) {
+                        val pairedItem = pairRes.getOrThrow()
+                        prefs.savePairedDevice(pairedItem)
+                        selectDevice(pairedItem)
+                        inputPayloadOrLink = ""
+                        connectSubTab = 0
+                        isPairingPayload = false
+                        Toast.makeText(context, "Eşleştirme Başarılı: ${pairedItem.name} ✓", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                }
+
+                // If payload has local IPs or secret/code
+                val candidateHost = payload.ips.firstOrNull { it.isNotBlank() && it != "127.0.0.1" && it != "localhost" }
+                if (!candidateHost.isNullOrEmpty()) {
+                    // Try to authenticate or connect locally
+                    val codeToUse = payload.code.ifEmpty { payload.secret }
+                    var token = ""
+                    if (codeToUse.isNotEmpty()) {
+                        val authRes = apiClient.authenticatePairingPin(candidateHost, payload.port, codeToUse)
+                        if (authRes.isSuccess) {
+                            token = authRes.getOrDefault("")
+                        }
+                    }
+
+                    val pingRes = apiClient.ping(candidateHost, payload.port, token)
+                    val devName = if (pingRes.isSuccess) pingRes.getOrNull()?.deviceName ?: payload.name else payload.name
+                    val devId = if (payload.id.isNotEmpty()) payload.id else pingRes.getOrNull()?.deviceId.orEmpty().ifEmpty { "local-$candidateHost" }
+
+                    val item = PairedDeviceItem(
+                        id = devId,
+                        name = devName,
+                        host = candidateHost,
+                        port = payload.port,
+                        mode = ConnectionMode.LOCAL,
+                        pairingCode = payload.code,
+                        pairingSecret = payload.secret,
+                        localIps = payload.ips,
+                        localAuthToken = token,
+                        isOnline = pingRes.isSuccess
+                    )
+                    if (token.isNotEmpty()) {
+                        prefs.saveLocalAuthToken(devId, token)
+                        prefs.saveLocalAuthToken(candidateHost, token)
+                    }
+                    prefs.savePairedDevice(item)
+                    selectDevice(item)
                     inputPayloadOrLink = ""
                     connectSubTab = 0
                     isPairingPayload = false
-                    Toast.makeText(context, "Eşleştirme Başarılı: ${pairedItem.name} ✓", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Yerel Eşleştirme Başarılı: $devName ✓", Toast.LENGTH_LONG).show()
                     return@launch
                 }
             }
 
-            // Fallback: Check if it's a simple pairing code
+            // Fallback: Check if it's a simple pairing code for Supabase
             val cleanCode = raw.uppercase()
             val url = prefs.supabaseUrl
             val key = prefs.supabaseAnonKey
@@ -200,8 +257,29 @@ fun ConnectScreen(
         }
     }
 
+    // Modern ZXing Activity Scanner Launcher
+    val barcodeLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val contents = result.contents?.trim()
+        if (!contents.isNullOrEmpty()) {
+            inputPayloadOrLink = contents
+            handlePairPayloadSubmit(contents)
+        }
+    }
+
     fun launchQrScanner() {
-        showQrScannerModal = true
+        try {
+            val options = ScanOptions().apply {
+                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                setPrompt("kapanış. Eşleştirme QR Kodunu Hizalayın")
+                setCameraId(0)
+                setBeepEnabled(true)
+                setBarcodeImageEnabled(false)
+                setOrientationLocked(false)
+            }
+            barcodeLauncher.launch(options)
+        } catch (e: Throwable) {
+            showQrScannerModal = true
+        }
     }
 
     fun pasteFromClipboard() {
@@ -240,6 +318,7 @@ fun ConnectScreen(
                 host = host,
                 port = port,
                 mode = ConnectionMode.LOCAL,
+                localIps = listOf(host),
                 localAuthToken = token
             )
             prefs.savePairedDevice(item)
@@ -264,14 +343,21 @@ fun ConnectScreen(
             isAuthenticatingPin = false
             if (res.isSuccess) {
                 val token = res.getOrThrow()
+                val pingRes = apiClient.ping(pendingPinHost, pendingPinPort, token)
+                val devId = pingRes.getOrNull()?.deviceId.orEmpty().ifEmpty { "local-$pendingPinHost" }
+                val devName = pingRes.getOrNull()?.deviceName.orEmpty().ifEmpty { pendingPinName }
+
+                prefs.saveLocalAuthToken(devId, token)
                 prefs.saveLocalAuthToken(pendingPinHost, token)
+
                 val item = PairedDeviceItem(
-                    id = "local-$pendingPinHost",
-                    name = pendingPinName,
+                    id = devId,
+                    name = devName,
                     host = pendingPinHost,
                     port = pendingPinPort,
                     mode = ConnectionMode.LOCAL,
                     pairingCode = inputPinCode.uppercase(),
+                    localIps = listOf(pendingPinHost),
                     localAuthToken = token
                 )
                 prefs.savePairedDevice(item)

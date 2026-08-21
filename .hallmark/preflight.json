@@ -1,22 +1,20 @@
 {
-  "scannedAt": "2026-08-19",
-  "framework": "Tauri 2 + React 18 + Vite 6",
+  "scannedAt": "2026-08-21",
+  "framework": "Electron 43 + React 18 + Vite 6",
   "fonts": "Bricolage Grotesque display + Geist body + Geist Mono data",
   "palette": "OKLCH tokens in root tokens.css",
-  "motion": "opacity and transform only; reduced-motion covered",
+  "motion": "no motion library installed; existing CSS uses transform and opacity transitions with reduced-motion coverage",
   "spacing": "named 4pt-oriented tokens",
   "preserve": [
-    "Rust IPC boundary",
+    "Electron IPC boundary",
     "local timer and alarm persistence",
     "rich-black and powder-white reference palette",
     "shadcn source-component ownership"
   ],
   "redesign": [
-    "780x620 fixed native viewport",
-    "two-mode shutdown and alarm shell",
-    "small custom titlebar",
-    "single controlled glass layer",
-    "no document scroll or dashboard modules"
+    "responsive native desktop viewport",
+    "home widget spacing and shell alignment",
+    "minimal system-media empty and active states",
+    "existing acrylic theme and titlebar"
   ]
 }
-

@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.kapanis.mobil.data.ConnectionTarget
+import com.kapanis.mobil.data.PreferencesManager
 import com.kapanis.mobil.data.TransferItem
 import com.kapanis.mobil.network.KapanisApiClient
 import com.kapanis.mobil.ui.components.GlassCard
@@ -63,6 +64,7 @@ import java.util.Locale
 @Composable
 fun TransferScreen(
     target: ConnectionTarget,
+    prefs: PreferencesManager,
     apiClient: KapanisApiClient,
     transfers: List<TransferItem>,
     onTransfersUpdated: (List<TransferItem>) -> Unit
@@ -80,15 +82,92 @@ fun TransferScreen(
         uploadProgress = 0f
 
         scope.launch {
-            val result = apiClient.uploadFile(
-                context = context,
-                host = target.host,
-                port = target.port,
-                uri = uri,
-                onProgress = { progress ->
-                    uploadProgress = progress
+            val savedDevices = prefs.getPairedDevices()
+            val pairedDevice = savedDevices.firstOrNull { it.id == prefs.pairedDeviceId }
+                ?: savedDevices.firstOrNull { it.id == prefs.activeDeviceId }
+            val pairedHost = pairedDevice?.host?.takeIf {
+                it.isNotBlank() && it != "192.168.1.100" && it != "127.0.0.1" && it != "localhost"
+            }
+            val targetHost = target.host.takeIf {
+                it.isNotBlank() && it != "192.168.1.100" && it != "127.0.0.1" && it != "localhost"
+            }
+            val host = pairedHost ?: targetHost ?: prefs.host
+            val resolvedDevice = pairedDevice ?: savedDevices.firstOrNull {
+                it.host == host || it.localIps.contains(host)
+            }
+            val port = when {
+                pairedHost != null && pairedDevice.port > 0 -> pairedDevice.port
+                target.port > 0 -> target.port
+                else -> prefs.port
+            }
+
+            suspend fun authenticateForTransfer(): Result<String> {
+                val pairingCredential = listOf(
+                    resolvedDevice?.pairingCode.orEmpty(),
+                    resolvedDevice?.pairingSecret.orEmpty(),
+                    prefs.pairingCode
+                ).firstOrNull { it.isNotBlank() }.orEmpty()
+                if (pairingCredential.isBlank()) {
+                    return Result.failure(Exception("Dosya aktarımı için PC eşleştirme kodu gerekli."))
                 }
+
+                val authResult = apiClient.authenticatePairingPin(host, port, pairingCredential)
+                if (authResult.isFailure) return authResult
+
+                val token = authResult.getOrDefault("")
+                val state = apiClient.ping(host, port, token).getOrNull()
+                val deviceId = state?.deviceId.orEmpty().ifEmpty { resolvedDevice?.id.orEmpty() }
+                if (deviceId.isNotBlank()) {
+                    prefs.activeDeviceId = deviceId
+                    prefs.saveLocalAuthToken(deviceId, token)
+                }
+                prefs.saveLocalAuthToken(host, token)
+                return Result.success(token)
+            }
+
+            var token = prefs.getLocalAuthToken(prefs.activeDeviceId.ifEmpty { host })
+            if (token.isBlank()) {
+                val authResult = authenticateForTransfer()
+                if (authResult.isSuccess) {
+                    token = authResult.getOrDefault("")
+                } else {
+                    isUploading = false
+                    Toast.makeText(
+                        context,
+                        authResult.exceptionOrNull()?.message ?: "PC eşleştirmesi doğrulanamadı",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@launch
+                }
+            }
+
+            var result = apiClient.uploadFile(
+                context = context,
+                host = host,
+                port = port,
+                uri = uri,
+                token = token,
+                onProgress = { progress -> uploadProgress = progress }
             )
+
+            // A PC may have been reinstalled or had its local token revoked.
+            // Refresh once and retry so a connected cloud controller can still
+            // use the local Wi-Fi transfer channel without manual re-pairing.
+            if (result.isFailure && result.exceptionOrNull()?.message?.contains("401") == true) {
+                val authResult = authenticateForTransfer()
+                if (authResult.isSuccess) {
+                    token = authResult.getOrDefault("")
+                    result = apiClient.uploadFile(
+                        context = context,
+                        host = host,
+                        port = port,
+                        uri = uri,
+                        token = token,
+                        onProgress = { progress -> uploadProgress = progress }
+                    )
+                }
+            }
+
             isUploading = false
             if (result.isSuccess) {
                 val item = result.getOrNull()

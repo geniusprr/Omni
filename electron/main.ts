@@ -12,8 +12,12 @@ import { WindowManager } from './WindowManager.js'
 import { runBrowserLifecycleSmoke } from './browser-smoke.js'
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
+const isBrowserSmokeTest = process.env.KAPANIS_SMOKE_TEST === '1'
 
-if (!app.requestSingleInstanceLock()) {
+// The smoke runner always uses an isolated profile. It must be able to start
+// beside a user's running app so the lifecycle and visual checks cannot turn
+// into a false success merely because the normal single-instance lock won.
+if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   let windows: WindowManager
@@ -73,14 +77,16 @@ if (!app.requestSingleInstanceLock()) {
         localSend.broadcastNotification(notif)
       },
     })
-    localSend.start()
-    alarms.start()
-    notifications.start()
-    system.restoreTimer()
+    if (!isBrowserSmokeTest) {
+      localSend.start()
+      alarms.start()
+      notifications.start()
+      system.restoreTimer()
+    }
     registerIpc(mainWindow.webContents)
     mainWindow.webContents.once('did-finish-load', () => windows.finishSplash())
     mainWindow.on('closed', () => { if (!quitting) app.quit() })
-    if (process.env.KAPANIS_SMOKE_TEST === '1') {
+    if (isBrowserSmokeTest) {
       const startSmoke = () => {
         void runBrowserLifecycleSmoke(browser, mainWindow, process.env.KAPANIS_SMOKE_URL || 'http://127.0.0.1:4179')
           .then(() => app.quit())
@@ -136,6 +142,8 @@ if (!app.requestSingleInstanceLock()) {
     handle('window:show', () => windows.showMain())
     handle('open-external', (payload) => windows.openExternal(readString(payload, 'url')))
     handle('launch-program', (payload) => windows.launchProgram(readString(payload, 'path')))
+    handle('programs:list', (payload) => windows.listPrograms(Boolean(readObject(payload).refresh)))
+    handle('programs:pick', () => windows.pickProgram())
 
     handle('system:get-timer-status', () => system.getTimerStatus())
     handle('system:schedule-shutdown', (payload) => system.scheduleShutdown(readTimerAction(payload), readNumber(payload, 'seconds')))
@@ -154,7 +162,10 @@ if (!app.requestSingleInstanceLock()) {
     handle('media:get-current', () => browser.currentMedia())
     handle('media:control', (payload) => browser.controlCurrentMedia(readString(payload, 'action') as 'toggle-play-pause' | 'next' | 'previous'))
 
-    handle('browser:create-tab', (payload) => browser.createTab(readString(payload, 'id'), readString(payload, 'url'), readBounds(readObject(payload).bounds)))
+    handle('browser:create-tab', (payload) => {
+      const obj = readObject(payload)
+      return browser.createTab(readString(payload, 'id'), readString(payload, 'url'), readBounds(obj.bounds), { incognito: Boolean(obj.incognito) })
+    })
     handle('browser:activate-tab', (payload) => browser.activateTab(readString(payload, 'id'), Boolean(readObject(payload).visible)))
     handle('browser:close-tab', (payload) => browser.closeTab(readString(payload, 'id')))
     handle('browser:navigate', (payload) => browser.navigate(readString(payload, 'id'), readString(payload, 'url')))

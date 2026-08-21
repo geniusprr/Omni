@@ -11,6 +11,7 @@ export interface BrowserTab {
   error: string | null
   pinned?: boolean
   muted?: boolean
+  incognito?: boolean
 }
 
 export interface BrowserState { tabs: BrowserTab[]; activeTabId: string | null; mediaByTabId: Record<string, BrowserMediaState> }
@@ -20,6 +21,7 @@ export interface NativeRestoreTask { tabId: string; url: string }
 export type NativeNavigationAction = 'create' | 'navigate'
 
 export const EMPTY_BROWSER_STATE: BrowserState = { tabs: [], activeTabId: null, mediaByTabId: {} }
+export const DEFAULT_BROWSER_HOME_URL = 'https://www.google.com/'
 
 export function validateTabId(id: string): boolean { return /^[A-Za-z0-9_-]{1,64}$/.test(id) }
 export function migrateBrowserState(raw: unknown, activeId: string | null): BrowserState {
@@ -30,19 +32,28 @@ export function migrateBrowserState(raw: unknown, activeId: string | null): Brow
     if (!value || typeof value !== 'object') return []
     const item = value as Partial<BrowserTab>
     if (typeof item.id !== 'string' || !validateTabId(item.id)) return []
-    const url = item.url === null ? null : typeof item.url === 'string' && /^https?:\/\//i.test(item.url) ? item.url : null
+    const url = item.url === null
+      ? DEFAULT_BROWSER_HOME_URL
+      : typeof item.url === 'string' && /^https?:\/\//i.test(item.url)
+        ? item.url
+        : null
     if (item.url !== null && url === null) return []
-    return [{ id: item.id, url, title: typeof item.title === 'string' && item.title.trim() ? item.title : url ? hostname(url) : 'Yeni Sekme', favicon: typeof item.favicon === 'string' && /^(?:https?:\/\/|data:image\/)/i.test(item.favicon) ? item.favicon : url ? faviconForUrl(url) : null, loading: false, canGoBack: false, canGoForward: false, error: null, pinned: item.pinned === true, muted: item.muted === true }]
+    return [{ id: item.id, url, title: typeof item.title === 'string' && item.title.trim() ? item.title : url ? hostname(url) : 'Yeni Sekme', favicon: typeof item.favicon === 'string' && /^(?:https?:\/\/|data:image\/)/i.test(item.favicon) ? item.favicon : url ? faviconForUrl(url) : null, loading: false, canGoBack: false, canGoForward: false, error: null, pinned: item.pinned === true, muted: item.muted === true, incognito: item.incognito === true }]
   }).slice(0, 20) : []
   return { tabs, activeTabId: persistedActiveId && tabs.some((tab) => tab.id === persistedActiveId) ? persistedActiveId : tabs[0]?.id ?? null, mediaByTabId: {} }
 }
-export function serializeBrowserState(state: BrowserState): { tabs: BrowserTab[]; activeTabId: string | null } { return { tabs: state.tabs, activeTabId: state.activeTabId } }
-export function makeTab(url: string | null = null): BrowserTab {
-  return { id: crypto.randomUUID().replace(/-/g, ''), url, title: url ? hostname(url) : 'Yeni Sekme', favicon: url ? faviconForUrl(url) : null, loading: false, canGoBack: false, canGoForward: false, error: null, pinned: false, muted: false }
+export function serializeBrowserState(state: BrowserState): { tabs: BrowserTab[]; activeTabId: string | null } {
+  const nonIncognitoTabs = state.tabs.filter((tab) => !tab.incognito)
+  const activeTabId = state.activeTabId && nonIncognitoTabs.some((tab) => tab.id === state.activeTabId) ? state.activeTabId : nonIncognitoTabs[0]?.id ?? null
+  return { tabs: nonIncognitoTabs, activeTabId }
+}
+export function makeTab(url: string | null = DEFAULT_BROWSER_HOME_URL, incognito = false): BrowserTab {
+  const initialUrl = url || DEFAULT_BROWSER_HOME_URL
+  return { id: crypto.randomUUID().replace(/-/g, ''), url: initialUrl, title: hostname(initialUrl), favicon: faviconForUrl(initialUrl), loading: false, canGoBack: false, canGoForward: false, error: null, pinned: false, muted: false, incognito }
 }
 export function hostname(url: string) { try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url } }
 export function faviconForUrl(url: string) { try { const parsed = new URL(url); return `https://${parsed.host}/favicon.ico` } catch { return null } }
-export function applyProjection(tab: BrowserTab, projection: BrowserTabProjection): BrowserTab { return { ...tab, url: projection.url, title: projection.title || tab.title, favicon: projection.favicon || faviconForUrl(projection.url), loading: projection.loading, canGoBack: projection.canGoBack, canGoForward: projection.canGoForward, error: projection.error, pinned: projection.pinned, muted: projection.muted } }
+export function applyProjection(tab: BrowserTab, projection: BrowserTabProjection): BrowserTab { return { ...tab, url: projection.url, title: projection.title || tab.title, favicon: projection.favicon || faviconForUrl(projection.url), loading: projection.loading, canGoBack: projection.canGoBack, canGoForward: projection.canGoForward, error: projection.error, pinned: projection.pinned, muted: projection.muted, incognito: projection.incognito ?? tab.incognito } }
 /** Applies the authoritative projection returned by a native command or event. */
 export function applyTabProjectionState(state: BrowserState, projection: BrowserTabProjection): BrowserState {
   return { ...state, tabs: state.tabs.map((tab) => tab.id === projection.id ? applyProjection(tab, projection) : tab) }
@@ -54,6 +65,28 @@ export function closeTabState(state: BrowserState, id: string): BrowserState {
   const activeTabId = state.activeTabId === id ? (tabs[index]?.id ?? tabs[index - 1]?.id ?? null) : state.activeTabId
   const { [id]: _closedMedia, ...mediaByTabId } = state.mediaByTabId
   return { tabs, activeTabId, mediaByTabId }
+}
+export function closeOtherTabsState(state: BrowserState, keepId: string): BrowserState {
+  const keepTab = state.tabs.find((tab) => tab.id === keepId)
+  if (!keepTab) return state
+  const remainingTabs = state.tabs.filter((tab) => tab.id === keepId || tab.pinned)
+  const mediaByTabId: Record<string, BrowserMediaState> = {}
+  for (const tab of remainingTabs) {
+    if (state.mediaByTabId[tab.id]) mediaByTabId[tab.id] = state.mediaByTabId[tab.id]
+  }
+  return { tabs: remainingTabs, activeTabId: keepId, mediaByTabId }
+}
+export function closeTabsToTheRightState(state: BrowserState, targetId: string): BrowserState {
+  const index = state.tabs.findIndex((tab) => tab.id === targetId)
+  if (index < 0) return state
+  const remainingTabs = state.tabs.filter((tab, i) => i <= index || tab.pinned)
+  const activeTabStillExists = remainingTabs.some((tab) => tab.id === state.activeTabId)
+  const activeTabId = activeTabStillExists ? state.activeTabId : targetId
+  const mediaByTabId: Record<string, BrowserMediaState> = {}
+  for (const tab of remainingTabs) {
+    if (state.mediaByTabId[tab.id]) mediaByTabId[tab.id] = state.mediaByTabId[tab.id]
+  }
+  return { tabs: remainingTabs, activeTabId, mediaByTabId }
 }
 export function openTabState(state: BrowserState, tab: BrowserTab): BrowserState {
   return { ...state, tabs: [...state.tabs, tab], activeTabId: tab.id }
@@ -70,7 +103,7 @@ export function nativeViewAction(state: BrowserState): NativeViewAction {
 export function nativeRestoreTasks(state: BrowserState): NativeRestoreTask[] {
   const seen = new Set<string>()
   return state.tabs.flatMap((tab) => {
-    if (!tab.url || seen.has(tab.id)) return []
+    if (!tab.url || seen.has(tab.id) || tab.incognito) return []
     seen.add(tab.id)
     return [{ tabId: tab.id, url: tab.url }]
   })

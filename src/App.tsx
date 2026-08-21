@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import Minus from 'lucide-react/dist/esm/icons/minus.js'
+import Square from 'lucide-react/dist/esm/icons/square.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
 import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
 import { PairingModal } from '@/components/PairingModal'
@@ -155,12 +158,10 @@ export default function App() {
     && !ringingAlarm
 
   useEffect(() => {
-    if (!browserSurfaceVisible) void desktop.browser.setVisible(false).catch(() => undefined)
-    const restoreOnFocus = () => {
-      if (browserSurfaceVisible) void desktop.browser.setVisible(true).catch(() => undefined)
-    }
-    window.addEventListener('focus', restoreOnFocus)
-    return () => window.removeEventListener('focus', restoreOnFocus)
+    // BrowserPage owns the active native child and its measured bounds. The app
+    // shell only tears native children down when another full-screen surface
+    // takes over; restoring on window focus could otherwise reveal a stale tab.
+    if (!browserSurfaceVisible) void desktop.browser.deactivate().catch(() => undefined)
   }, [browserSurfaceVisible])
 
   // Start Remote Engine with Supabase heartbeat and command listener
@@ -299,9 +300,29 @@ export default function App() {
     } else if (lower.startsWith('/paylas') || lower.startsWith('paylaş')) {
       setMode('localsend')
     } else {
-      requestBrowserNavigation(cmd)
       setMode('browser')
+      requestBrowserNavigation(cmd)
     }
+  }
+
+  function renderHomeDashboard() {
+    return (
+      <MiniOsDashboard
+        onNavigate={(targetMode: MiniOsMode) => setMode(targetMode)}
+        timer={timer}
+        now={now}
+        onSchedulePower={schedulePower}
+        onCancelPower={cancelPower}
+        deviceName={settings?.deviceName || 'Windows PC'}
+        pairingCode={settings?.pairingCode || 'KAP-XXXX'}
+        connectionStatus={connectionStatus}
+        pairedControllers={pairedControllers}
+        onRefreshControllers={refreshControllers}
+        onOpenPairingModal={() => setPairingModalOpen(true)}
+        isCustomizeOpen={isCustomizeWidgetsOpen}
+        onToggleCustomizeOpen={setIsCustomizeWidgetsOpen}
+      />
+    )
   }
 
   if (isRemoteView) {
@@ -312,9 +333,55 @@ export default function App() {
     <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'}`}>
       {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
       <div className="minios-wallpaper-backdrop" />
+      {/* Top-Right Fixed Minimalist Window Controls */}
+      <div className="window-control-strip window-control-strip--top-right">
+        <TooltipProvider delayDuration={400}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="window-control-button window-control-button--minimize"
+                onClick={() => void desktop.window.minimize()}
+                aria-label="Küçült"
+              >
+                <Minus size={13} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Küçült</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="window-control-button window-control-button--maximize"
+                onClick={() => void desktop.window.toggleMaximize()}
+                aria-label="Ekranı Kapla"
+              >
+                <Square size={11} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Ekranı Kapla</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="window-control-button window-control-button--close"
+                onClick={() => void desktop.window.close()}
+                aria-label="Kapat"
+              >
+                <X size={13} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Kapat</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
 
       {/* Main Mini-OS Shell Layout */}
-      <div className="minios-shell">
+      <div className={`minios-shell ${mode === 'browser' ? 'minios-shell--browser' : ''}`}>
         {/* Left Floating Vertical Dock */}
         <MiniOsDock
           activeMode={mode}
@@ -336,23 +403,7 @@ export default function App() {
 
           {/* Central Working Screen / Widgets Area */}
           <main className={`minios-viewport ${mode === 'notes' ? 'minios-viewport--notes' : ''}`}>
-            {mode === 'home' && (
-              <MiniOsDashboard
-                onNavigate={(targetMode: MiniOsMode) => setMode(targetMode)}
-                timer={timer}
-                now={now}
-                onSchedulePower={schedulePower}
-                onCancelPower={cancelPower}
-                deviceName={settings?.deviceName || 'Windows PC'}
-                pairingCode={settings?.pairingCode || 'KAP-XXXX'}
-                connectionStatus={connectionStatus}
-                pairedControllers={pairedControllers}
-                onRefreshControllers={refreshControllers}
-                onOpenPairingModal={() => setPairingModalOpen(true)}
-                isCustomizeOpen={isCustomizeWidgetsOpen}
-                onToggleCustomizeOpen={setIsCustomizeWidgetsOpen}
-              />
-            )}
+            {mode === 'home' && renderHomeDashboard()}
 
             {mode === 'power' && (
               <div className="minios-subscreen">
@@ -415,7 +466,7 @@ export default function App() {
               <BrowserPage
                 isVisible={browserSurfaceVisible}
                 theme={themeMode}
-                chromeMode={mode === 'browser' ? 'browser' : mode === 'home' ? 'home' : undefined}
+                emptyTabContent={renderHomeDashboard()}
                 onEnterBrowser={() => setMode('browser')}
                 onNoTabs={() => setMode('home')}
                 onExecuteCommand={handleExecuteCommand}

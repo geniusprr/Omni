@@ -124,19 +124,23 @@ fun PairingDetailsModal(
         if (isConnecting) return
         isConnecting = true
         scope.launch {
-            val res = apiClient.ping(host, port)
+            val token = prefs.getLocalAuthToken(host)
+            val res = apiClient.ping(host, port, token)
             isConnecting = false
             if (res.isSuccess) {
                 val status = res.getOrNull()
                 val devName = status?.deviceName ?: "Windows PC"
+                val devId = status?.deviceId.orEmpty().ifEmpty { "local-$host" }
                 val wifi = NetworkUtils.getCurrentWifiName(context)
                 val item = PairedDeviceItem(
-                    id = "$host:$port",
+                    id = devId,
                     name = devName,
                     host = host,
                     port = port,
                     mode = ConnectionMode.LOCAL,
                     wifiSsid = wifi,
+                    localIps = listOf(host),
+                    localAuthToken = token,
                     lastConnectedAt = System.currentTimeMillis(),
                     isOnline = true
                 )

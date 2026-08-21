@@ -8,6 +8,9 @@ enum class ConnectionMode {
 data class ServerStatus(
     val status: String = "",
     val deviceName: String = "",
+    val deviceId: String = "",
+    val pairingCode: String = "",
+    val authenticated: Boolean = false,
     val version: String = "",
     val port: Int = 53317,
     val timerState: RemoteTimerState? = null,
@@ -17,6 +20,9 @@ data class ServerStatus(
 data class LocalDeviceState(
     val status: String = "ok",
     val deviceName: String = "Windows PC",
+    val deviceId: String = "",
+    val pairingCode: String = "",
+    val authenticated: Boolean = false,
     val version: String = "2.0",
     val port: Int = 53317,
     val timerState: RemoteTimerState? = null,
@@ -117,3 +123,20 @@ data class RemoteTimerState(
     val durationSeconds: Long = 0L
 )
 
+data class RemoteTerminalStatus(
+    val available: Boolean = false,
+    val isElevated: Boolean = false,
+    val requiresElevation: Boolean = true,
+    val timeoutSeconds: Int = 30,
+    val maxCommandLength: Int = 4096
+)
+
+data class TerminalCommandResult(
+    val success: Boolean = false,
+    val exitCode: Int? = null,
+    val stdout: String = "",
+    val stderr: String = "",
+    val timedOut: Boolean = false,
+    val truncated: Boolean = false,
+    val error: String = ""
+)

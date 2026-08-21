@@ -1,14 +1,24 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   Menu,
   nativeImage,
   shell,
   Tray,
   type BrowserWindowConstructorOptions,
 } from 'electron'
+import { execFile } from 'node:child_process'
+import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import type { ProgramCandidate } from '../shared/contracts.js'
+
+const execFileAsync = promisify(execFile)
+const PROGRAM_EXTENSIONS = new Set(['.exe', '.com', '.lnk'])
+const PROGRAM_INDEX_TTL_MS = 15 * 60 * 1_000
+const PROGRAM_INDEX_LIMIT = 400
 
 function isHttpUrl(value: string) {
   try {
@@ -26,6 +36,7 @@ export class WindowManager {
   private tray: Tray | null = null
   private allowClose = false
   private rendererUrl: string | null = null
+  private programIndex: { createdAt: number; items: ProgramCandidate[] } | null = null
   private readonly preloadPath: string
 
   constructor(preloadPath: string) {
@@ -210,12 +221,56 @@ export class WindowManager {
     if (!path.isAbsolute(input)) throw new Error('Program yolu tam dosya yolu olmalı.')
     const resolved = path.resolve(input)
     if (!await fileExists(resolved)) throw new Error('Program dosyası bulunamadı.')
-    const extension = path.extname(resolved).toLowerCase()
-    if (process.platform === 'win32' && !['.exe', '.com', '.lnk'].includes(extension)) {
+    if (process.platform === 'win32' && !isProgramPath(resolved)) {
       throw new Error('Windows hızlı erişimi .exe, .com veya .lnk dosyalarını destekler.')
     }
     const error = await shell.openPath(resolved)
     if (error) throw new Error(error)
+  }
+
+  async listPrograms(refresh = false): Promise<ProgramCandidate[]> {
+    if (process.platform !== 'win32') return []
+
+    const now = Date.now()
+    if (!refresh && this.programIndex && now - this.programIndex.createdAt < PROGRAM_INDEX_TTL_MS) {
+      return this.programIndex.items
+    }
+
+    const [startMenuPrograms, appPathPrograms] = await Promise.all([
+      listStartMenuPrograms(),
+      listAppPathPrograms(),
+    ])
+    const items = uniquePrograms([...startMenuPrograms, ...appPathPrograms])
+    this.programIndex = { createdAt: now, items }
+    return items
+  }
+
+  async pickProgram(): Promise<ProgramCandidate | null> {
+    if (process.platform !== 'win32') return null
+
+    const options = {
+      title: 'Hızlı erişime program ekle',
+      buttonLabel: 'Programı seç',
+      properties: ['openFile'] as Array<'openFile'>,
+      filters: [{ name: 'Programlar', extensions: ['exe', 'com', 'lnk'] }],
+    }
+    const window = this.getMainWindow()
+    const result = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options)
+    const selectedPath = result.filePaths[0]
+    if (result.canceled || !selectedPath) return null
+
+    const resolved = path.resolve(selectedPath)
+    if (!isProgramPath(resolved) || !await fileExists(resolved)) {
+      throw new Error('Seçilen dosya desteklenen bir Windows programı değil.')
+    }
+
+    return {
+      name: programLabel(resolved),
+      path: resolved,
+      source: 'manual',
+    }
   }
 
   configureTray(onQuit: () => void) {
@@ -253,6 +308,122 @@ async function fileExists(value: string) {
   } catch {
     return false
   }
+}
+
+function isProgramPath(value: string) {
+  return PROGRAM_EXTENSIONS.has(path.extname(value).toLowerCase())
+}
+
+function programLabel(value: string) {
+  const name = path.basename(value, path.extname(value)).replace(/[._-]+/g, ' ').trim()
+  return name || 'Program'
+}
+
+async function listStartMenuPrograms(): Promise<ProgramCandidate[]> {
+  const roots = [
+    path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    process.env.ProgramData
+      ? path.join(process.env.ProgramData, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+      : null,
+  ].filter((root): root is string => Boolean(root))
+
+  const candidates: ProgramCandidate[] = []
+  for (const root of new Set(roots)) {
+    await scanStartMenuDirectory(root, candidates)
+    if (candidates.length >= PROGRAM_INDEX_LIMIT) break
+  }
+  return candidates
+}
+
+async function scanStartMenuDirectory(directory: string, candidates: ProgramCandidate[], depth = 0): Promise<void> {
+  if (depth > 4 || candidates.length >= PROGRAM_INDEX_LIMIT) return
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
+
+  for (const entry of entries) {
+    if (candidates.length >= PROGRAM_INDEX_LIMIT) return
+    const entryPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      await scanStartMenuDirectory(entryPath, candidates, depth + 1)
+      continue
+    }
+    if (!entry.isFile() || !isProgramPath(entry.name)) continue
+    candidates.push({
+      name: programLabel(entry.name),
+      path: entryPath,
+      source: 'start-menu',
+    })
+  }
+}
+
+async function listAppPathPrograms(): Promise<ProgramCandidate[]> {
+  const roots = [
+    'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths',
+    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths',
+  ]
+  const outputs = await Promise.all(roots.map(async (root) => {
+    try {
+      const { stdout } = await execFileAsync('reg.exe', ['query', root, '/s', '/ve'], {
+        windowsHide: true,
+        timeout: 8_000,
+        maxBuffer: 2 * 1024 * 1024,
+      })
+      return String(stdout)
+    } catch {
+      return ''
+    }
+  }))
+
+  const candidates: ProgramCandidate[] = []
+  for (const output of outputs) {
+    let currentKey = ''
+    for (const line of output.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (trimmed.startsWith('HKEY_')) {
+        currentKey = trimmed
+        continue
+      }
+      const match = trimmed.match(/^\(Default\)\s+REG_\w+\s+(.+)$/i)
+      if (!match) continue
+      const candidatePath = extractProgramPath(match[1])
+      if (!candidatePath || !isProgramPath(candidatePath) || !await fileExists(candidatePath)) continue
+      candidates.push({
+        name: programLabel(currentKey || candidatePath),
+        path: candidatePath,
+        source: 'app-paths',
+      })
+      if (candidates.length >= PROGRAM_INDEX_LIMIT) return candidates
+    }
+  }
+  return candidates
+}
+
+function extractProgramPath(value: string) {
+  const trimmed = value.trim()
+  const quoted = trimmed.match(/^"([^"\r\n]+\.(?:exe|com|lnk))"/i)
+  if (quoted) return quoted[1]
+  const unquoted = trimmed.match(/^(.+?\.(?:exe|com|lnk))(?:\s|$)/i)
+  return unquoted?.[1]?.trim() || null
+}
+
+function uniquePrograms(candidates: ProgramCandidate[]) {
+  const seenPaths = new Set<string>()
+  return candidates
+    .filter((candidate) => {
+      const key = path.normalize(candidate.path).toLocaleLowerCase('tr-TR')
+      if (seenPaths.has(key)) return false
+      seenPaths.add(key)
+      return true
+    })
+    .sort((left, right) => {
+      const sourceOrder = programSourceOrder(left.source) - programSourceOrder(right.source)
+      return sourceOrder || left.name.localeCompare(right.name, 'tr-TR', { sensitivity: 'base' })
+    })
+    .slice(0, PROGRAM_INDEX_LIMIT)
+}
+
+function programSourceOrder(source: ProgramCandidate['source']) {
+  return source === 'start-menu' ? 0 : source === 'app-paths' ? 1 : 2
 }
 
 function pathToSplashFile(rendererUrl: string) {

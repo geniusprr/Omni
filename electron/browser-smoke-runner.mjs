@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
@@ -10,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
 const port = 4179
 const icon = encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#60a5fa"/></svg>')
-const smokePage = `<!doctype html><html><head><meta charset="utf-8"><title>kapanış smoke</title><link rel="icon" href="data:image/svg+xml,${icon}"></head><body><main>kapanış browser lifecycle smoke test</main></body></html>`
+const smokePage = `<!doctype html><html><head><meta charset="utf-8"><title>kapanış smoke</title><link rel="icon" href="data:image/svg+xml,${icon}"><style>html,body{width:100%;height:100%;margin:0;background:#1968d9;color:white;font:16px system-ui}main{padding:32px}</style></head><body><main>kapanış browser lifecycle smoke test</main></body></html>`
 
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || '/', 'http://127.0.0.1')
@@ -42,17 +43,23 @@ const server = createServer(async (request, response) => {
 })
 
 await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve))
-const electronBinary = require('electron')
-const child = spawn(electronBinary, ['.', '--no-sandbox', '--disable-gpu', '--autoplay-policy=no-user-gesture-required'], {
-  cwd: root,
-  stdio: 'inherit',
-  env: { ...process.env, ELECTRON_START_URL: `http://127.0.0.1:${port}/`, KAPANIS_SMOKE_TEST: '1', KAPANIS_SMOKE_URL: `http://127.0.0.1:${port}` },
-})
+const profileDir = await mkdtemp(path.join(os.tmpdir(), 'kapanis-browser-smoke-'))
+try {
+  const electronBinary = require('electron')
+  const child = spawn(electronBinary, ['.', `--user-data-dir=${profileDir}`, '--no-sandbox', '--disable-gpu', '--autoplay-policy=no-user-gesture-required'], {
+    cwd: root,
+    stdio: 'inherit',
+    env: { ...process.env, ELECTRON_START_URL: `http://127.0.0.1:${port}/`, KAPANIS_SMOKE_TEST: '1', KAPANIS_SMOKE_URL: `http://127.0.0.1:${port}` },
+  })
 
-const result = await new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })))
-await new Promise((resolve) => server.close(resolve))
-if (result.code !== 0) throw new Error(`Electron browser smoke testi başarısız: ${result.code ?? result.signal}`)
-console.log('[browser-smoke-runner] başarılı')
+  const result = await new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })))
+  if (result.code !== 0) throw new Error(`Electron browser smoke testi başarısız: ${result.code ?? result.signal}`)
+  console.log('[browser-smoke-runner] başarılı')
+} finally {
+  server.closeAllConnections?.()
+  await new Promise((resolve) => server.close(resolve))
+  await rm(profileDir, { recursive: true, force: true })
+}
 
 function contentType(filePath) {
   const extension = path.extname(filePath).toLowerCase()

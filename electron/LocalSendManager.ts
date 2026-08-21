@@ -14,6 +14,7 @@ import type { SystemManager } from './SystemManager.js'
 interface UploadFile { id: string; fileName: string; size: number; fileType?: string }
 interface UploadSession { sender: LocalSendDevice; files: Record<string, UploadFile>; tokens: Record<string, string>; createdAt: number }
 interface MobileHooks { system: SystemManager; alarms: AlarmManager; content: ContentManager; emit: (event: string, payload: unknown) => void }
+interface PairingAttempt { failures: number; windowStartedAt: number; lockedUntil: number }
 
 export class LocalSendManager {
   readonly port = 53317
@@ -30,9 +31,12 @@ export class LocalSendManager {
   private receivedFiles: ReceivedFileRecord[] = []
   private sessions = new Map<string, UploadSession>()
   private server: http.Server | null = null
+  private udpServer: dgram.Socket | null = null
   private autoAccept = true
   private activeSseClients = new Set<http.ServerResponse>()
   private recentNotifications: MirroredNotification[] = []
+  private readonly pairingAttempts = new Map<string, PairingAttempt>()
+  private terminalRunning = false
 
   constructor(dataDir: string, emitDevice: (device: LocalSendDevice) => void, emitFile: (file: ReceivedFileRecord) => void, mobile: MobileHooks) {
     this.dataDir = dataDir
@@ -71,6 +75,26 @@ export class LocalSendManager {
     return Boolean(token && this.authorizedTokens.has(token))
   }
 
+  private getPairingRetryAfterSeconds(senderIp: string) {
+    const attempt = this.pairingAttempts.get(senderIp)
+    if (!attempt) return 0
+    const now = Date.now()
+    if (attempt.lockedUntil > now) return Math.ceil((attempt.lockedUntil - now) / 1_000)
+    if (attempt.lockedUntil > 0 || now - attempt.windowStartedAt > 5 * 60_000) this.pairingAttempts.delete(senderIp)
+    return 0
+  }
+
+  private recordPairingFailure(senderIp: string) {
+    const now = Date.now()
+    const previous = this.pairingAttempts.get(senderIp)
+    const attempt = !previous || now - previous.windowStartedAt > 5 * 60_000
+      ? { failures: 0, windowStartedAt: now, lockedUntil: 0 }
+      : previous
+    attempt.failures += 1
+    if (attempt.failures >= 5) attempt.lockedUntil = now + 60_000
+    this.pairingAttempts.set(senderIp, attempt)
+  }
+
   broadcastNotification(notification: MirroredNotification) {
     this.recentNotifications = [notification, ...this.recentNotifications].slice(0, 50)
     const payload = `data: ${JSON.stringify(notification)}\n\n`
@@ -99,22 +123,59 @@ export class LocalSendManager {
       console.error(`[localsend] server failed${code ? ` (${code})` : ''}`, error)
     })
     server.listen(this.port, '0.0.0.0', () => console.info('[localsend] listening on ' + this.port))
+
+    // Start UDP discovery responder
+    try {
+      const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+      udp.on('message', (msg, rinfo) => {
+        try {
+          const text = msg.toString('utf8')
+          const data = JSON.parse(text)
+          if (data && (data.type === 'kapanis-discovery-probe' || data.type === 'kapanis-localsend-discovery')) {
+            const settings = this.mobile.system.getSettings()
+            const device = this.deviceInfo()
+            const response = Buffer.from(
+              JSON.stringify({
+                type: 'kapanis-discovery-response',
+                deviceId: settings?.deviceId,
+                deviceName: settings?.deviceName || os.hostname() || 'Windows PC',
+                port: this.port,
+                ips: localIps(),
+                version: '2.0.0',
+                device,
+              })
+            )
+            udp.send(response, rinfo.port, rinfo.address)
+          }
+        } catch {}
+      })
+      udp.on('error', () => {
+        try { udp.close() } catch {}
+      })
+      udp.bind(this.port, '0.0.0.0', () => {
+        try { udp.setBroadcast(true) } catch {}
+      })
+      this.udpServer = udp
+    } catch {}
   }
 
   stop() {
     this.server?.close()
     this.server = null
+    try { this.udpServer?.close() } catch {}
+    this.udpServer = null
   }
 
   getStatus(): LocalSendStatus {
     const ips = localIps()
+    const device = this.deviceInfo()
     return {
       isRunning: Boolean(this.server),
       localIp: ips[0] || '127.0.0.1',
       allIps: ips,
       port: this.port,
-      alias: os.hostname() || 'Kapanış Desktop',
-      fingerprint: 'kapanis-electron',
+      alias: device.alias,
+      fingerprint: device.fingerprint,
       autoAccept: this.autoAccept,
       downloadDir: this.downloadDir,
       discoveredCount: this.devices.size,
@@ -130,9 +191,40 @@ export class LocalSendManager {
     const socket = dgram.createSocket('udp4')
     const message = Buffer.from(JSON.stringify({ type: 'kapanis-localsend-discovery', device: this.deviceInfo() }))
     await new Promise<void>((resolve) => {
-      socket.once('error', () => { socket.close(); resolve() })
-      socket.bind(() => {
-        try { socket.setBroadcast(true); socket.send(message, this.port, '255.255.255.255', () => { socket.close(); resolve() }) } catch { socket.close(); resolve() }
+      let finished = false
+      let timeout: NodeJS.Timeout | null = null
+      const finish = () => {
+        if (finished) return
+        finished = true
+        if (timeout) clearTimeout(timeout)
+        try { socket.close() } catch {}
+        resolve()
+      }
+      socket.once('error', finish)
+      socket.on('message', (payload, rinfo) => {
+        try {
+          const response = JSON.parse(payload.toString('utf8')) as { type?: string; device?: unknown; port?: unknown }
+          if (response.type !== 'kapanis-discovery-response' && response.type !== 'kapanis-localsend-discovery-response') return
+          const info = response.device || response
+          const item = info && typeof info === 'object' ? info as { port?: unknown; fingerprint?: unknown } : {}
+          if (item.fingerprint === this.deviceInfo().fingerprint) return
+          const candidatePort = typeof item.port === 'number' ? item.port : typeof response.port === 'number' ? response.port : this.port
+          const port = Number.isInteger(candidatePort) && candidatePort > 0 && candidatePort <= 65_535 ? candidatePort : this.port
+          this.saveDevice(this.normalizeDevice(info, rinfo.address.replace(/^::ffff:/, ''), port, 'http'))
+        } catch {}
+      })
+      socket.bind(0, '0.0.0.0', () => {
+        try {
+          socket.setBroadcast(true)
+          const destinations = new Set(['255.255.255.255', ...localIps().map((ip) => {
+            const parts = ip.split('.')
+            return parts.length === 4 ? parts.slice(0, 3).concat('255').join('.') : ip
+          })])
+          for (const destination of destinations) socket.send(message, this.port, destination)
+          timeout = setTimeout(finish, 1_500)
+        } catch {
+          finish()
+        }
       })
     })
   }
@@ -198,7 +290,7 @@ export class LocalSendManager {
     const url = new URL(request.url || '/', 'http://' + (request.headers.host || 'localhost'))
     response.setHeader('Access-Control-Allow-Origin', '*')
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
     if (request.method === 'OPTIONS') { response.statusCode = 204; response.end(); return }
     const senderIp = request.socket.remoteAddress?.replace(/^::ffff:/, '') || 'unknown'
 
@@ -210,12 +302,24 @@ export class LocalSendManager {
     }
 
     if (request.method === 'POST' && url.pathname === '/api/auth/pair') {
+      if (!isPrivateLanAddress(senderIp)) {
+        response.statusCode = 403
+        sendJson(response, { success: false, error: 'Eşleştirme yalnızca aynı özel yerel ağdan yapılabilir.' })
+        return
+      }
+      const retryAfterSeconds = this.getPairingRetryAfterSeconds(senderIp)
+      if (retryAfterSeconds > 0) {
+        response.statusCode = 429
+        sendJson(response, { success: false, error: `Çok fazla hatalı eşleştirme denemesi. ${retryAfterSeconds} saniye sonra tekrar deneyin.` })
+        return
+      }
       const body = await readJson(request)
       const inputCode = String(body?.pairingCode || body?.code || '').trim().toUpperCase()
       const settings = this.mobile.system.getSettings()
       const validCode = settings?.pairingCode?.trim().toUpperCase() || ''
       const validSecret = settings?.pairingSecret?.trim().toUpperCase() || ''
       if (inputCode && (inputCode === validCode || inputCode === validSecret)) {
+        this.pairingAttempts.delete(senderIp)
         const token = 'loc_' + randomUUID().replace(/-/g, '')
         this.authorizedTokens.add(token)
         this.saveAuthTokens()
@@ -231,6 +335,7 @@ export class LocalSendManager {
         })
         return
       }
+      this.recordPairingFailure(senderIp)
       response.statusCode = 401
       sendJson(response, { success: false, error: 'Hatalı eşleştirme kodu! Lütfen bilgisayar ekranındaki kodu kontrol edin.' })
       return
@@ -244,6 +349,8 @@ export class LocalSendManager {
         authenticated: isAuth,
         deviceName: settings?.deviceName || os.hostname() || 'Kapanış Desktop',
         deviceId: settings?.deviceId,
+        // Pairing credentials must never be part of an unauthenticated discovery response.
+        pairingCode: isAuth ? settings?.pairingCode : undefined,
         version: '2.0.0',
         port: this.port,
         timerState: isAuth ? this.mobile.system.getTimerStatus() : null,
@@ -264,6 +371,8 @@ export class LocalSendManager {
       '/api/notes/create',
       '/api/clipboard',
       '/api/notify',
+      '/api/terminal/status',
+      '/api/terminal/execute',
     ]
     if (protectedPaths.includes(url.pathname)) {
       if (!this.isAuthorized(request, url)) {
@@ -315,7 +424,17 @@ export class LocalSendManager {
       const body = await readJson(request)
       const device = this.normalizeDevice(body, senderIp, Number(body?.port) || this.port, 'http')
       this.saveDevice(device)
-      sendJson(response, { status: 'ok', deviceName: os.hostname() || 'Kapanış Desktop', version: '2.0.0', port: this.port, timerState: this.mobile.system.getTimerStatus(), alarms: this.mobile.alarms.list(), device: this.deviceInfo() })
+      const settings = this.mobile.system.getSettings()
+      sendJson(response, {
+        status: 'ok',
+        deviceName: settings?.deviceName || os.hostname() || 'Kapanış Desktop',
+        deviceId: settings?.deviceId,
+        version: '2.0.0',
+        port: this.port,
+        timerState: this.mobile.system.getTimerStatus(),
+        alarms: this.mobile.alarms.list(),
+        device: this.deviceInfo(),
+      })
       return
     }
     if (request.method === 'POST' && url.pathname === '/api/command') {
@@ -329,6 +448,47 @@ export class LocalSendManager {
       } catch { success = false }
       if (success) this.mobile.emit('remote:command', { command, delaySeconds })
       sendJson(response, { success, timerState: this.mobile.system.getTimerStatus() })
+      return
+    }
+    if (request.method === 'GET' && url.pathname === '/api/terminal/status') {
+      const isElevated = await this.mobile.system.isRunningAsAdministrator()
+      sendJson(response, {
+        success: true,
+        available: true,
+        isElevated,
+        requiresElevation: !isElevated,
+        timeoutSeconds: 30,
+        maxCommandLength: 4_096,
+      })
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/terminal/execute') {
+      if (!isPrivateLanAddress(senderIp)) {
+        response.statusCode = 403
+        sendJson(response, { success: false, error: 'Yönetici CMD yalnızca aynı özel yerel ağdan kullanılabilir.' })
+        return
+      }
+      if (this.terminalRunning) {
+        response.statusCode = 409
+        sendJson(response, { success: false, error: 'Başka bir CMD komutu hâlâ çalışıyor. Tamamlanmasını bekleyin.' })
+        return
+      }
+
+      const body = await readJson(request)
+      const command = typeof body?.command === 'string' ? body.command : ''
+      this.terminalRunning = true
+      try {
+        const result = await this.mobile.system.executeElevatedCmd(command)
+        console.info(`[local-terminal] completed from ${senderIp}; exit=${result.exitCode ?? 'n/a'}; timeout=${result.timedOut}`)
+        sendJson(response, { success: true, ...result })
+      } catch (error) {
+        const typed = error as Error & { code?: string }
+        const requiresElevation = typed.code === 'ELEVATION_REQUIRED'
+        response.statusCode = requiresElevation ? 403 : 400
+        sendJson(response, { success: false, error: typed.message || 'CMD komutu çalıştırılamadı.', requiresElevation })
+      } finally {
+        this.terminalRunning = false
+      }
       return
     }
     if (request.method === 'GET' && url.pathname === '/api/alarms') {
@@ -444,14 +604,15 @@ export class LocalSendManager {
   }
 
   private deviceInfo(): LocalSendDevice {
+    const settings = this.mobile.system.getSettings()
     return {
       ip: localIps()[0] || '127.0.0.1',
       port: this.port,
-      alias: os.hostname() || 'Kapanış Desktop',
+      alias: settings?.deviceName || os.hostname() || 'Kapanış Desktop',
       version: '1.0',
       deviceModel: 'Electron',
       deviceType: 'desktop',
-      fingerprint: 'kapanis-electron',
+      fingerprint: settings?.deviceId || 'kapanis-electron',
       protocol: 'http',
       download: true,
       lastSeen: Date.now(),
@@ -540,7 +701,42 @@ export class LocalSendManager {
 }
 
 function localIps() {
-  return Object.values(os.networkInterfaces()).flatMap((items) => (items || []).filter((item) => item.family === 'IPv4' && !item.internal).map((item) => item.address))
+  return Object.entries(os.networkInterfaces())
+    .flatMap(([name, items]) => (items || [])
+      .filter((item) => item.family === 'IPv4' && !item.internal)
+      .map((item) => ({ address: item.address, name })))
+    .sort((a, b) => localIpPriority(a.name, a.address) - localIpPriority(b.name, b.address))
+    .map((item) => item.address)
+}
+
+function localIpPriority(interfaceName: string, address: string) {
+  const [first = 0, second = 0] = address.split('.').map((part) => Number(part))
+  const name = interfaceName.toLowerCase()
+  const likelyVirtual = /virtual|vmware|vbox|docker|wsl|hyper-v|tailscale|zerotier/.test(name)
+  const likelyLan = /wi-?fi|wlan|wireless|ethernet|local area/.test(name)
+  let priority = 50
+  if (first === 192 && second === 168) priority = 0
+  else if (first === 10) priority = 5
+  else if (first === 172 && second >= 16 && second <= 31) priority = 10
+  else if (first === 169 && second === 254) priority = 100
+  if (likelyVirtual) priority += 30
+  if (likelyLan) priority -= 5
+  return priority
+}
+
+function isPrivateLanAddress(rawAddress: string) {
+  const address = rawAddress.split('%')[0].toLowerCase()
+  if (address === '::1') return true
+  if (address.startsWith('fc') || address.startsWith('fd') || address.startsWith('fe80:')) return true
+
+  const octets = address.split('.').map((value) => Number(value))
+  if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) return false
+  const [first, second] = octets
+  return first === 10
+    || first === 127
+    || first === 169 && second === 254
+    || first === 172 && second >= 16 && second <= 31
+    || first === 192 && second === 168
 }
 
 function sanitizeFilename(value: string) { return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim() || 'file-' + Date.now() }
@@ -828,6 +1024,23 @@ function renderCompanionHtml(deviceName: string, port: number): string {
     let searchQuery = '';
 
     function checkAuth() {
+      const params = new URLSearchParams(window.location.search);
+      const pairData = params.get('pair_data');
+      if (pairData) {
+        try {
+          let raw = pairData.trim().replace(/-/g, '+').replace(/_/g, '/');
+          while (raw.length % 4) raw += '=';
+          const decoded = decodeURIComponent(escape(atob(raw)));
+          const obj = JSON.parse(decoded);
+          if (obj && (obj.code || obj.secret)) {
+            const pinEl = document.getElementById('pin-input');
+            if (pinEl && !pinEl.value) {
+              pinEl.value = (obj.code || obj.secret).toUpperCase();
+            }
+          }
+        } catch {}
+      }
+
       if (!authToken) {
         document.getElementById('auth-view').style.display = 'flex';
         document.getElementById('app-view').style.display = 'none';
@@ -1115,4 +1328,3 @@ function renderCompanionHtml(deviceName: string, port: number): string {
 </body>
 </html>`
 }
-

@@ -68,15 +68,15 @@ export class BrowserManager {
     this.downloads.attach(browserSession, (webContents) => this.tabIdFor(webContents), (item) => this.send(BROWSER_EVENTS.downloadUpdated, item))
   }
 
-  createTab(id: string, url: string, bounds: BrowserBounds) {
-    const projection = this.tabs.create(id, url, bounds)
+  createTab(id: string, url: string, bounds: BrowserBounds, options?: { incognito?: boolean }) {
+    const projection = this.tabs.create(id, url, bounds, options)
     this.media.register(id, this.tabs.get(id)?.webContents as WebContents)
     return projection
   }
 
   activateTab(id: string, visible: boolean) {
-    this.tabs.activate(id, visible)
     this.activeId = id
+    this.tabs.activate(id, visible)
   }
 
   async closeTab(id: string) {
@@ -192,6 +192,7 @@ export class BrowserManager {
 
   private onProjection(projection: BrowserTabProjection) {
     this.send(BROWSER_EVENTS.tabUpdated, projection)
+    if (projection.incognito) return
     const snapshot = this.sessions.getSnapshot()
     const tab = snapshot.tabs.find((item) => item.id === projection.id)
     const nextTabs = tab
@@ -213,6 +214,7 @@ export class BrowserManager {
     this.media.unregister(projection.id)
     this.permissions.cancelForTab(projection.id)
     this.send(BROWSER_EVENTS.tabDestroyed, projection)
+    if (projection.incognito) return
     const snapshot = this.sessions.getSnapshot()
     this.sessions.saveSnapshot({
       tabs: snapshot.tabs.filter((tab) => tab.id !== projection.id),

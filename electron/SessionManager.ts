@@ -76,6 +76,7 @@ export class SessionManager {
   private state: PersistedBrowserState
   private flushTimer: NodeJS.Timeout | null = null
   private browserSession: Session | null = null
+  private incognitoSession: Session | null = null
 
   constructor() {
     this.dataDir = path.join(app.getPath('userData'), 'state')
@@ -89,8 +90,17 @@ export class SessionManager {
   getBrowserSession(): Session {
     if (!this.browserSession) {
       this.browserSession = session.fromPartition('persist:kapanis-browser')
+      this.browserSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
     }
     return this.browserSession
+  }
+
+  getIncognitoSession(): Session {
+    if (!this.incognitoSession) {
+      this.incognitoSession = session.fromPartition('kapanis-incognito', { cache: false })
+      this.incognitoSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
+    }
+    return this.incognitoSession
   }
 
   getSnapshot(): BrowserSessionSnapshot {
@@ -102,7 +112,7 @@ export class SessionManager {
 
   saveSnapshot(snapshot: BrowserSessionSnapshot) {
     const tabs = snapshot.tabs
-      .filter((tab) => /^[A-Za-z0-9_-]{1,64}$/.test(tab.id))
+      .filter((tab) => !tab.incognito && /^[A-Za-z0-9_-]{1,64}$/.test(tab.id))
       .slice(0, MAX_SESSION_TABS)
       .map((tab) => ({
         id: tab.id,

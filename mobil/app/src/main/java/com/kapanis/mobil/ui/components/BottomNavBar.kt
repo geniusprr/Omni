@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.FolderShared
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +39,7 @@ import com.kapanis.mobil.ui.theme.KapanisTheme
 
 enum class NavTab(val title: String, val icon: ImageVector) {
     HOME("Anasayfa", Icons.Rounded.Home),
+    TERMINAL("CMD", Icons.Rounded.Terminal),
     NOTIFY("Bildirimler", Icons.Rounded.Notifications),
     TRANSFER("Dosyalar", Icons.Rounded.FolderShared),
     NOTES("Notlar", Icons.Rounded.Description),
@@ -109,7 +111,7 @@ fun BottomNavBar(
 
                             Text(
                                 text = tab.title,
-                                fontSize = 11.sp,
+                                fontSize = if (NavTab.entries.size > 5) 9.sp else 11.sp,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = if (isSelected) colors.textPrimary else colors.textMuted,
                                 maxLines = 1

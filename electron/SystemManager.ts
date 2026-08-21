@@ -8,12 +8,23 @@ import type { AppSettings, TimerAction, TimerState } from '../src/types.js'
 
 const execFileAsync = promisify(execFile)
 const MAX_TIMER_SECONDS = 315_360_000
+const MAX_TERMINAL_COMMAND_LENGTH = 4_096
+const MAX_TERMINAL_OUTPUT_LENGTH = 64 * 1_024
+
+export interface ElevatedCommandResult {
+  stdout: string
+  stderr: string
+  exitCode: number | null
+  timedOut: boolean
+  truncated: boolean
+}
 
 export class SystemManager {
   private readonly dataDir: string
   private readonly timerPath: string
   private readonly settingsPath: string
   private timer: TimerState | null
+  private elevated: boolean | null = null
 
   constructor(dataDir: string) {
     this.dataDir = dataDir
@@ -62,6 +73,86 @@ export class SystemManager {
 
   async getInfo() {
     return { hostname: os.hostname() || 'Windows PC', os: process.platform === 'win32' ? 'Windows' : os.platform(), platform: process.platform }
+  }
+
+  /**
+   * The local mobile terminal deliberately inherits the desktop process token.
+   * It never tries to bypass UAC: the desktop app must have been launched with
+   * "Run as administrator" for remotely sent commands to be accepted.
+   */
+  async isRunningAsAdministrator() {
+    if (process.platform !== 'win32') return false
+    if (this.elevated !== null) return this.elevated
+
+    try {
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent()); if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { '1' } else { '0' }",
+        ],
+        { windowsHide: true, timeout: 3_000, maxBuffer: 1_024 },
+      )
+      this.elevated = stdout.trim() === '1'
+    } catch {
+      this.elevated = false
+    }
+
+    return this.elevated
+  }
+
+  async executeElevatedCmd(command: string): Promise<ElevatedCommandResult> {
+    if (process.platform !== 'win32') throw new Error('CMD komutları yalnızca Windows üzerinde çalışır.')
+
+    const normalized = command.trim()
+    if (!normalized) throw new Error('Komut boş olamaz.')
+    if (normalized.length > MAX_TERMINAL_COMMAND_LENGTH) throw new Error(`Komut en fazla ${MAX_TERMINAL_COMMAND_LENGTH} karakter olabilir.`)
+    if (normalized.includes('\u0000')) throw new Error('Komut geçersiz bir karakter içeriyor.')
+    if (!await this.isRunningAsAdministrator()) {
+      const error = new Error('Yönetici CMD oturumu için bilgisayardaki kapanış. uygulamasını "Yönetici olarak çalıştır" ile yeniden açın.')
+      ;(error as Error & { code?: string }).code = 'ELEVATION_REQUIRED'
+      throw error
+    }
+
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        'cmd.exe',
+        ['/d', '/s', '/c', normalized],
+        {
+          windowsHide: true,
+          timeout: 30_000,
+          maxBuffer: MAX_TERMINAL_OUTPUT_LENGTH * 2,
+        },
+      )
+      const clipped = clipTerminalOutput(stdout, stderr)
+      return { ...clipped, exitCode: 0, timedOut: false }
+    } catch (error) {
+      const typed = error as {
+        code?: number | string
+        killed?: boolean
+        stdout?: string
+        stderr?: string
+        message?: string
+      }
+      const clipped = clipTerminalOutput(typed.stdout || '', typed.stderr || '')
+      const timedOut = typed.code === 'ETIMEDOUT' || typed.killed === true
+      const exitCode = typeof typed.code === 'number' ? typed.code : null
+      const fallback = timedOut
+        ? 'Komut 30 saniye içinde tamamlanmadığı için durduruldu.'
+        : exitCode === null
+          ? 'CMD başlatılamadı.'
+          : `Komut ${exitCode} çıkış koduyla tamamlandı.`
+
+      return {
+        stdout: clipped.stdout,
+        stderr: clipped.stderr || fallback,
+        exitCode,
+        timedOut,
+        truncated: clipped.truncated,
+      }
+    }
   }
 
   getSettings(): AppSettings | null {
@@ -121,3 +212,15 @@ export class SystemManager {
   }
 }
 
+function clipTerminalOutput(stdout: string, stderr: string) {
+  const combinedLength = stdout.length + stderr.length
+  if (combinedLength <= MAX_TERMINAL_OUTPUT_LENGTH) return { stdout, stderr, truncated: false }
+
+  const stdoutLimit = Math.min(stdout.length, Math.floor(MAX_TERMINAL_OUTPUT_LENGTH * 0.75))
+  const stderrLimit = Math.max(0, MAX_TERMINAL_OUTPUT_LENGTH - stdoutLimit)
+  return {
+    stdout: stdout.slice(0, stdoutLimit),
+    stderr: stderr.slice(0, stderrLimit),
+    truncated: true,
+  }
+}

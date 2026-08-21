@@ -70,9 +70,12 @@ export function PairingModal({
       })()
     : ''
 
-  // Build Local Pairing URL
+  // Build Local Pairing URL & QR Payload
   const localPrimaryIp = localIps.length > 0 ? localIps[0] : 'localhost'
   const localCompanionUrl = `http://${localPrimaryIp}:53317`
+  const localQrTarget = settings
+    ? `http://${localPrimaryIp}:53317/?pair_data=${encodeURIComponent(createPairingPayload(settings, localIps))}`
+    : localCompanionUrl
 
   // Generate High-Contrast Crisp QR Codes (Optimized for Phone Cameras)
   useEffect(() => {
@@ -90,8 +93,8 @@ export function PairingModal({
       }).then(setCloudQrUrl).catch(() => undefined)
     }
 
-    if (localCompanionUrl) {
-      void QRCode.toDataURL(localCompanionUrl, {
+    if (localQrTarget) {
+      void QRCode.toDataURL(localQrTarget, {
         margin: 2,
         width: 280,
         errorCorrectionLevel: 'M',
@@ -101,7 +104,7 @@ export function PairingModal({
         },
       }).then(setLocalQrUrl).catch(() => undefined)
     }
-  }, [isOpen, cloudRemoteUrl, localCompanionUrl])
+  }, [isOpen, cloudRemoteUrl, localQrTarget])
 
   if (!isOpen || !settings) return null
 

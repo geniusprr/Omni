@@ -1,18 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react'
+import AppWindow from 'lucide-react/dist/esm/icons/app-window.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
+import CircleCheck from 'lucide-react/dist/esm/icons/circle-check.js'
 import Clock3 from 'lucide-react/dist/esm/icons/clock-3.js'
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
+import FolderOpen from 'lucide-react/dist/esm/icons/folder-open.js'
 import GripHorizontal from 'lucide-react/dist/esm/icons/grip-horizontal.js'
 import Laptop from 'lucide-react/dist/esm/icons/laptop.js'
 import Link2 from 'lucide-react/dist/esm/icons/link-2.js'
+import LoaderCircle from 'lucide-react/dist/esm/icons/loader-circle.js'
 import MonitorUp from 'lucide-react/dist/esm/icons/monitor-up.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import Power from 'lucide-react/dist/esm/icons/power.js'
 import QrCode from 'lucide-react/dist/esm/icons/qr-code.js'
 import Quote from 'lucide-react/dist/esm/icons/quote.js'
 import Radio from 'lucide-react/dist/esm/icons/radio.js'
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
+import Search from 'lucide-react/dist/esm/icons/search.js'
 import Send from 'lucide-react/dist/esm/icons/send.js'
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js'
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
@@ -26,7 +32,7 @@ import {
   type BrowserShortcutKind,
 } from '@/features/browser/browserData'
 import { tabStore } from '@/features/notes/stores/tabStore'
-import { desktop } from '@/lib/desktop'
+import { desktop, type ProgramCandidate } from '@/lib/desktop'
 import { durationLabel, targetLabel } from '@/lib/format'
 import type {
   PairedController,
@@ -108,6 +114,10 @@ interface DragState {
   isDraggingActive: boolean
 }
 
+function normalizeProgramTarget(target: string) {
+  return target.trim().replace(/\//g, '\\').toLocaleLowerCase('tr-TR')
+}
+
 export function DraggableWidgetGrid({
   layout,
   onUpdateLayout,
@@ -141,21 +151,39 @@ export function DraggableWidgetGrid({
 
   const columnsRef = useRef<(HTMLDivElement | null)[]>([])
   const widgetRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const quickAccessDialogRef = useRef<HTMLDialogElement>(null)
 
   // Local widget states
   const [showAddTodo, setShowAddTodo] = useState(false)
   const [newTodoText, setNewTodoText] = useState('')
   const [powerAction, setPowerAction] = useState<TimerAction>('shutdown')
   const [quickAccessEditorOpen, setQuickAccessEditorOpen] = useState(false)
-  const [shortcutKind, setShortcutKind] = useState<BrowserShortcutKind>('website')
+  const [shortcutKind, setShortcutKind] = useState<BrowserShortcutKind>('program')
   const [shortcutName, setShortcutName] = useState('')
   const [shortcutTarget, setShortcutTarget] = useState('')
   const [shortcutError, setShortcutError] = useState<string | null>(null)
+  const [shortcutNotice, setShortcutNotice] = useState<string | null>(null)
+  const [programCandidates, setProgramCandidates] = useState<ProgramCandidate[]>([])
+  const [programSearch, setProgramSearch] = useState('')
+  const [programsLoaded, setProgramsLoaded] = useState(false)
+  const [programsLoading, setProgramsLoading] = useState(false)
+  const [programPickerBusy, setProgramPickerBusy] = useState(false)
   const [quoteIndex, setQuoteIndex] = useState(() => new Date().getDate() % QUOTES.length)
 
   const hiddenSet = new Set(layout.hiddenWidgets)
   const remainingSeconds = timer ? Math.max(0, Math.ceil((timer.targetAt - now) / 1000)) : 0
   const completedCount = todos.filter((t) => t.completed).length
+  const addedProgramTargets = new Set(
+    quickAccessApps
+      .filter((item) => item.kind === 'program')
+      .map((item) => normalizeProgramTarget(item.target)),
+  )
+  const normalizedProgramSearch = programSearch.trim().toLocaleLowerCase('tr-TR')
+  const matchingPrograms = programCandidates.filter((program) => {
+    if (!normalizedProgramSearch) return true
+    return `${program.name} ${program.path}`.toLocaleLowerCase('tr-TR').includes(normalizedProgramSearch)
+  })
+  const visiblePrograms = matchingPrograms.slice(0, 80)
 
   function handleOpenUrl(url: string) {
     requestBrowserNavigation(url)
@@ -174,38 +202,131 @@ export function DraggableWidgetGrid({
     })))
   }
 
-  function handleShortcutSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    const name = shortcutName.trim()
-    const target = shortcutTarget.trim()
-    if (!name || !target) return
-    if (shortcutKind === 'program' && !/^(?:[a-zA-Z]:\\|\\\\)/.test(target)) {
-      setShortcutError('Program için C:\\... ile başlayan tam dosya yolunu girin.')
+  function openQuickAccessEditor(kind: BrowserShortcutKind = 'program') {
+    setShortcutKind(kind)
+    setShortcutError(null)
+    setShortcutNotice(null)
+    setQuickAccessEditorOpen(true)
+  }
+
+  function closeQuickAccessEditor() {
+    const dialog = quickAccessDialogRef.current
+    if (dialog?.open) dialog.close()
+    setQuickAccessEditorOpen(false)
+    setShortcutError(null)
+    setShortcutNotice(null)
+  }
+
+  function changeShortcutKind(kind: BrowserShortcutKind) {
+    setShortcutKind(kind)
+    setShortcutError(null)
+    setShortcutNotice(null)
+  }
+
+  async function loadPrograms(refresh = false) {
+    setProgramsLoading(true)
+    setShortcutError(null)
+    try {
+      setProgramCandidates(await desktop.programs.list(refresh))
+      setProgramsLoaded(true)
+    } catch (cause) {
+      setShortcutError(cause instanceof Error ? cause.message : 'Program listesi alınamadı.')
+    } finally {
+      setProgramsLoading(false)
+    }
+  }
+
+  function addProgramShortcut(program: ProgramCandidate) {
+    if (addedProgramTargets.has(normalizeProgramTarget(program.path))) {
+      setShortcutNotice(null)
+      setShortcutError(`${program.name} zaten hızlı erişimde.`)
       return
     }
     const next = [...quickAccessApps, {
       id: crypto.randomUUID(),
+      name: program.name,
+      kind: 'program' as const,
+      target: program.path,
+      bg: 'var(--color-program)',
+      iconText: program.name.slice(0, 2).toUpperCase(),
+    }].slice(-11)
+    persistQuickAccess(next)
+    setShortcutError(null)
+    setShortcutNotice(`${program.name} hızlı erişime eklendi.`)
+  }
+
+  async function handleProgramFilePick() {
+    setProgramPickerBusy(true)
+    setShortcutError(null)
+    try {
+      const program = await desktop.programs.pick()
+      if (program) addProgramShortcut(program)
+    } catch (cause) {
+      setShortcutNotice(null)
+      setShortcutError(cause instanceof Error ? cause.message : 'Program seçilemedi.')
+    } finally {
+      setProgramPickerBusy(false)
+    }
+  }
+
+  function handleShortcutSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (shortcutKind !== 'website') return
+    const name = shortcutName.trim()
+    const target = shortcutTarget.trim()
+    if (!name || !target) return
+    const next = [...quickAccessApps, {
+      id: crypto.randomUUID(),
       name,
-      kind: shortcutKind,
+      kind: 'website' as const,
       target,
-      bg: shortcutKind === 'program' ? 'var(--color-program)' : 'var(--color-browser-blue)',
+      bg: 'var(--color-browser-blue)',
       iconText: name.slice(0, 2).toUpperCase(),
     }].slice(-11)
     persistQuickAccess(next)
     setShortcutName('')
     setShortcutTarget('')
     setShortcutError(null)
+    setShortcutNotice(`${name} hızlı erişime eklendi.`)
   }
 
   function openShortcut(item: QuickAppItem) {
     if (item.kind === 'program') {
       void desktop.programs.launch(item.target).catch((cause) => {
+        openQuickAccessEditor('program')
         setShortcutError(cause instanceof Error ? cause.message : 'Program başlatılamadı.')
-        setQuickAccessEditorOpen(true)
       })
       return
     }
     handleOpenUrl(item.target)
+  }
+
+  useEffect(() => {
+    const dialog = quickAccessDialogRef.current
+    if (!dialog) return
+    if (quickAccessEditorOpen && !dialog.open) dialog.showModal()
+    if (!quickAccessEditorOpen && dialog.open) dialog.close()
+  }, [quickAccessEditorOpen])
+
+  useEffect(() => {
+    if (!quickAccessEditorOpen || shortcutKind !== 'program' || programsLoaded) return
+    void loadPrograms()
+  }, [quickAccessEditorOpen, shortcutKind, programsLoaded])
+
+  function handleQuickAccessDialogClose() {
+    setQuickAccessEditorOpen(false)
+    setShortcutError(null)
+    setShortcutNotice(null)
+  }
+
+  function handleQuickAccessDialogBackdrop(event: React.MouseEvent<HTMLDialogElement>) {
+    if (event.target !== event.currentTarget) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const clickedBackdrop = event.clientX < bounds.left
+      || event.clientX > bounds.right
+      || event.clientY < bounds.top
+      || event.clientY > bounds.bottom
+    if (clickedBackdrop) closeQuickAccessEditor()
   }
 
   function handleTodoSubmit(e: React.FormEvent) {
@@ -408,7 +529,8 @@ export function DraggableWidgetGrid({
 
             <div className="bookmarks-rows-group">
               {bookmarks.map((bm) => (
-                <div
+                <button
+                  type="button"
                   key={bm.name}
                   className="bookmark-item-row"
                   onClick={() => handleOpenUrl(bm.url)}
@@ -419,7 +541,7 @@ export function DraggableWidgetGrid({
                   <span className="bm-site-name">{bm.name}</span>
                   <span className="bm-site-domain">{bm.domain}</span>
                   <ChevronRight size={12} className="bm-chevron" />
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -485,7 +607,7 @@ export function DraggableWidgetGrid({
                 <button
                   type="button"
                   className="card-pill-btn"
-                  onClick={() => setQuickAccessEditorOpen(true)}
+                  onClick={() => openQuickAccessEditor()}
                 >
                   Düzenle
                 </button>
@@ -502,7 +624,8 @@ export function DraggableWidgetGrid({
 
             <div className="quick-access-8grid">
               {quickAccessApps.map((app) => (
-                <div
+                <button
+                  type="button"
                   key={app.id}
                   className="qa-app-tile"
                   onClick={() => openShortcut(app)}
@@ -512,18 +635,19 @@ export function DraggableWidgetGrid({
                     <span>{app.iconText}</span>
                   </div>
                   <span className="qa-app-label">{app.name}</span>
-                </div>
+                </button>
               ))}
 
-              <div
+              <button
+                type="button"
                 className="qa-app-tile qa-app-tile--add"
-                onClick={() => setQuickAccessEditorOpen(true)}
+                onClick={() => openQuickAccessEditor()}
               >
                 <div className="qa-app-squircle qa-app-squircle--dashed">
                   <Plus size={14} />
                 </div>
                 <span className="qa-app-label">Ekle</span>
-              </div>
+              </button>
             </div>
           </div>
         )
@@ -586,7 +710,8 @@ export function DraggableWidgetGrid({
 
             <div className="recent-rows-group">
               {recentList.map((item) => (
-                <div
+                <button
+                  type="button"
                   key={item.id}
                   className="recent-item-row"
                   onClick={() => handleOpenUrl(item.url)}
@@ -597,7 +722,7 @@ export function DraggableWidgetGrid({
                     <span className="recent-page-domain">{item.domain}</span>
                   </div>
                   <span className="recent-time-ago">{item.time}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -974,35 +1099,200 @@ export function DraggableWidgetGrid({
         </div>
       )}
 
-      {quickAccessEditorOpen ? (
-        <div className="quick-access-editor-backdrop" onClick={() => setQuickAccessEditorOpen(false)}>
-          <form className="quick-access-editor" onSubmit={handleShortcutSubmit} onClick={(event) => event.stopPropagation()}>
-            <div className="quick-access-editor__head">
-              <div><h2>Hızlı erişimi düzenle</h2><p>Web sitelerini tarayıcıda aç veya yerel bir program başlat.</p></div>
-              <button type="button" onClick={() => setQuickAccessEditorOpen(false)} aria-label="Kapat"><X size={14} /></button>
+      <dialog
+        ref={quickAccessDialogRef}
+        className="quick-access-editor"
+        aria-labelledby="quick-access-editor-title"
+        onCancel={(event) => {
+          event.preventDefault()
+          closeQuickAccessEditor()
+        }}
+        onClose={handleQuickAccessDialogClose}
+        onClick={handleQuickAccessDialogBackdrop}
+      >
+        <form className="quick-access-editor__content" onSubmit={handleShortcutSubmit}>
+          <div className="quick-access-editor__head">
+            <div>
+              <h2 id="quick-access-editor-title">Hızlı erişime ekle</h2>
+              <p>{shortcutKind === 'program'
+                ? 'Bilgisayarındaki uygulamayı seç; kısayol otomatik eklenir.'
+                : 'Tarayıcıda açmak istediğin web sitesini ekle.'}</p>
             </div>
-            <div className="quick-access-editor__type" role="group" aria-label="Kısayol türü">
-              <button type="button" className={shortcutKind === 'website' ? 'is-active' : ''} onClick={() => { setShortcutKind('website'); setShortcutError(null) }}><Link2 size={14} /> Web sitesi</button>
-              <button type="button" className={shortcutKind === 'program' ? 'is-active' : ''} onClick={() => { setShortcutKind('program'); setShortcutError(null) }}><MonitorUp size={14} /> Program</button>
+            <button type="button" className="quick-access-editor__close" onClick={closeQuickAccessEditor} aria-label="Kapat">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="quick-access-editor__type" role="tablist" aria-label="Kısayol türü">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={shortcutKind === 'program'}
+              className={shortcutKind === 'program' ? 'is-active' : ''}
+              onClick={() => changeShortcutKind('program')}
+            >
+              <MonitorUp size={15} /> Program
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={shortcutKind === 'website'}
+              className={shortcutKind === 'website' ? 'is-active' : ''}
+              onClick={() => changeShortcutKind('website')}
+            >
+              <Link2 size={15} /> Web sitesi
+            </button>
+          </div>
+
+          <div className="quick-access-editor__body">
+            {shortcutKind === 'program' ? (
+              <section className="quick-access-program-picker" aria-labelledby="quick-access-program-picker-title">
+                <div className="quick-access-program-picker__search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    autoFocus
+                    value={programSearch}
+                    onChange={(event) => setProgramSearch(event.target.value)}
+                    placeholder="Programlarda ara"
+                    aria-label="Programlarda ara"
+                  />
+                </div>
+
+                <div className="quick-access-program-picker__meta">
+                  <p id="quick-access-program-picker-title" aria-live="polite">
+                    {programsLoading
+                      ? 'Programlar aranıyor…'
+                      : matchingPrograms.length === 0
+                        ? 'Program bulunamadı'
+                        : `${matchingPrograms.length} program bulundu`}
+                  </p>
+                  <button
+                    type="button"
+                    className="quick-access-program-picker__refresh"
+                    onClick={() => void loadPrograms(true)}
+                    disabled={programsLoading || !desktop.isElectron()}
+                    aria-label="Program listesini yenile"
+                    title="Listeyi yenile"
+                  >
+                    <RefreshCw size={14} className={programsLoading ? 'is-spinning' : undefined} />
+                  </button>
+                </div>
+
+                <div className="quick-access-program-picker__list" aria-busy={programsLoading}>
+                  {programsLoading ? (
+                    <div className="quick-access-program-picker__empty" role="status">
+                      <LoaderCircle size={18} className="is-spinning" aria-hidden="true" />
+                      <p>Yüklü uygulamalar hazırlanıyor.</p>
+                    </div>
+                  ) : visiblePrograms.length > 0 ? (
+                    visiblePrograms.map((program) => {
+                      const alreadyAdded = addedProgramTargets.has(normalizeProgramTarget(program.path))
+                      return (
+                        <button
+                          key={`${program.source}:${program.path}`}
+                          type="button"
+                          className="quick-access-program-picker__item"
+                          data-state={alreadyAdded ? 'success' : undefined}
+                          disabled={alreadyAdded}
+                          onClick={() => addProgramShortcut(program)}
+                          title={program.path}
+                          aria-label={alreadyAdded ? `${program.name} zaten hızlı erişimde` : `${program.name} ekle`}
+                        >
+                          <span className="quick-access-program-picker__icon" aria-hidden="true">{program.name.slice(0, 2).toUpperCase()}</span>
+                          <span className="quick-access-program-picker__details">
+                            <strong>{program.name}</strong>
+                            <small>{programSourceLabel(program.source)}</small>
+                          </span>
+                          {alreadyAdded ? <CircleCheck size={17} aria-label="Eklendi" /> : <Plus size={17} aria-hidden="true" />}
+                        </button>
+                      )
+                    })
+                  ) : (
+                    <div className="quick-access-program-picker__empty">
+                      <AppWindow size={20} aria-hidden="true" />
+                      <strong>{desktop.isElectron() ? 'Aramana uyan program yok.' : 'Program listesi masaüstü uygulamasında görünür.'}</strong>
+                      <p>Listede yoksa aşağıdan kendin seçebilirsin.</p>
+                    </div>
+                  )}
+                </div>
+
+                {matchingPrograms.length > visiblePrograms.length ? (
+                  <p className="quick-access-program-picker__limit">İlk 80 sonuç gösteriliyor. Aramayla daraltabilirsin.</p>
+                ) : null}
+
+                <div className="quick-access-program-picker__fallback">
+                  <div>
+                    <strong>Listede yok mu?</strong>
+                    <p>Program dosyasını kendin seç.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleProgramFilePick()}
+                    disabled={programPickerBusy || !desktop.isElectron()}
+                  >
+                    {programPickerBusy ? <LoaderCircle size={15} className="is-spinning" aria-hidden="true" /> : <FolderOpen size={15} aria-hidden="true" />}
+                    {programPickerBusy ? 'Seçiliyor' : 'Dosyadan seç'}
+                  </button>
+                </div>
+              </section>
+            ) : (
+              <section className="quick-access-editor__website-fields" aria-label="Web sitesi ekle">
+                <label>
+                  Ad
+                  <input
+                    autoFocus
+                    value={shortcutName}
+                    onChange={(event) => setShortcutName(event.target.value)}
+                    placeholder="GitHub"
+                    required
+                  />
+                </label>
+                <label>
+                  Web adresi
+                  <input
+                    value={shortcutTarget}
+                    onChange={(event) => setShortcutTarget(event.target.value)}
+                    placeholder="github.com"
+                    required
+                  />
+                </label>
+              </section>
+            )}
+          </div>
+
+          {shortcutError ? <p className="quick-access-editor__error" role="alert">{shortcutError}</p> : null}
+          {shortcutNotice ? <p className="quick-access-editor__notice" role="status">{shortcutNotice}</p> : null}
+
+          <section className="quick-access-editor__saved" aria-labelledby="quick-access-saved-title">
+            <div className="quick-access-editor__section-head">
+              <h3 id="quick-access-saved-title">Ekli kısayollar</h3>
+              <span>{quickAccessApps.length}/11</span>
             </div>
-            <label>Ad<input value={shortcutName} onChange={(event) => setShortcutName(event.target.value)} placeholder={shortcutKind === 'program' ? 'Visual Studio Code' : 'GitHub'} required /></label>
-            <label>{shortcutKind === 'program' ? 'Program yolu' : 'Web adresi'}<input value={shortcutTarget} onChange={(event) => setShortcutTarget(event.target.value)} placeholder={shortcutKind === 'program' ? 'C:\\Program Files\\...\\program.exe' : 'github.com'} required /></label>
-            {shortcutError ? <p className="quick-access-editor__error" role="alert">{shortcutError}</p> : null}
             <div className="quick-access-editor__list">
               {quickAccessApps.map((item) => (
                 <div key={item.id}>
                   <span className="quick-access-editor__item-icon">{item.kind === 'program' ? <MonitorUp size={13} /> : <Link2 size={13} />}</span>
                   <span><strong>{item.name}</strong><small>{item.target}</small></span>
-                  <button type="button" onClick={() => persistQuickAccess(quickAccessApps.filter((entry) => entry.id !== item.id))} aria-label={`${item.name} kısayolunu sil`}><Trash2 size={13} /></button>
+                  <button type="button" onClick={() => persistQuickAccess(quickAccessApps.filter((entry) => entry.id !== item.id))} aria-label={`${item.name} kısayolunu sil`}><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
-            <div className="quick-access-editor__actions"><button type="button" onClick={() => setQuickAccessEditorOpen(false)}>Bitti</button><button type="submit">Kısayol ekle</button></div>
-          </form>
-        </div>
-      ) : null}
+          </section>
+
+          <div className="quick-access-editor__actions">
+            <button type="button" onClick={closeQuickAccessEditor}>Kapat</button>
+            {shortcutKind === 'website' ? <button type="submit" className="is-primary">Web sitesi ekle</button> : null}
+          </div>
+        </form>
+      </dialog>
     </div>
   )
+}
+
+function programSourceLabel(source: ProgramCandidate['source']) {
+  if (source === 'start-menu') return 'Başlat menüsü'
+  if (source === 'app-paths') return 'Yüklü uygulama'
+  return 'Dosyadan seçildi'
 }
 
 const QUOTES = [

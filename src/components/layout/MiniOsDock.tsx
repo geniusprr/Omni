@@ -3,11 +3,11 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
+import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
-import Star from 'lucide-react/dist/esm/icons/star.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { RemoteConnectionStatus } from '@/types'
 
@@ -79,19 +79,19 @@ export function MiniOsDock({
             <TooltipContent side="right">Ayarlar</TooltipContent>
           </Tooltip>
 
-          {/* Browser / Bookmarks / Favorites */}
+          {/* Browser */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className={`dock-btn ${activeMode === 'browser' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('browser')}
-                aria-label="Tarayıcı, Favoriler ve Kısayollar"
+                aria-label="Tarayıcı"
               >
-                <Star size={18} strokeWidth={1.8} />
+                <Globe2 size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Tarayıcı & Favoriler</TooltipContent>
+            <TooltipContent side="right">Tarayıcı</TooltipContent>
           </Tooltip>
 
           {/* 3. Clock / Time & Power Management */}

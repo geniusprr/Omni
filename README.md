@@ -68,6 +68,10 @@ Telefon kontrolü varsayılan olarak kapalıdır ve ana uygulamaya ağ yükü ge
 
 ## Güvenlik
 
-Kapatma ve yeniden başlatma komutları Electron main process'inde doğrulanıp doğrudan Windows `shutdown.exe` aracına iletilir. Remote web içerikleri `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true` ile açılır; renderer'a yalnızca allowlist'li typed preload API'si verilir. Supabase komutları cihaz ve kullanıcı sahipliğini Row Level Security ile sınırlar; süresi dolan uzak komutlar çalıştırılmaz. Değişiklikleri yayınlamadan önce `npm test`, `npm run build` ve `npm run dist` çalıştırın.
+Kapatma ve yeniden başlatma komutları Electron main process'inde doğrulanıp doğrudan Windows `shutdown.exe` aracına iletilir. Remote web içerikleri `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true` ile açılır; renderer'a yalnızca allowlist'li typed preload API'si verilir. Supabase komutları cihaz ve kullanıcı sahipliğini Row Level Security ile sınırlar; süresi dolan uzak komutlar çalıştırılmaz.
+
+Android uygulamasındaki **CMD** sekmesi yalnızca eşleştirilmiş cihazdan, aynı özel yerel ağdayken çalışır. Her komut telefonda ayrıca onaylanır, 30 saniye ile sınırlandırılır ve sonucu telefona döner. Komutların yönetici olması için masaüstü uygulamasını Windows'ta **Yönetici olarak çalıştır** ile başlatın; uygulama UAC'yi atlamaya çalışmaz. Eşleştirme PIN'i keşif yanıtlarında paylaşılmaz ve ardışık hatalı PIN denemeleri geçici olarak sınırlandırılır. Yerel portu internete açmayın.
+
+Değişiklikleri yayınlamadan önce `npm test`, `npm run build` ve `npm run dist` çalıştırın.
 
 MIT lisanslıdır.

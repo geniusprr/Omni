@@ -14,6 +14,7 @@ import com.kapanis.mobil.data.ConnectionMode
 import com.kapanis.mobil.data.MirroredNotification
 import com.kapanis.mobil.data.PreferencesManager
 import com.kapanis.mobil.network.KapanisApiClient
+import com.kapanis.mobil.network.MobileTransferServer
 import com.kapanis.mobil.network.SupabaseRemoteClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,8 @@ class KapanisNotificationService : Service() {
     private val seenNotificationIds = LinkedHashSet<String>()
     private var activeSourceKey = ""
     private var isFirstSync = true
+    private var transferServer: MobileTransferServer? = null
+    private var nextPresenceUpdateAt = 0L
 
     companion object {
         const val CHANNEL_SERVICE_ID = "kapanis_service_channel"
@@ -78,6 +81,7 @@ class KapanisNotificationService : Service() {
         // created when the OS allows the service to continue.
         runCatching { createNotificationChannels() }
         runCatching { startForegroundServiceNotification() }
+        transferServer = MobileTransferServer(this, prefs).also { it.start() }
         startNotificationListenerLoop()
     }
 
@@ -89,6 +93,8 @@ class KapanisNotificationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        transferServer?.stop()
+        transferServer = null
         serviceScope.cancel()
     }
 
@@ -167,6 +173,7 @@ class KapanisNotificationService : Service() {
         serviceScope.launch {
             while (isActive) {
                 try {
+                    publishLocalTransferPresence()
                     syncNotificationSources()
                 } catch (e: Exception) {
                     // ignore network blips
@@ -174,6 +181,36 @@ class KapanisNotificationService : Service() {
                 delay(SYNC_INTERVAL_MS)
             }
         }
+    }
+
+    /**
+     * Desktop device cards expire quickly by design. Keep the mobile receiver
+     * fresh while the foreground companion service is alive so it remains a
+     * usable destination for PC-to-phone transfers.
+     */
+    private suspend fun publishLocalTransferPresence() {
+        val now = System.currentTimeMillis()
+        if (now < nextPresenceUpdateAt) return
+        nextPresenceUpdateAt = now + 20_000L
+
+        val pairedLocalDevice = prefs.getPairedDevices().firstOrNull {
+            it.id == prefs.pairedDeviceId &&
+                it.host.isNotBlank() && it.host != "192.168.1.100" &&
+                it.host != "127.0.0.1" && it.host != "localhost"
+        }
+        val host = (pairedLocalDevice?.host ?: prefs.host).trim()
+        val port = pairedLocalDevice?.port ?: prefs.port
+        if (host.isBlank() || host == "192.168.1.100" || port !in 1..65535) return
+        if (transferServer?.isRunning() != true) return
+
+        apiClient.registerDevice(
+            host = host,
+            port = port,
+            alias = prefs.controllerName,
+            model = "Android (" + android.os.Build.MODEL + ")",
+            transferPort = MobileTransferServer.PORT,
+            fingerprint = prefs.controllerId
+        )
     }
 
     private suspend fun syncNotificationSources() {
@@ -207,7 +244,7 @@ class KapanisNotificationService : Service() {
         val port = prefs.port
         if (host.isBlank()) return emptyList()
 
-        val token = prefs.getLocalAuthToken(host)
+        val token = prefs.getLocalAuthToken(prefs.activeDeviceId.ifEmpty { host })
         val res = apiClient.fetchNotifications(host, port, token)
         return res.getOrDefault(emptyList())
     }

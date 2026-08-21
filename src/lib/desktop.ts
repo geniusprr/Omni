@@ -13,11 +13,11 @@ import type {
   TimerState,
   TransferItem,
 } from '@/types'
-import { APP_EVENTS, BROWSER_EVENTS, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
+import { APP_EVENTS, BROWSER_EVENTS, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type ProgramCandidate, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
 import type { VaultFileEntry } from '@/features/notes/types'
 
 export { APP_EVENTS, BROWSER_EVENTS }
-export type { BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, SystemMediaSession, YouTubeMusicState }
+export type { BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, ProgramCandidate, SystemMediaSession, YouTubeMusicState }
 
 type Unsubscribe = () => void
 
@@ -74,7 +74,7 @@ export const desktop = {
     await invoke<void>('open-external', { url })
   },
   browser: {
-    create: (id: string, url: string, bounds: BrowserBounds) => invoke<BrowserTabProjection>('browser:create-tab', { id, url, bounds }),
+    create: (id: string, url: string, bounds: BrowserBounds, options?: { incognito?: boolean }) => invoke<BrowserTabProjection>('browser:create-tab', { id, url, bounds, incognito: options?.incognito }),
     activate: (id: string, visible: boolean) => optionalInvoke<void>('browser:activate-tab', undefined, { id, visible }),
     close: (id: string) => optionalInvoke<boolean>('browser:close-tab', false, { id }),
     navigate: (id: string, url: string) => invoke<void>('browser:navigate', { id, url }),
@@ -120,6 +120,8 @@ export const desktop = {
   },
   programs: {
     launch: (path: string) => invoke<void>('launch-program', { path }),
+    list: (refresh = false) => optionalInvoke<ProgramCandidate[]>('programs:list', [], { refresh }),
+    pick: () => optionalInvoke<ProgramCandidate | null>('programs:pick', null),
   },
   window: {
     minimize: () => optionalInvoke<void>('window:minimize', undefined),

@@ -1,7 +1,7 @@
 import {
+  BrowserView,
   BrowserWindow,
   Menu,
-  WebContentsView,
   type WebContents,
 } from 'electron'
 import type {
@@ -12,7 +12,14 @@ import { SessionManager } from './SessionManager.js'
 
 interface TabRecord {
   id: string
-  view: WebContentsView
+  /**
+   * BrowserView is intentionally used as the Windows presentation surface.
+   * In the affected Electron runtime, a WebContentsView can load and expose
+   * accessibility content without being composited into the BrowserWindow.
+   * BrowserView has the older, well-proven native-window compositor path.
+   */
+  view: BrowserView
+  attached: boolean
   webContents: WebContents
   projection: BrowserTabProjection
   removeListeners: () => void
@@ -56,17 +63,18 @@ export class TabManager {
     return url.toString()
   }
 
-  create(id: string, rawUrl: string, bounds: BrowserBounds) {
+  create(id: string, rawUrl: string, bounds: BrowserBounds, options?: { incognito?: boolean }) {
     TabManager.validateId(id)
     const url = TabManager.parseUrl(rawUrl)
     validateBounds(bounds)
     const existing = this.records.get(id)
     if (existing) return { ...existing.projection }
 
-    const restored = this.sessions.getSnapshot().tabs.find((tab) => tab.id === id)
-    const view = new WebContentsView({
+    const isIncognito = options?.incognito === true
+    const restored = !isIncognito ? this.sessions.getSnapshot().tabs.find((tab) => tab.id === id) : null
+    const view = new BrowserView({
       webPreferences: {
-        session: this.sessions.getBrowserSession(),
+        session: isIncognito ? this.sessions.getIncognitoSession() : this.sessions.getBrowserSession(),
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
@@ -87,10 +95,12 @@ export class TabManager {
       label: `browser-${id}`,
       muted: restored?.muted === true,
       pinned: restored?.pinned === true,
+      incognito: isIncognito,
     }
     const record: TabRecord = {
       id,
       view,
+      attached: false,
       webContents,
       projection,
       removeListeners: () => undefined,
@@ -98,9 +108,11 @@ export class TabManager {
     ;(webContents as WebContents & { kapanisTabId?: string }).kapanisTabId = id
     record.removeListeners = this.bindEvents(record)
     this.records.set(id, record)
-    this.window.contentView.addChildView(view)
+    // Do not attach an inactive native browser to the window. Detaching is
+    // stronger than toggling visibility on Windows and guarantees that a page
+    // cannot stay above the renderer when a new-tab or a panel is shown.
     view.setBounds(bounds)
-    view.setVisible(false)
+    view.setBackgroundColor('#ffffff')
     if (projection.muted) webContents.setAudioMuted(true)
     void webContents.loadURL(url).catch((error) => {
       if (this.closing.has(id)) return
@@ -119,25 +131,42 @@ export class TabManager {
   }
 
   activate(id: string, visible: boolean) {
-    const target = this.require(id)
-    for (const [otherId, record] of this.records) {
-      record.view.setVisible(visible && otherId === id)
+    const target = this.records.get(id)
+    if (!target) return
+    this.deactivate()
+    if (!visible) return
+
+    try {
+      this.window.addBrowserView(target.view)
+      target.attached = true
+      // Reapply the measured renderer viewport after attachment. This is
+      // required by the Windows native compositor when a view was detached.
+      target.view.setBounds(target.view.getBounds())
+      this.window.setTopBrowserView(target.view)
+      target.webContents.focus()
+    } catch {
+      // A tab can be closed while an async renderer action is in flight.
+      target.attached = false
     }
-    target.view.setVisible(visible)
-    if (visible) target.webContents.focus()
   }
 
   setVisible(visible: boolean, activeId: string | null) {
-    for (const [id, record] of this.records) record.view.setVisible(visible && id === activeId)
+    if (visible && activeId) this.activate(activeId, true)
+    else this.deactivate()
   }
 
   deactivate() {
-    for (const record of this.records.values()) record.view.setVisible(false)
+    for (const record of this.records.values()) {
+      this.detach(record)
+    }
   }
 
   navigate(id: string, rawUrl: string) {
     const url = TabManager.parseUrl(rawUrl)
-    const record = this.require(id)
+    const record = this.records.get(id)
+    if (!record) {
+      throw new Error('Tarayıcı sekmesi bulunamadı.')
+    }
     record.projection.url = url
     record.projection.title = hostname(url)
     record.projection.favicon = domainFavicon(url)
@@ -151,7 +180,8 @@ export class TabManager {
   }
 
   reload(id: string) {
-    const record = this.require(id)
+    const record = this.records.get(id)
+    if (!record) return
     record.projection.loading = true
     record.projection.error = null
     this.emit(record)
@@ -159,12 +189,14 @@ export class TabManager {
   }
 
   back(id: string) {
-    const record = this.require(id)
+    const record = this.records.get(id)
+    if (!record) return
     if (safeCanGoBack(record.webContents)) record.webContents.navigationHistory.goBack()
   }
 
   forward(id: string) {
-    const record = this.require(id)
+    const record = this.records.get(id)
+    if (!record) return
     if (safeCanGoForward(record.webContents)) record.webContents.navigationHistory.goForward()
   }
 
@@ -183,8 +215,14 @@ export class TabManager {
   }
 
   setBounds(id: string, bounds: BrowserBounds) {
-    validateBounds(bounds)
-    this.require(id).view.setBounds(bounds)
+    try {
+      validateBounds(bounds)
+      const record = this.records.get(id)
+      if (!record) return
+      record.view.setBounds(bounds)
+    } catch {
+      // safe
+    }
   }
 
   setTheme(theme: 'light' | 'dark') {
@@ -193,13 +231,15 @@ export class TabManager {
   }
 
   setPinned(id: string, pinned: boolean) {
-    const record = this.require(id)
+    const record = this.records.get(id)
+    if (!record) return
     record.projection.pinned = pinned
     this.emit(record)
   }
 
   setMuted(id: string, muted: boolean) {
-    const record = this.require(id)
+    const record = this.records.get(id)
+    if (!record) return
     record.projection.muted = muted
     record.webContents.setAudioMuted(muted)
     this.emit(record)
@@ -208,15 +248,16 @@ export class TabManager {
   duplicate(id: string, newId: string, bounds: BrowserBounds) {
     const record = this.require(id)
     const url = record.webContents.getURL() || record.projection.url
-    const projection = this.create(newId, url, bounds)
+    const projection = this.create(newId, url, bounds, { incognito: record.projection.incognito })
     const duplicate = this.records.get(newId)
     if (duplicate) {
       duplicate.projection.pinned = record.projection.pinned
       duplicate.projection.muted = record.projection.muted
+      duplicate.projection.incognito = record.projection.incognito
       if (duplicate.projection.muted) duplicate.webContents.setAudioMuted(true)
       this.emit(duplicate)
     }
-    return { ...projection, pinned: record.projection.pinned, muted: record.projection.muted }
+    return { ...projection, pinned: record.projection.pinned, muted: record.projection.muted, incognito: record.projection.incognito }
   }
 
   showTabMenu(id: string) {
@@ -245,10 +286,7 @@ export class TabManager {
     if (!record) return true
     this.closing.add(id)
     this.records.delete(id)
-    try {
-      record.view.setVisible(false)
-      this.window.contentView.removeChildView(record.view)
-    } catch { /* the view may already have been detached */ }
+    this.detach(record)
     try {
       await this.callbacks.onBeforeClose(id, record.webContents)
     } catch (error) {
@@ -281,6 +319,13 @@ export class TabManager {
       mediaIds: [],
       closingIds: [...this.closing],
       listenerCount: [...this.records.values()].reduce((total, record) => total + record.webContents.listenerCount('did-navigate'), 0),
+      viewStates: [...this.records.values()].map((record) => ({
+        id: record.id,
+        bounds: record.view.getBounds(),
+        visible: record.attached,
+        url: record.webContents.getURL(),
+        loading: record.webContents.isLoading(),
+      })),
     }
   }
 
@@ -296,7 +341,9 @@ export class TabManager {
         canGoBack: safeCanGoBack(webContents),
         canGoForward: safeCanGoForward(webContents),
       })
-      this.callbacks.onHistory({ ...record.projection })
+      if (!record.projection.incognito) {
+        this.callbacks.onHistory({ ...record.projection })
+      }
     }
     const onNavigate = (_event: Electron.Event, url: string) => {
       this.update(id, {
@@ -308,7 +355,9 @@ export class TabManager {
         canGoBack: safeCanGoBack(webContents),
         canGoForward: safeCanGoForward(webContents),
       })
-      this.callbacks.onHistory({ ...record.projection })
+      if (!record.projection.incognito) {
+        this.callbacks.onHistory({ ...record.projection })
+      }
     }
     const onInPageNavigate = (_event: Electron.Event, url: string) => {
       this.update(id, { url, canGoBack: safeCanGoBack(webContents), canGoForward: safeCanGoForward(webContents) })
@@ -340,10 +389,7 @@ export class TabManager {
     const onDestroyed = () => {
       if (this.closing.has(id)) return
       this.records.delete(id)
-      try {
-        record.view.setVisible(false)
-        this.window.contentView.removeChildView(record.view)
-      } catch { /* the renderer may already have detached the view */ }
+      this.detach(record)
       record.removeListeners()
       try { webContents.removeAllListeners() } catch { /* best effort */ }
       this.callbacks.onDestroyed({ ...record.projection, loading: false })
@@ -419,6 +465,12 @@ export class TabManager {
 
   private emit(record: TabRecord) {
     this.callbacks.onProjection({ ...record.projection })
+  }
+
+  private detach(record: TabRecord) {
+    if (!record.attached) return
+    try { this.window.removeBrowserView(record.view) } catch { /* best effort */ }
+    record.attached = false
   }
 
   private require(id: string) {
