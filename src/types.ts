@@ -42,6 +42,7 @@ export interface AppSettings {
   ntfyEnabled?: boolean
   ntfyTopic?: string
   ntfyServer?: string
+  remoteDesktopEnabled?: boolean
 }
 
 export interface MirroredNotification {
@@ -179,6 +180,39 @@ export interface LocalSendStatus {
   discoveredCount: number
 }
 
+export interface RemoteDisplayInfo {
+  width: number
+  height: number
+  scaleFactor: number
+}
+
+export type RemoteDesktopConnectionState = 'disabled' | 'ready' | 'connecting' | 'connected' | 'locked' | 'error'
+
+export interface RemoteDesktopStatus {
+  state: RemoteDesktopConnectionState
+  sessionId: string | null
+  controllerId: string | null
+  controllerName: string | null
+  display: RemoteDisplayInfo | null
+  lastError: string | null
+}
+
+export interface RemoteTrustedDevice {
+  id: string
+  controllerId: string
+  controllerName: string
+  createdAt: number
+  lastActiveAt: number
+}
+
+export type RemoteDesktopInput =
+  | { version: 1; sequence: number; type: 'move'; x: number; y: number }
+  | { version: 1; sequence: number; type: 'button'; button: 'left' | 'right' | 'middle'; pressed: boolean }
+  | { version: 1; sequence: number; type: 'wheel'; deltaX: number; deltaY: number }
+  | { version: 1; sequence: number; type: 'key'; code: string; pressed: boolean; modifiers?: string[] }
+  | { version: 1; sequence: number; type: 'text'; value: string }
+  | { version: 1; sequence: number; type: 'releaseAll' }
+
 export interface ConnectionInfo {
   port: number
   ipAddresses: string[]
@@ -193,4 +227,3 @@ export interface MobileNotification {
   urgent: boolean
   createdAt: number
 }
-

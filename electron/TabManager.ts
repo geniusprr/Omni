@@ -508,7 +508,10 @@ export class TabManager {
   }
 
   private detach(record: TabRecord) {
-    if (!record.attached) return
+    // Do not rely solely on the bookkeeping flag. A compositor attach can
+    // succeed immediately before a renderer/layout transition or an IPC
+    // interruption, leaving a native view above the renderer even though the
+    // flag was not updated in the same turn.
     try { this.window.removeBrowserView(record.view) } catch { /* best effort */ }
     record.attached = false
   }

@@ -360,7 +360,7 @@ export default function App() {
       {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
       <div className="minios-wallpaper-backdrop" />
       {/* Main Mini-OS Shell Layout */}
-      <div className={`minios-shell ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''}`}>
+      <div className={`minios-shell minios-shell--with-actionbar ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''}`}>
         {/* Left Floating Vertical Dock */}
         <MiniOsDock
           activeMode={mode}
@@ -455,23 +455,23 @@ export default function App() {
                 theme={themeMode}
                 emptyTabContent={renderHomeDashboard()}
                 onEnterBrowser={() => setMode('browser')}
-                onNoTabs={() => setMode('home')}
                 onExecuteCommand={handleExecuteCommand}
               />
             </div>
           </main>
 
-          {mode !== 'browser' && (
-            <MiniOsActionBar
-              activeMode={mode}
-              onNavigate={setMode}
-              onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
-              onQuickAction={() => setQuickActionsOpen(true)}
-              onOpenPairing={() => setPairingModalOpen(true)}
-              onToggleTheme={() => setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'))}
-              themeMode={themeMode}
-            />
-          )}
+        </div>
+
+        <div className="minios-shell__bottom-bar">
+          <MiniOsActionBar
+            activeMode={mode}
+            onNavigate={setMode}
+            onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
+            onQuickAction={() => setQuickActionsOpen(true)}
+            onOpenPairing={() => setPairingModalOpen(true)}
+            onToggleTheme={() => setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'))}
+            themeMode={themeMode}
+          />
         </div>
       </div>
 

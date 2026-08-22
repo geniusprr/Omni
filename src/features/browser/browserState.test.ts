@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { applyTabProjectionState, canStartNativeRestore, closeOtherTabsState, closeTabsToTheRightState, closeTabState, DEFAULT_BROWSER_HOME_URL, EMPTY_BROWSER_STATE, lastPlayingMedia, makeTab, migrateBrowserState, nativeNavigationAction, nativeRestoreTasks, nativeViewAction, openTabState, prepareNewTabNavigation, resolveOptimisticClose, serializeBrowserState, validateTabId, type BrowserState } from './browserState'
+import { applyTabProjectionState, canStartNativeRestore, closeOtherTabsState, closeTabsToTheRightState, closeTabState, DEFAULT_BROWSER_HOME_URL, EMPTY_BROWSER_STATE, lastPlayingMedia, makeTab, migrateBrowserState, nativeNavigationAction, nativeRestoreTasks, nativeViewAction, openTabState, prepareNewTabNavigation, reorderTabState, resolveOptimisticClose, serializeBrowserState, validateTabId, type BrowserState } from './browserState'
 import { faviconForBrowserUrl } from './browserData'
 
 const tabs = ['a', 'b', 'c'].map((id) => ({ id, url: `https://${id}.example`, title: id, favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null }))
@@ -70,6 +70,11 @@ const closedOthers = closeOtherTabsState(multiState, 't3')
 assert.deepEqual(closedOthers.tabs.map(t => t.id), ['t1', 't3'])
 const closedRight = closeTabsToTheRightState(multiState, 't2')
 assert.deepEqual(closedRight.tabs.map(t => t.id), ['t1', 't2'])
+const reorderedRight = reorderTabState(multiState, 't2', 't3', 'after')
+assert.deepEqual(reorderedRight.tabs.map(t => t.id), ['t1', 't3', 't2', 't4'])
+const reorderedLeft = reorderTabState(reorderedRight, 't2', 't3', 'before')
+assert.deepEqual(reorderedLeft.tabs.map(t => t.id), ['t1', 't2', 't3', 't4'])
+assert.equal(reorderTabState(multiState, 't1', 't2', 'after'), multiState)
 
 for (let index = 0; index < 30; index += 1) state = closeTabState({ ...EMPTY_BROWSER_STATE, tabs: [tabs[0]], activeTabId: 'a', mediaByTabId: { a: { tabId: 'a', playing: true, lastPlayingAt: index } } }, 'a')
 assert.deepEqual(state, EMPTY_BROWSER_STATE)

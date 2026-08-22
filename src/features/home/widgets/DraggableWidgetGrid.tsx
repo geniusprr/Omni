@@ -58,7 +58,8 @@ export interface BookmarkItem {
   domain: string
   url: string
   bg: string
-  icon: string
+  favicon: string | null
+  fallbackText: string
 }
 
 export interface QuickAppItem {
@@ -642,7 +643,7 @@ export function DraggableWidgetGrid({
                   onClick={() => handleOpenUrl(bm.url)}
                 >
                   <div className="bm-icon-circle" style={{ backgroundColor: bm.bg }}>
-                    <span>{bm.icon}</span>
+                    <BookmarkIcon src={bm.favicon} fallbackText={bm.fallbackText} />
                   </div>
                   <span className="bm-site-name">{bm.name}</span>
                   <span className="bm-site-domain">{bm.domain}</span>
@@ -1445,6 +1446,24 @@ function ShortcutIcon({ className, src }: { className: string; src: string | nul
       <img src={src} alt="" draggable={false} decoding="async" onError={() => setFailedSource(src)} />
     </span>
   )
+}
+
+function BookmarkIcon({ src, fallbackText }: { src: string | null; fallbackText: string }) {
+  const [failedSource, setFailedSource] = useState<string | null>(null)
+
+  if (src && failedSource !== src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        draggable={false}
+        decoding="async"
+        onError={() => setFailedSource(src)}
+      />
+    )
+  }
+
+  return <span>{fallbackText}</span>
 }
 
 const QUOTES = [

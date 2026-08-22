@@ -69,7 +69,7 @@ function writeArray<T>(key: string, items: T[]) {
 export function loadFavorites() {
   return readArray<BrowserFavorite>(FAVORITES_KEY, DEFAULT_FAVORITES)
     .filter((favorite) => favorite && typeof favorite.url === 'string' && /^https?:\/\//i.test(favorite.url))
-    .map((favorite) => ({ ...favorite, favicon: typeof favorite.favicon === 'string' && /^https?:\/\//i.test(favorite.favicon) ? favorite.favicon : faviconForBrowserUrl(favorite.url) }))
+    .map((favorite) => ({ ...favorite, favicon: isValidFaviconSource(favorite.favicon) ? favorite.favicon : faviconForBrowserUrl(favorite.url) }))
 }
 
 export function saveFavorites(items: BrowserFavorite[]) {
@@ -145,6 +145,10 @@ export function faviconForBrowserUrl(url: string): string | null {
   } catch {
     return null
   }
+}
+
+function isValidFaviconSource(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:https?:\/\/|data:image\/)/i.test(value)
 }
 
 export function relativeTime(timestamp: number) {

@@ -157,7 +157,8 @@ export function MiniOsDashboard({
     domain: new URL(item.url).hostname.replace(/^www\./, ''),
     url: item.url,
     bg: item.color,
-    icon: item.iconText,
+    favicon: item.favicon ?? null,
+    fallbackText: item.iconText,
   })))
   const [quickAccessApps, setQuickAccessApps] = useState<QuickAppItem[]>(() => loadShortcuts().map(toQuickApp))
   const [recentList, setRecentList] = useState<RecentPageItem[]>(() => loadRecentlyClosed().map((item) => ({
@@ -176,7 +177,8 @@ export function MiniOsDashboard({
         domain: new URL(item.url).hostname.replace(/^www\./, ''),
         url: item.url,
         bg: item.color,
-        icon: item.iconText,
+        favicon: item.favicon ?? null,
+        fallbackText: item.iconText,
       })))
       setQuickAccessApps(loadShortcuts().map(toQuickApp))
       setRecentList(loadRecentlyClosed().map((item) => ({

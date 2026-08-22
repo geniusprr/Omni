@@ -19,6 +19,7 @@ export interface BrowserMediaState { tabId: string; playing: boolean; title?: st
 export type NativeViewAction = { type: 'activate'; tabId: string } | { type: 'deactivate' }
 export interface NativeRestoreTask { tabId: string; url: string }
 export type NativeNavigationAction = 'create' | 'navigate'
+export type TabDropPosition = 'before' | 'after'
 
 export const EMPTY_BROWSER_STATE: BrowserState = { tabs: [], activeTabId: null, mediaByTabId: {} }
 export const DEFAULT_BROWSER_HOME_URL = 'https://www.google.com/'
@@ -93,6 +94,35 @@ export function openTabState(state: BrowserState, tab: BrowserTab): BrowserState
 }
 export function selectTabState(state: BrowserState, id: string): BrowserState {
   return state.tabs.some((tab) => tab.id === id) ? { ...state, activeTabId: id } : state
+}
+/**
+ * Move a tab without changing selection or any native-tab metadata. Pinned
+ * and regular tabs are kept in their own lanes, matching the visual browser
+ * convention and preventing an accidental drop from splitting the pinned
+ * group.
+ */
+export function reorderTabState(
+  state: BrowserState,
+  draggedId: string,
+  targetId: string,
+  position: TabDropPosition = 'before',
+): BrowserState {
+  const sourceIndex = state.tabs.findIndex((tab) => tab.id === draggedId)
+  const targetIndex = state.tabs.findIndex((tab) => tab.id === targetId)
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return state
+
+  const source = state.tabs[sourceIndex]
+  const target = state.tabs[targetIndex]
+  if ((source.pinned === true) !== (target.pinned === true)) return state
+
+  const tabs = [...state.tabs]
+  const [moved] = tabs.splice(sourceIndex, 1)
+  if (!moved) return state
+
+  const targetIndexAfterRemoval = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
+  const insertionIndex = position === 'after' ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval
+  tabs.splice(Math.max(0, Math.min(tabs.length, insertionIndex)), 0, moved)
+  return { ...state, tabs }
 }
 /** A renderer-only tab must have no visible native WebView behind its start page. */
 export function nativeViewAction(state: BrowserState): NativeViewAction {

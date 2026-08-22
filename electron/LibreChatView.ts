@@ -14,9 +14,9 @@ const LIBRECHAT_CHROME_SCRIPT = `
       html,
       body,
       #root {
-        border-radius: \${cornerRadius} 0 0 \${cornerRadius} !important;
-        clip-path: inset(0 round \${cornerRadius} 0 0 \${cornerRadius}) !important;
-        -webkit-clip-path: inset(0 round \${cornerRadius} 0 0 \${cornerRadius}) !important;
+        border-radius: \${cornerRadius} 0 0 0 !important;
+        clip-path: inset(0 round \${cornerRadius} 0 0 0) !important;
+        -webkit-clip-path: inset(0 round \${cornerRadius} 0 0 0) !important;
       }
       html,
       body {

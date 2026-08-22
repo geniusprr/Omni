@@ -126,7 +126,11 @@ export function MiniOsActionBar({
           { id: 'home', label: 'Anasayfaya dön', icon: <Home size={14} />, onClick: navigate('home') },
         ]
       case 'browser':
-        return []
+        return [
+          { id: 'search', label: 'Arama ve komutları aç', icon: <Search size={14} />, onClick: onOpenQuickSwitcher },
+          { id: 'settings', label: 'Ayarları aç', icon: <Settings size={14} />, onClick: navigate('settings') },
+          { id: 'home', label: 'Anasayfaya dön', icon: <Home size={14} />, onClick: navigate('home') },
+        ]
     }
   })()
 

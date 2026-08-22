@@ -9,6 +9,8 @@ import type {
   MobileNotification,
   NoteItem,
   ReceivedFileRecord,
+  RemoteDesktopStatus,
+  RemoteTrustedDevice,
   TimerAction,
   TimerState,
   TransferItem,
@@ -43,6 +45,7 @@ export const APP_EVENTS = {
   vaultFsChange: 'vault:fs-change',
   youtubeMusicState: 'youtube-music-state',
   aiUpdated: 'ai:updated',
+  remoteDesktopState: 'remote-desktop:state',
 } as const
 
 export type AppEventName = (typeof APP_EVENTS)[keyof typeof APP_EVENTS]
@@ -371,6 +374,12 @@ export type IpcChannel =
   | 'localsend:open-download-folder'
   | 'localsend:set-auto-accept'
   | 'localsend:add-manual-device'
+  | 'remote-desktop:get-status'
+  | 'remote-desktop:set-enabled'
+  | 'remote-desktop:stop-session'
+  | 'remote-desktop:list-trusted-devices'
+  | 'remote-desktop:revoke-trusted-device'
+  | 'remote-desktop:revoke-all-trusted-devices'
   | 'vault:select-folder'
   | 'vault:get-default-path'
   | 'vault:list-entries'
@@ -415,6 +424,8 @@ export type SharedAppPayload =
   | MobileNotification
   | NoteItem
   | ReceivedFileRecord
+  | RemoteDesktopStatus
+  | RemoteTrustedDevice
   | SystemMediaSession
   | TimerState
   | TransferItem

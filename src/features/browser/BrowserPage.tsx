@@ -1,24 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js'
 import Bookmark from 'lucide-react/dist/esm/icons/bookmark.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
-import Cloud from 'lucide-react/dist/esm/icons/cloud.js'
-import Columns2 from 'lucide-react/dist/esm/icons/columns-2.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
-import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import History from 'lucide-react/dist/esm/icons/history.js'
 import LoaderCircle from 'lucide-react/dist/esm/icons/loader-circle.js'
 import Lock from 'lucide-react/dist/esm/icons/lock.js'
-import Pause from 'lucide-react/dist/esm/icons/pause.js'
 import Pin from 'lucide-react/dist/esm/icons/pin.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
 import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js'
-import ScanLine from 'lucide-react/dist/esm/icons/scan-line.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js'
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
@@ -27,7 +22,6 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import Volume2 from 'lucide-react/dist/esm/icons/volume-2.js'
 import VolumeX from 'lucide-react/dist/esm/icons/volume-x.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
-import Minus from 'lucide-react/dist/esm/icons/minus.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   BROWSER_EVENTS,
@@ -66,10 +60,13 @@ import {
   migrateBrowserState,
   nativeRestoreTasks,
   nativeViewAction,
+  openTabState,
   prepareNewTabNavigation,
   resolveOptimisticClose,
+  reorderTabState,
   selectTabState,
   serializeBrowserState,
+  type TabDropPosition,
   type BrowserState,
 } from './browserState'
 
@@ -78,7 +75,6 @@ interface BrowserPageProps {
   theme?: 'light' | 'dark'
   emptyTabContent?: ReactNode
   onEnterBrowser?: () => void
-  onNoTabs?: () => void
   onExecuteCommand?: (query: string) => void
 }
 
@@ -88,6 +84,24 @@ interface TabContextMenuState {
   tabId: string
   x: number
   y: number
+}
+
+interface TabDropTarget {
+  tabId: string
+  position: TabDropPosition
+}
+
+interface TabDragSession {
+  tabId: string
+  pointerId: number
+  startX: number
+  startY: number
+  started: boolean
+  dropTarget: TabDropTarget | null
+  origin: HTMLElement
+  moveHandler: (event: globalThis.PointerEvent) => void
+  upHandler: (event: globalThis.PointerEvent) => void
+  cancelHandler: (event: globalThis.PointerEvent) => void
 }
 
 interface BrowserTooltipProps {
@@ -184,7 +198,6 @@ export function BrowserPage({
   theme = 'light',
   emptyTabContent,
   onEnterBrowser,
-  onNoTabs,
   onExecuteCommand,
 }: BrowserPageProps) {
   const [state, setState] = useState(loadState)
@@ -207,8 +220,11 @@ export function BrowserPage({
   const [copiedUrl, setCopiedUrl] = useState(false)
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
   const [nativeRestoreReady, setNativeRestoreReady] = useState(!isElectronRuntime())
+  const [nativeSurfaceActiveId, setNativeSurfaceActiveId] = useState<string | null>(null)
   const [zoomByTabId, setZoomByTabId] = useState<Record<string, number>>({})
-  const [clockNow, setClockNow] = useState(() => new Date())
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
+  const [tabDropTarget, setTabDropTarget] = useState<TabDropTarget | null>(null)
+  const [tabDragAnnouncement, setTabDragAnnouncement] = useState('')
 
   const chromeRef = useRef<HTMLDivElement>(null)
   const nativeSurfaceRef = useRef<HTMLDivElement>(null)
@@ -216,6 +232,7 @@ export function BrowserPage({
   const addressInputRef = useRef<HTMLInputElement>(null)
   const stateRef = useRef(state)
   const liveTabIdsRef = useRef(new Set<string>())
+  const creatingNativeTabsRef = useRef(new Map<string, Promise<boolean>>())
   const openingUrlsRef = useRef(new Set<string>())
   const pendingOpenRef = useRef<{ url: string; incognito: boolean } | null>(null)
   const closePendingRef = useRef(false)
@@ -223,6 +240,7 @@ export function BrowserPage({
   const sessionHydrated = useRef(!isElectronRuntime())
   const surfaceSyncVersionRef = useRef(0)
   const wasBrowserSurfaceVisibleRef = useRef(isVisible)
+  const tabDragRef = useRef<TabDragSession | null>(null)
 
   stateRef.current = state
   const active = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null
@@ -237,11 +255,6 @@ export function BrowserPage({
     },
     [active?.id],
   )
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setClockNow(new Date()), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
 
   useEffect(() => {
     if (!active?.id || !isElectronRuntime()) return
@@ -259,13 +272,26 @@ export function BrowserPage({
     const rect = surface.getBoundingClientRect()
     if (rect.width < 1 || rect.height < 1) return null
 
+    // A native BrowserView is composited above the renderer. Refuse to give it
+    // any part of the tab strip/toolbar or the window outside the real viewport
+    // during a layout transition, even if a stale frame briefly reports an
+    // oversized host.
+    const chromeRect = chromeRef.current?.getBoundingClientRect()
+    const viewportRight = Math.max(1, window.innerWidth)
+    const viewportBottom = Math.max(1, window.innerHeight)
+    const visibleTop = Math.max(rect.top, chromeRect?.bottom ?? 0, 0)
+    const visibleBottom = Math.min(rect.bottom, viewportBottom)
+    const visibleLeft = Math.max(rect.left, 0)
+    const visibleRight = Math.min(rect.right, viewportRight)
+    if (visibleRight - visibleLeft < 1 || visibleBottom - visibleTop < 1) return null
+
     // Round both edges as a pair. Rounding x/y and width/height separately
     // can make the native BrowserView end one pixel before or after its React
     // host, which is especially visible where it meets the browser chrome.
-    const left = Math.max(0, Math.round(rect.left))
-    const top = Math.max(0, Math.round(rect.top))
-    const right = Math.max(left + 1, Math.round(rect.right))
-    const bottom = Math.max(top + 1, Math.round(rect.bottom))
+    const left = Math.max(0, Math.round(visibleLeft))
+    const top = Math.max(0, Math.round(visibleTop))
+    const right = Math.max(left + 1, Math.round(visibleRight))
+    const bottom = Math.max(top + 1, Math.round(visibleBottom))
 
     return {
       x: left,
@@ -293,18 +319,55 @@ export function BrowserPage({
     setState(next)
   }, [])
 
+  const setTabLoadState = useCallback((id: string, loading: boolean, loadError: string | null = null) => {
+    const current = stateRef.current
+    if (!current.tabs.some((tab) => tab.id === id)) return
+    const next = {
+      ...current,
+      tabs: current.tabs.map((tab) => tab.id === id
+        ? { ...tab, loading, error: loadError }
+        : tab),
+    }
+    stateRef.current = next
+    setState(next)
+  }, [])
+
   const createBrowserTab = useCallback(
     async (id: string, url: string, incognito = false) => {
-      let bounds = calculateLiveBounds()
-      for (let attempt = 0; !bounds && attempt < 60; attempt += 1) {
-        await nextFrame()
-        bounds = calculateLiveBounds()
-      }
-      if (!bounds) return false
-      const projection = await desktop.browser.create(id, url, bounds, { incognito })
-      liveTabIdsRef.current.add(id)
-      project(projection)
-      return true
+      const inFlight = creatingNativeTabsRef.current.get(id)
+      if (inFlight) return inFlight
+
+      const operation = (async () => {
+        let bounds = calculateLiveBounds()
+        for (let attempt = 0; !bounds && attempt < 60; attempt += 1) {
+          await nextFrame()
+          bounds = calculateLiveBounds()
+        }
+        if (!bounds) return false
+        const projection = await desktop.browser.create(id, url, bounds, { incognito })
+
+        // The tab may have been closed while the viewport was being measured
+        // or while the IPC create call was in flight. Do not resurrect a
+        // native child that no longer has a renderer tab to own it.
+        if (!stateRef.current.tabs.some((tab) => tab.id === id)) {
+          await desktop.browser.close(id).catch(() => undefined)
+          return false
+        }
+
+        liveTabIdsRef.current.add(id)
+        project(projection)
+        return true
+      })()
+      creatingNativeTabsRef.current.set(id, operation)
+      void operation.then(
+        () => {
+          if (creatingNativeTabsRef.current.get(id) === operation) creatingNativeTabsRef.current.delete(id)
+        },
+        () => {
+          if (creatingNativeTabsRef.current.get(id) === operation) creatingNativeTabsRef.current.delete(id)
+        },
+      )
+      return operation
     },
     [calculateLiveBounds, project],
   )
@@ -312,42 +375,75 @@ export function BrowserPage({
   const synchronizeBrowserSurface = useCallback(
     async (nextState: BrowserState) => {
       if (!isElectronRuntime()) return
+      const version = ++surfaceSyncVersionRef.current
 
       // The initial renderer state can contain a local fallback tab while the
       // persisted Electron session is still being read. Creating it here would
       // begin a load that session restore immediately supersedes.
       if (!sessionHydrated.current) {
+        setNativeSurfaceActiveId(null)
         await desktop.browser.deactivate()
         return
       }
-      const version = ++surfaceSyncVersionRef.current
       const action = nativeViewAction(nextState)
       const canShowNativeSurface = isVisible
+        && nativeRestoreReady
+        && !closePendingRef.current
         && panel === null
         && permissionRequest === null
         && tabContextMenu === null
 
       if (!canShowNativeSurface || action.type !== 'activate') {
+        setNativeSurfaceActiveId(null)
         await desktop.browser.deactivate()
         return
       }
 
       const targetTab = nextState.tabs.find((tab) => tab.id === action.tabId)
       if (!targetTab?.url) {
+        setNativeSurfaceActiveId(null)
         await desktop.browser.deactivate()
         return
       }
 
-      if (!liveTabIdsRef.current.has(action.tabId)) {
-        const created = await createBrowserTab(action.tabId, targetTab.url, targetTab.incognito)
-        if (!created || version !== surfaceSyncVersionRef.current) return
-      }
+      try {
+        if (!liveTabIdsRef.current.has(action.tabId)) {
+          const created = await createBrowserTab(action.tabId, targetTab.url, targetTab.incognito)
+          if (!created || version !== surfaceSyncVersionRef.current) return
+        }
 
-      const measured = await syncTabBounds(action.tabId)
-      if (!measured || version !== surfaceSyncVersionRef.current) return
-      await desktop.browser.activate(action.tabId, true)
+        // A native BrowserView is transparent while Chromium is still creating
+        // or loading it. Keep it detached until the authoritative projection
+        // says that a frame is ready, so the renderer loading surface remains
+        // visible instead of exposing an empty rectangle.
+        if (version !== surfaceSyncVersionRef.current) return
+        const currentTarget = stateRef.current.tabs.find((tab) => tab.id === action.tabId)
+        if (!currentTarget || currentTarget.loading || currentTarget.error) {
+          setNativeSurfaceActiveId(null)
+          await desktop.browser.deactivate()
+          return
+        }
+
+        const measured = await syncTabBounds(action.tabId)
+        if (!measured || version !== surfaceSyncVersionRef.current) {
+          if (version === surfaceSyncVersionRef.current) {
+            setNativeSurfaceActiveId(null)
+            await desktop.browser.deactivate()
+          }
+          return
+        }
+        await desktop.browser.activate(action.tabId, true)
+        if (version === surfaceSyncVersionRef.current) setNativeSurfaceActiveId(action.tabId)
+      } catch (cause) {
+        if (version !== surfaceSyncVersionRef.current) return
+        const message = errorMessage(cause, 'Sayfa açılamadı.')
+        setNativeSurfaceActiveId(null)
+        setTabLoadState(action.tabId, false, message)
+        setError(message)
+        await desktop.browser.deactivate().catch(() => undefined)
+      }
     },
-    [createBrowserTab, isVisible, panel, permissionRequest, syncTabBounds, tabContextMenu],
+    [createBrowserTab, isVisible, nativeRestoreReady, panel, permissionRequest, setTabLoadState, syncTabBounds, tabContextMenu],
   )
 
   const navigateTab = useCallback(
@@ -381,6 +477,10 @@ export function BrowserPage({
           })
           return true
         }
+        // Make the loading state synchronous with the user action. The native
+        // IPC projection arrives on a later turn and must not leave one blank
+        // renderer frame in the meantime.
+        setTabLoadState(id, true, null)
         if (!liveTabIdsRef.current.has(id)) {
           const created = await createBrowserTab(id, url, tab.incognito)
           if (!created) throw new Error('Tarayıcı görünüm alanı henüz hazır değil.')
@@ -395,15 +495,16 @@ export function BrowserPage({
           }
         }
         await syncTabBounds(id)
-        await desktop.browser.activate(id, true)
         setError(null)
         return true
       } catch (cause) {
-        setError(errorMessage(cause, 'Sayfa açılamadı.'))
+        const message = errorMessage(cause, 'Sayfa açılamadı.')
+        setTabLoadState(id, false, message)
+        setError(message)
         return false
       }
     },
-    [createBrowserTab, onEnterBrowser, project, syncTabBounds],
+    [createBrowserTab, onEnterBrowser, project, setTabLoadState, syncTabBounds],
   )
 
   const openTab = useCallback(
@@ -422,29 +523,40 @@ export function BrowserPage({
 
       try {
         onEnterBrowser?.()
-        const tab = makeTab(normalizedUrl, incognito)
+        const tab = {
+          ...makeTab(normalizedUrl, incognito),
+          loading: isElectronRuntime(),
+        }
         const previous = stateRef.current
         const prepared = prepareNewTabNavigation(previous, tab, normalizedUrl)
         stateRef.current = prepared.state
         persist(prepared.state)
         setState(prepared.state)
         const created = await navigateTab(prepared.tabId, prepared.url)
-        if (!created) {
+        // Never roll an empty browser back to an empty state. This path is
+        // used by the automatic first-tab fallback as well as shortcuts that
+        // open the browser from the dashboard.
+        if (!created && previous.tabs.length > 0) {
           const restoredState = resolveOptimisticClose(previous, prepared.state, false)
           stateRef.current = restoredState
           persist(restoredState)
           setState(restoredState)
           await synchronizeBrowserSurface(restoredState).catch(() => undefined)
+        } else if (!created) {
+          const fallback = stateRef.current.tabs.find((item) => item.id === prepared.tabId)
+          if (fallback && !fallback.error) setTabLoadState(prepared.tabId, false, 'Sayfa açılamadı.')
+          await synchronizeBrowserSurface(stateRef.current).catch(() => undefined)
         }
       } finally {
         if (normalizedUrl) openingUrlsRef.current.delete(normalizedUrl)
       }
     },
-    [isVisible, navigateTab, nativeRestoreReady, onEnterBrowser, synchronizeBrowserSurface],
+    [isVisible, navigateTab, nativeRestoreReady, onEnterBrowser, setTabLoadState, synchronizeBrowserSurface],
   )
 
-  // Closing every tab returns to the dashboard. If the browser is opened again,
-  // start a fresh Google tab instead of leaving an empty browser surface.
+  // The browser always owns at least one tab while it is open. Replacing the
+  // final tab synchronously prevents a blank tab strip/content host during
+  // native BrowserView teardown.
   useEffect(() => {
     const wasVisible = wasBrowserSurfaceVisibleRef.current
     wasBrowserSurfaceVisibleRef.current = isVisible
@@ -467,26 +579,31 @@ export function BrowserPage({
 
   const close = useCallback(
     async (id: string) => {
+      // A second close click during native teardown must not replace the
+      // replacement tab again or race the first close's fallback navigation.
+      if (closePendingRef.current) return
       const tab = stateRef.current.tabs.find((item) => item.id === id)
       if (!tab) return
       closePendingRef.current = true
       const live = liveTabIdsRef.current.has(id)
       const previous = stateRef.current
       const next = closeTabState(previous, id)
-
-      persist(next)
-      stateRef.current = next
-      setState(next)
-
       const closingLastTab = next.tabs.length === 0
+      const fallbackTab = closingLastTab
+        ? { ...makeTab(DEFAULT_BROWSER_HOME_URL), loading: isElectronRuntime() }
+        : null
+      const nextState = fallbackTab ? openTabState(next, fallbackTab) : next
+
+      persist(nextState)
+      stateRef.current = nextState
+      setState(nextState)
+
       if (closingLastTab) {
-        // Do not keep the browser chrome on screen while native tab cleanup
-        // waits for media teardown. Detach any BrowserView and leave browser
-        // mode before awaiting that cleanup, so the dashboard commits in this
-        // same interaction.
+        // Invalidate any in-flight activation for the closing native child,
+        // then keep the renderer loading card visible until the replacement
+        // child has finished loading.
         surfaceSyncVersionRef.current += 1
         void desktop.browser.deactivate().catch(() => undefined)
-        onNoTabs?.()
       }
 
       if (live) {
@@ -500,12 +617,38 @@ export function BrowserPage({
       if (tab.url && !tab.incognito) addRecentlyClosed(tab.title, tab.url, tab.favicon)
       closePendingRef.current = false
 
-      if (closingLastTab) return
+      if (closingLastTab) {
+        if (fallbackTab?.url && stateRef.current.tabs.some((item) => item.id === fallbackTab.id)) {
+          await navigateTab(fallbackTab.id, fallbackTab.url)
+        }
+        return
+      }
 
-      await synchronizeBrowserSurface(next).catch(() => undefined)
+      await synchronizeBrowserSurface(nextState).catch(() => undefined)
     },
-    [onNoTabs, synchronizeBrowserSurface],
+    [navigateTab, synchronizeBrowserSurface],
   )
+
+  const reorderTab = useCallback((draggedId: string, targetId: string, position: TabDropPosition) => {
+    const current = stateRef.current
+    const next = reorderTabState(current, draggedId, targetId, position)
+    if (next === current) return false
+
+    stateRef.current = next
+    setState(next)
+    const nextIndex = next.tabs.findIndex((tab) => tab.id === draggedId)
+    const movedTab = next.tabs[nextIndex]
+    setTabDragAnnouncement(
+      movedTab
+        ? `${movedTab.title} sekmesi ${nextIndex + 1}. sıraya taşındı.`
+        : 'Sekme sırası güncellendi.',
+    )
+    window.requestAnimationFrame(() => {
+      const tabElement = document.querySelector<HTMLElement>(`[data-browser-tab-id="${draggedId}"]`)
+      tabElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+    return true
+  }, [])
 
   const toggleFavorite = useCallback(() => {
     if (!active?.url) return
@@ -645,6 +788,7 @@ export function BrowserPage({
       window.cancelAnimationFrame(frame)
       frame = window.requestAnimationFrame(() => {
         void syncTabBounds().catch(() => undefined)
+        if (isVisible) void synchronizeBrowserSurface(stateRef.current).catch(() => undefined)
       })
     }
     const observer = new ResizeObserver(handleSync)
@@ -657,7 +801,7 @@ export function BrowserPage({
       window.removeEventListener('resize', handleSync)
       window.cancelAnimationFrame(frame)
     }
-  }, [active?.id, syncTabBounds])
+  }, [active?.id, isVisible, syncTabBounds, synchronizeBrowserSurface])
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -866,6 +1010,12 @@ export function BrowserPage({
       const next = closeTabState(stateRef.current, projection.id)
       stateRef.current = next
       setState(next)
+      // Renderer/native lifecycles can still end outside the explicit close
+      // button (crash, process shutdown, or a compositor teardown). Recover
+      // the browser immediately instead of leaving its chrome with no tab.
+      if (next.tabs.length === 0 && isVisible && !closePendingRef.current) {
+        void openTab()
+      }
     }
     const mediaUpdated = (media: BrowserMediaProjection) =>
       setState((current) => ({
@@ -908,7 +1058,7 @@ export function BrowserPage({
       desktop.browser.on<BrowserHistoryItem | null>(BROWSER_EVENTS.historyUpdated, historyUpdate),
     ]
     return () => stops.forEach((stop) => stop())
-  }, [openTab, project, syncTabBounds])
+  }, [isVisible, openTab, project, syncTabBounds])
 
   useEffect(() => {
     const sync = () => setFavorites(loadFavorites())
@@ -936,6 +1086,8 @@ export function BrowserPage({
   }, [
     active?.id,
     active?.incognito,
+    active?.loading,
+    active?.error,
     active?.url,
     isVisible,
     nativeRestoreReady,
@@ -992,25 +1144,139 @@ export function BrowserPage({
     setTimeout(() => setCopiedUrl(false), 1500)
   }
 
-  function stopActivePage() {
-    if (active?.id) void desktop.browser.stop(active.id)
+  const finishTabDrag = useCallback((cancelled = false) => {
+    const session = tabDragRef.current
+    if (!session) return
+
+    window.removeEventListener('pointermove', session.moveHandler)
+    window.removeEventListener('pointerup', session.upHandler)
+    window.removeEventListener('pointercancel', session.cancelHandler)
+    try {
+      if (session.origin.hasPointerCapture(session.pointerId)) session.origin.releasePointerCapture(session.pointerId)
+    } catch {
+      /* the originating tab may have been closed during the drag */
+    }
+
+    tabDragRef.current = null
+    document.body.classList.remove('is-browser-tab-dragging')
+    const dropTarget = session.dropTarget
+    setDraggingTabId(null)
+    setTabDropTarget(null)
+
+    if (!cancelled && session.started && dropTarget) {
+      reorderTab(session.tabId, dropTarget.tabId, dropTarget.position)
+    }
+  }, [reorderTab])
+
+  const updateTabDrag = useCallback((event: globalThis.PointerEvent) => {
+    const session = tabDragRef.current
+    if (!session || event.pointerId !== session.pointerId) return
+
+    if (!session.started) {
+      if (Math.hypot(event.clientX - session.startX, event.clientY - session.startY) < 6) return
+      session.started = true
+      setDraggingTabId(session.tabId)
+      document.body.classList.add('is-browser-tab-dragging')
+    }
+    if (event.cancelable) event.preventDefault()
+
+    const elementAtPoint = document.elementFromPoint(event.clientX, event.clientY)
+    const tabElement = elementAtPoint instanceof Element
+      ? elementAtPoint.closest<HTMLElement>('[data-browser-tab-id]')
+      : null
+    const targetId = tabElement?.dataset.browserTabId
+    const sourceTab = stateRef.current.tabs.find((tab) => tab.id === session.tabId)
+    const targetTab = targetId ? stateRef.current.tabs.find((tab) => tab.id === targetId) : null
+
+    if (!tabElement || !targetId || targetId === session.tabId || !sourceTab || !targetTab
+      || (sourceTab.pinned === true) !== (targetTab.pinned === true)) {
+      session.dropTarget = null
+      setTabDropTarget(null)
+      return
+    }
+
+    const rect = tabElement.getBoundingClientRect()
+    const nextDropTarget: TabDropTarget = {
+      tabId: targetId,
+      position: event.clientX < rect.left + rect.width / 2 ? 'before' : 'after',
+    }
+    session.dropTarget = nextDropTarget
+    setTabDropTarget((current) => (
+      current?.tabId === nextDropTarget.tabId && current.position === nextDropTarget.position
+        ? current
+        : nextDropTarget
+    ))
+  }, [])
+
+  function handleTabPointerDown(event: ReactPointerEvent<HTMLDivElement>, id: string) {
+    if (event.button !== 0 || event.isPrimary === false) return
+    const eventTarget = event.target instanceof Element ? event.target : null
+    if (eventTarget?.closest('button, a, input, [data-tab-action]')) return
+
+    finishTabDrag(true)
+    const origin = event.currentTarget
+    const moveHandler = (pointerEvent: globalThis.PointerEvent) => updateTabDrag(pointerEvent)
+    const upHandler = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== event.pointerId) return
+      if (pointerEvent.cancelable && tabDragRef.current?.started) pointerEvent.preventDefault()
+      finishTabDrag(false)
+    }
+    const cancelHandler = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId === event.pointerId) finishTabDrag(true)
+    }
+    tabDragRef.current = {
+      tabId: id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+      dropTarget: null,
+      origin,
+      moveHandler,
+      upHandler,
+      cancelHandler,
+    }
+    window.addEventListener('pointermove', moveHandler, { passive: false })
+    window.addEventListener('pointerup', upHandler, { passive: false })
+    window.addEventListener('pointercancel', cancelHandler, { passive: false })
+    try {
+      origin.setPointerCapture(event.pointerId)
+    } catch {
+      /* pointer capture is optional on older Chromium builds */
+    }
   }
 
-  function captureActivePage() {
-    if (active?.id) void desktop.browser.capturePage(active.id)
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLDivElement>, id: string) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      void select(id)
+      return
+    }
+
+    const isArrow = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
+    const usesReorderShortcut = isArrow && (
+      (event.altKey && !event.ctrlKey && !event.metaKey) ||
+      (event.ctrlKey && event.shiftKey && !event.altKey)
+    )
+    if (!usesReorderShortcut) return
+
+    const current = stateRef.current
+    const index = current.tabs.findIndex((tab) => tab.id === id)
+    const direction = event.key === 'ArrowLeft' ? -1 : 1
+    const target = current.tabs[index + direction]
+    if (!target) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    const changed = reorderTab(id, target.id, direction < 0 ? 'before' : 'after')
+    if (changed) {
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(`[data-browser-tab-id="${id}"]`)?.focus()
+      })
+    }
   }
 
-  function openActivePageExternally() {
-    if (active?.url) void desktop.openExternal(active.url).catch(() => undefined)
-  }
-
-  function toggleActiveMute() {
-    if (active?.id) void toggleMute(active.id)
-  }
-
-  function syncBrowserMetadata() {
-    void desktop.browser.syncMetadata().catch(() => undefined)
-  }
+  useEffect(() => () => finishTabDrag(true), [finishTabDrag])
 
   function handleTabMiddleClick(event: MouseEvent, id: string) {
     if (event.button === 1) {
@@ -1087,6 +1353,25 @@ export function BrowserPage({
     : history
 
   const isBlankActiveTab = !active?.url
+  const nativeSurfaceLoading = Boolean(
+    isElectronRuntime()
+      && isVisible
+      && active
+      && active.url
+      && (
+        !nativeRestoreReady
+        || active.loading
+        || !liveTabIdsRef.current.has(active.id)
+        || nativeSurfaceActiveId !== active.id
+      ),
+  )
+  const nativeSurfaceError = Boolean(
+    isElectronRuntime()
+      && isVisible
+      && active?.url
+      && active.error
+      && !active.loading,
+  )
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={150}>
@@ -1095,6 +1380,9 @@ export function BrowserPage({
         style={{ colorScheme: theme }}
         aria-label="Gömülü tarayıcı"
       >
+        <output className="edge-browser__tab-drag-announcement" aria-live="polite">
+          {tabDragAnnouncement}
+        </output>
         <div ref={chromeRef} className="edge-browser__chrome" data-window-drag>
           {/* The browser tab strip stays in its original top position. */}
           <div className="edge-browser__tabs" role="tablist" aria-label="Tarayıcı sekmeleri" data-window-drag>
@@ -1104,11 +1392,14 @@ export function BrowserPage({
               onWheel={handleTabScrollWheel}
               data-window-drag
             >
-              {state.tabs.map((tab) => {
+              {state.tabs.map((tab, tabIndex) => {
                 const media = state.mediaByTabId[tab.id]
                 const isMuted = tab.muted === true
                 const isSelected = tab.id === active?.id
                 const isTabIncognito = tab.incognito === true
+                const isDragging = draggingTabId === tab.id
+                const isDropBefore = tabDropTarget?.tabId === tab.id && tabDropTarget.position === 'before'
+                const isDropAfter = tabDropTarget?.tabId === tab.id && tabDropTarget.position === 'after'
 
                 return (
                   <BrowserTooltip
@@ -1119,18 +1410,19 @@ export function BrowserPage({
                     <div
                       role="tab"
                       tabIndex={0}
+                      aria-label={`${tab.title}${isTabIncognito ? ' (Gizli Sekme)' : ''}`}
                       aria-selected={isSelected}
-                      className={`edge-browser__tab ${isSelected ? 'edge-browser__tab--active' : ''} ${tab.pinned ? 'edge-browser__tab--pinned' : ''} ${isTabIncognito ? 'edge-browser__tab--incognito' : ''}`}
+                      aria-posinset={tabIndex + 1}
+                      aria-setsize={state.tabs.length}
+                      aria-grabbed={isDragging}
+                      data-browser-tab-id={tab.id}
+                      className={`edge-browser__tab ${isSelected ? 'edge-browser__tab--active' : ''} ${tab.pinned ? 'edge-browser__tab--pinned' : ''} ${isTabIncognito ? 'edge-browser__tab--incognito' : ''} ${isDragging ? 'edge-browser__tab--dragging' : ''} ${isDropBefore ? 'edge-browser__tab--drop-before' : ''} ${isDropAfter ? 'edge-browser__tab--drop-after' : ''}`}
                       onClick={() => void select(tab.id)}
                       onAuxClick={(event) => handleTabMiddleClick(event, tab.id)}
                       onMouseDown={(event) => handleTabMiddleClick(event, tab.id)}
+                      onPointerDown={(event) => handleTabPointerDown(event, tab.id)}
                       onContextMenu={(event) => handleTabContextMenu(event, tab.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          void select(tab.id)
-                        }
-                      }}
+                      onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
                     >
                       <div className="edge-browser__tab-icon">
                         {isTabIncognito ? (
@@ -1153,6 +1445,7 @@ export function BrowserPage({
                           <button
                             type="button"
                             className={`edge-browser__tab-media-btn ${isMuted ? 'edge-browser__tab-media-btn--muted' : ''}`}
+                            data-tab-action
                             onClick={(event) => {
                               event.stopPropagation()
                               void toggleMute(tab.id)
@@ -1171,6 +1464,7 @@ export function BrowserPage({
                           <button
                             type="button"
                             className="edge-browser__tab-close-btn"
+                            data-tab-action
                             aria-label={`${tab.title} sekmesini kapat (Orta tık veya Ctrl+W)`}
                             onClick={(event) => {
                               event.stopPropagation()
@@ -1735,6 +2029,30 @@ export function BrowserPage({
 
       {/* The measured native surface keeps the original full-width layout. */}
       <div ref={nativeSurfaceRef} className="edge-browser__content" data-browser-native-surface>
+        {nativeSurfaceError && active?.url ? (
+          <div className="edge-browser__load-state edge-browser__load-state--error" role="alert">
+            <div className="edge-browser__load-state-icon" aria-hidden="true">
+              <Globe2 size={22} />
+            </div>
+            <strong>Sayfa açılamadı</strong>
+            <span>{active.error}</span>
+            <button
+              type="button"
+              onClick={() => void navigateTab(active.id, active.url || address)}
+            >
+              Yeniden dene
+            </button>
+          </div>
+        ) : nativeSurfaceLoading ? (
+          <div className="edge-browser__load-state" role="status" aria-live="polite">
+            <div className="edge-browser__load-state-icon" aria-hidden="true">
+              <LoaderCircle className="edge-browser__load-state-spinner" size={22} />
+            </div>
+            <strong>{nativeRestoreReady ? 'Sayfa yükleniyor' : 'Tarayıcı hazırlanıyor'}</strong>
+            <span>{active?.url ? hostnameFromUrl(active.url) : 'Güvenli görünüm hazırlanıyor'}</span>
+          </div>
+        ) : null}
+
         {isBlankActiveTab && emptyTabContent ? (
           <div className="edge-browser__empty-tab-home" aria-label="Ana sayfa">
             {emptyTabContent}
@@ -1750,116 +2068,6 @@ export function BrowserPage({
         )}
       </div>
 
-      <div className="edge-browser__statusbar" data-window-drag aria-label="Tarayıcı durum çubuğu">
-        <div className="edge-browser__statusbar-group edge-browser__statusbar-group--left">
-          <BrowserTooltip label={showFavoritesBar ? 'Sık kullanılanlar çubuğunu gizle' : 'Sık kullanılanlar çubuğunu göster'} side="top">
-            <button
-              type="button"
-              className={`edge-browser__statusbar-button ${showFavoritesBar ? 'edge-browser__statusbar-button--active' : ''}`}
-              onClick={toggleFavoritesBarVisibility}
-              aria-label="Sık kullanılanlar çubuğunu aç/kapat"
-              aria-pressed={showFavoritesBar}
-            >
-              <Bookmark size={14} />
-            </button>
-          </BrowserTooltip>
-          <BrowserTooltip label="Sayfa yüklemesini durdur" side="top">
-            <button
-              type="button"
-              className="edge-browser__statusbar-button"
-              onClick={stopActivePage}
-              disabled={!active?.loading}
-              aria-label="Sayfa yüklemesini durdur"
-            >
-              <Pause size={14} />
-            </button>
-          </BrowserTooltip>
-          <BrowserTooltip label="Sekme bilgilerini senkronize et" side="top">
-            <button
-              type="button"
-              className="edge-browser__statusbar-button"
-              onClick={syncBrowserMetadata}
-              aria-label="Sekme bilgilerini senkronize et"
-            >
-              <Cloud size={14} />
-            </button>
-          </BrowserTooltip>
-        </div>
-
-        <div className="edge-browser__statusbar-spacer" />
-
-        <div className="edge-browser__statusbar-group edge-browser__statusbar-group--right">
-          <BrowserTooltip label="Sayfayı harici tarayıcıda aç" side="top">
-            <button
-              type="button"
-              className="edge-browser__statusbar-button"
-              onClick={openActivePageExternally}
-              disabled={!active?.url}
-              aria-label="Sayfayı harici tarayıcıda aç"
-            >
-              <ExternalLink size={14} />
-            </button>
-          </BrowserTooltip>
-          <BrowserTooltip label="Sayfa görüntüsünü panoya kopyala" side="top">
-            <button
-              type="button"
-              className="edge-browser__statusbar-button"
-              onClick={captureActivePage}
-              disabled={!active?.id || !isElectronRuntime()}
-              aria-label="Sayfa görüntüsünü panoya kopyala"
-            >
-              <ScanLine size={14} />
-            </button>
-          </BrowserTooltip>
-          <BrowserTooltip label="İndirmeler panelini aç/kapat" side="top">
-            <button
-              type="button"
-              className={`edge-browser__statusbar-button ${panel === 'downloads' ? 'edge-browser__statusbar-button--active' : ''}`}
-              onClick={() => void togglePanel('downloads')}
-              aria-label="İndirmeler panelini aç/kapat"
-              aria-pressed={panel === 'downloads'}
-            >
-              <Columns2 size={14} />
-            </button>
-          </BrowserTooltip>
-          <BrowserTooltip label={active?.muted ? 'Sekme sesini aç' : 'Sekmeyi sessize al'} side="top">
-            <button
-              type="button"
-              className={`edge-browser__statusbar-button ${active?.muted ? 'edge-browser__statusbar-button--active' : ''}`}
-              onClick={toggleActiveMute}
-              disabled={!active?.id}
-              aria-label={active?.muted ? 'Sekme sesini aç' : 'Sekmeyi sessize al'}
-              aria-pressed={active?.muted}
-            >
-              {active?.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            </button>
-          </BrowserTooltip>
-          <button
-            type="button"
-            className="edge-browser__statusbar-reset"
-            onClick={() => setActiveZoom(1)}
-            aria-label="Yakınlaştırmayı sıfırla"
-          >
-            Sıfırla
-          </button>
-          <Minus size={12} className="edge-browser__statusbar-zoom-icon" aria-hidden="true" />
-          <input
-            className="edge-browser__statusbar-zoom"
-            type="range"
-            min="0.5"
-            max="2"
-            step="0.05"
-            value={activeZoom}
-            onChange={(event) => setActiveZoom(Number(event.target.value))}
-            aria-label="Sayfa yakınlaştırma"
-          />
-          <Plus size={12} className="edge-browser__statusbar-zoom-icon" aria-hidden="true" />
-          <output className="edge-browser__statusbar-zoom-value" aria-live="polite">{Math.round(activeZoom * 100)}%</output>
-          <time className="edge-browser__statusbar-time" dateTime={clockNow.toISOString()}>
-            {clockNow.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-          </time>
-        </div>
-      </div>
       </section>
     </TooltipProvider>
   )
