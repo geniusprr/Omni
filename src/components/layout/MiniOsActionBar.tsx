@@ -4,6 +4,8 @@ import Bot from 'lucide-react/dist/esm/icons/bot.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
+import PanelLeftClose from 'lucide-react/dist/esm/icons/panel-left-close.js'
+import PanelLeftOpen from 'lucide-react/dist/esm/icons/panel-left-open.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import QrCode from 'lucide-react/dist/esm/icons/qr-code.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
@@ -23,6 +25,8 @@ interface MiniOsActionBarProps {
   onOpenPairing: () => void
   onToggleTheme: () => void
   themeMode: 'light' | 'dark'
+  isDockHidden: boolean
+  onToggleDock: () => void
 }
 
 interface ActionItem {
@@ -68,8 +72,12 @@ export function MiniOsActionBar({
   onOpenPairing,
   onToggleTheme,
   themeMode,
+  isDockHidden,
+  onToggleDock,
 }: MiniOsActionBarProps) {
   const navigate = (mode: MiniOsMode) => () => onNavigate(mode)
+  const nativeSurfaceMode = activeMode === 'browser' || activeMode === 'ai'
+  const dockToggleLabel = isDockHidden ? 'Sol sekme çubuğunu göster' : 'Sol sekme çubuğunu gizle'
   const actions: ActionItem[] = (() => {
     switch (activeMode) {
       case 'home':
@@ -142,6 +150,25 @@ export function MiniOsActionBar({
       role="toolbar"
       aria-label={`${modeLabel(activeMode)} aksiyonları`}
     >
+      <TooltipProvider delayDuration={400} skipDelayDuration={150}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="edge-browser__statusbar-button minios-action-bar__dock-toggle"
+              onClick={onToggleDock}
+              aria-label={dockToggleLabel}
+              aria-pressed={isDockHidden}
+              title={dockToggleLabel}
+              disabled={!nativeSurfaceMode}
+            >
+              {isDockHidden ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={6}>{dockToggleLabel}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
       <div className="minios-action-bar__context">
         <span className="minios-action-bar__context-icon" aria-hidden="true">{modeIcon(activeMode)}</span>
         <span className="minios-action-bar__context-label">{modeLabel(activeMode)}</span>
@@ -164,7 +191,7 @@ export function MiniOsActionBar({
                   {action.icon}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={6}>{action.label}</TooltipContent>
+              <TooltipContent side={nativeSurfaceMode ? 'left' : 'top'} sideOffset={6}>{action.label}</TooltipContent>
             </Tooltip>
           ))}
         </TooltipProvider>

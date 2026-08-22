@@ -221,7 +221,11 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('browser:toggle-media', (payload) => browser.toggleMedia(readString(payload, 'id')))
     handle('browser:media-control', (payload) => browser.controlMedia(readString(payload, 'id'), readString(payload, 'action') as 'toggle-play' | 'next' | 'previous' | 'toggle-mute'))
     handle('browser:media-volume', (payload) => browser.setMediaVolume(readString(payload, 'id'), readNumber(payload, 'volume')))
-    handle('browser:set-theme', (payload) => browser.setTheme(readTheme(payload)))
+    handle('browser:set-theme', (payload) => {
+      const theme = readTheme(payload)
+      windows.setTheme(theme)
+      return browser.setTheme(theme)
+    })
     handle('browser:debug-snapshot', () => browser.getDebugSnapshot())
     handle('browser:get-session', () => browser.getSession())
     handle('browser:save-session', (payload) => browser.saveSession(readObject(payload) as unknown as BrowserSessionSnapshot))

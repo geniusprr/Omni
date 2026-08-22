@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import X from 'lucide-react/dist/esm/icons/x.js'
+import { GlobalContextMenu } from '@/components/GlobalContextMenu'
 import { MiniOsActionBar } from '@/components/layout/MiniOsActionBar'
 import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
 import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
@@ -45,6 +46,7 @@ export default function App() {
 
   const [mode, setMode] = useState<MiniOsMode>('home')
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light')
+  const [isDockHidden, setIsDockHidden] = useState(false)
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
   const [quickActionsOpen, setQuickActionsOpen] = useState(false)
   const [pairingModalOpen, setPairingModalOpen] = useState(false)
@@ -352,7 +354,12 @@ export default function App() {
   }
 
   if (isRemoteView) {
-    return <RemoteControllerView />
+    return (
+      <>
+        <RemoteControllerView />
+        <GlobalContextMenu />
+      </>
+    )
   }
 
   return (
@@ -360,7 +367,7 @@ export default function App() {
       {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
       <div className="minios-wallpaper-backdrop" />
       {/* Main Mini-OS Shell Layout */}
-      <div className={`minios-shell minios-shell--with-actionbar ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''}`}>
+      <div className={`minios-shell minios-shell--with-actionbar ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''} ${isDockHidden ? 'minios-shell--dock-hidden' : ''}`}>
         {/* Left Floating Vertical Dock */}
         <MiniOsDock
           activeMode={mode}
@@ -471,6 +478,8 @@ export default function App() {
             onOpenPairing={() => setPairingModalOpen(true)}
             onToggleTheme={() => setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'))}
             themeMode={themeMode}
+            isDockHidden={isDockHidden}
+            onToggleDock={() => setIsDockHidden((current) => !current)}
           />
         </div>
       </div>
@@ -518,6 +527,8 @@ export default function App() {
           onSnooze={() => void snoozeAlarm()}
         />
       ) : null}
+
+      <GlobalContextMenu />
     </div>
   )
 }

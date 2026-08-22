@@ -118,7 +118,7 @@ function BrowserTooltip({ label, children, side = 'bottom' }: BrowserTooltipProp
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side={side} sideOffset={6}>{label}</TooltipContent>
+      <TooltipContent className="edge-browser__chrome-tooltip" side={side} sideOffset={6}>{label}</TooltipContent>
     </Tooltip>
   )
 }
@@ -278,9 +278,11 @@ export function BrowserPage({
     // oversized host.
     const chromeRect = chromeRef.current?.getBoundingClientRect()
     const viewportRight = Math.max(1, window.innerWidth)
-    const viewportBottom = Math.max(1, window.innerHeight)
     const visibleTop = Math.max(rect.top, chromeRect?.bottom ?? 0, 0)
-    const visibleBottom = Math.min(rect.bottom, viewportBottom)
+    // The host is laid out directly above the dynamic bar. Do not clip this
+    // measurement to a stale window.innerHeight value: that leaves a visible
+    // seam between the native BrowserView and the bar during shell layout.
+    const visibleBottom = rect.bottom
     const visibleLeft = Math.max(rect.left, 0)
     const visibleRight = Math.min(rect.right, viewportRight)
     if (visibleRight - visibleLeft < 1 || visibleBottom - visibleTop < 1) return null

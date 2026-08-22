@@ -16,11 +16,13 @@ export function LibreChatPage() {
     const rect = host.getBoundingClientRect()
     if (rect.width < 1 || rect.height < 1) return null
     const viewportRight = Math.max(1, window.innerWidth)
-    const viewportBottom = Math.max(1, window.innerHeight)
     const left = Math.max(0, Math.round(rect.left))
     const top = Math.max(0, Math.round(rect.top))
     const right = Math.max(left + 1, Math.min(viewportRight, Math.round(rect.right)))
-    const bottom = Math.max(top + 1, Math.min(viewportBottom, Math.round(rect.bottom)))
+    // The host already ends at the dynamic bar. Keeping its real bottom lets
+    // the native surface touch that bar instead of inheriting a stale viewport
+    // height and leaving a gap.
+    const bottom = Math.max(top + 1, Math.round(rect.bottom))
     return { x: left, y: top, width: right - left, height: bottom - top }
   }, [])
 

@@ -43,11 +43,12 @@ export function MiniOsDock({
                 className={`dock-btn ${activeMode === 'home' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('home')}
                 aria-label="Anasayfa / Dashboard"
+                title="Anasayfa"
               >
                 <Home size={18} strokeWidth={2.2} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Anasayfa</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Anasayfa</TooltipContent>
           </Tooltip>
 
           {/* Search / Quick Switcher */}
@@ -58,11 +59,12 @@ export function MiniOsDock({
                 className="dock-btn"
                 onClick={onOpenQuickSwitcher}
                 aria-label="Arama ve komutlar"
+                title="Arama ve Komutlar"
               >
                 <Search size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Arama ve Komutlar</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Arama ve Komutlar</TooltipContent>
           </Tooltip>
 
           {/* Settings */}
@@ -73,11 +75,12 @@ export function MiniOsDock({
                 className={`dock-btn ${activeMode === 'settings' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('settings')}
                 aria-label="Ayarlar"
+                title="Ayarlar"
               >
                 <Settings size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Ayarlar</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Ayarlar</TooltipContent>
           </Tooltip>
 
           {/* Browser */}
@@ -88,11 +91,12 @@ export function MiniOsDock({
                 className={`dock-btn ${activeMode === 'browser' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('browser')}
                 aria-label="Tarayıcı"
+                title="Tarayıcı"
               >
                 <Globe2 size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Tarayıcı</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Tarayıcı</TooltipContent>
           </Tooltip>
 
           {/* Official LibreChat workspace */}
@@ -103,11 +107,12 @@ export function MiniOsDock({
                 className={`dock-btn ${activeMode === 'ai' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('ai')}
                 aria-label="LibreChat"
+                title="LibreChat"
               >
                 <Bot size={18} strokeWidth={1.9} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">LibreChat</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">LibreChat</TooltipContent>
           </Tooltip>
 
           {/* 3. Clock / Time & Power Management */}
@@ -118,12 +123,13 @@ export function MiniOsDock({
                 className={`dock-btn ${activeMode === 'power' || activeMode === 'alarms' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('power')}
                 aria-label="Güç & Alarm Sayacı"
+                title="Güç & Zamanlayıcı"
               >
                 <Clock size={18} strokeWidth={1.8} />
                 {alarmsCount > 0 && <span className="dock-badge-dot" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Güç & Zamanlayıcı</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Güç & Zamanlayıcı</TooltipContent>
           </Tooltip>
 
           {/* 4. Folder / Files & Vault */}
@@ -134,11 +140,12 @@ export function MiniOsDock({
                 className={`dock-btn ${activeMode === 'notes' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('notes')}
                 aria-label="Defter & Dosyalar"
+                title="Defter & Vault"
               >
                 <Folder size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Defter & Vault</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Defter & Vault</TooltipContent>
           </Tooltip>
 
           {/* 5. Download / Tray / LocalSend Transfers */}
@@ -149,11 +156,12 @@ export function MiniOsDock({
                 className={`dock-btn ${activeMode === 'localsend' ? 'dock-btn--active' : ''}`}
                 onClick={() => onSelectMode('localsend')}
                 aria-label="LocalSend Paylaşım"
+                title="Dosya Paylaşımı (LocalSend)"
               >
                 <Download size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Dosya Paylaşımı (LocalSend)</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Dosya Paylaşımı (LocalSend)</TooltipContent>
           </Tooltip>
 
           {/* 6. Document / Quick Notes */}
@@ -164,11 +172,12 @@ export function MiniOsDock({
                 className="dock-btn"
                 onClick={() => onSelectMode('notes')}
                 aria-label="Notlar"
+                title="Notlar"
               >
                 <FileText size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Notlar</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Notlar</TooltipContent>
           </Tooltip>
         </div>
 
@@ -181,11 +190,12 @@ export function MiniOsDock({
                 className="dock-btn dock-btn--plus"
                 onClick={onQuickAction}
                 aria-label="Hızlı Eylemler"
+                title="Kapatma, Alarm & Hızlı Eylemler"
               >
                 <Plus size={18} strokeWidth={2.4} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Kapatma, Alarm & Hızlı Eylemler</TooltipContent>
+            <TooltipContent className="dock-tooltip" side="bottom">Kapatma, Alarm & Hızlı Eylemler</TooltipContent>
           </Tooltip>
         </div>
       </TooltipProvider>

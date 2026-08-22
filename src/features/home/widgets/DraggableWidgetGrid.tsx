@@ -642,7 +642,10 @@ export function DraggableWidgetGrid({
                   className="bookmark-item-row"
                   onClick={() => handleOpenUrl(bm.url)}
                 >
-                  <div className="bm-icon-circle" style={{ backgroundColor: bm.bg }}>
+                  <div
+                    className="bm-icon-circle"
+                    style={{ '--bookmark-brand-color': bm.bg } as React.CSSProperties}
+                  >
                     <BookmarkIcon src={bm.favicon} fallbackText={bm.fallbackText} />
                   </div>
                   <span className="bm-site-name">{bm.name}</span>

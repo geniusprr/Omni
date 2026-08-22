@@ -205,6 +205,16 @@ export class WindowManager {
     return this.getMainWindow()?.isMaximized() ?? false
   }
 
+  setTheme(theme: 'light' | 'dark') {
+    const window = this.getMainWindow()
+    if (!window) return
+    window.setTitleBarOverlay({
+      color: '#00000000',
+      symbolColor: theme === 'dark' ? '#ffffff' : '#263448',
+      height: 38,
+    })
+  }
+
   close() {
     const window = this.getMainWindow()
     if (!window) return

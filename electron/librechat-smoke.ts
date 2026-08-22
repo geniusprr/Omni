@@ -62,20 +62,20 @@ export async function runLibreChatLifecycleSmoke(
     if (nativeView.webContents.isDestroyed() || nativeView.webContents.isLoading()) return false
     const state = await nativeView.webContents.executeJavaScript(`({
       ready: document.readyState,
-      controls: document.querySelectorAll('#kapanis-librechat-window-controls button').length,
-      controlTop: document.querySelector('#kapanis-librechat-window-controls')?.getBoundingClientRect().top ?? -1,
+      titlebarCount: document.querySelectorAll('[data-kapanis-titlebar="true"]').length,
+      titlebarTop: document.querySelector('[data-kapanis-titlebar="true"]')?.getBoundingClientRect().top ?? -1,
       exportVisible: (() => {
         const element = document.querySelector('#export-menu-button');
         return element ? getComputedStyle(element).display !== 'none' : false;
       })(),
       modelRequestObserved: performance.getEntriesByType('resource').some((entry) => entry.name.includes('/api/models')),
-    })`, true) as { ready: string; controls: number; controlTop: number; exportVisible: boolean; modelRequestObserved: boolean }
+    })`, true) as { ready: string; titlebarCount: number; titlebarTop: number; exportVisible: boolean; modelRequestObserved: boolean }
     return state.ready === 'complete'
-      && state.controls === 3
-      && state.controlTop === 0
+      && state.titlebarCount > 0
+      && state.titlebarTop === 0
       && !state.exportVisible
       && state.modelRequestObserved
-  }, 20_000, 'LibreChat başlığı, pencere kontrolleri veya canlı model sorgusu hazır olmadı.')
+  }, 20_000, 'LibreChat başlık işaretlemesi veya canlı model sorgusu hazır olmadı.')
 
   try {
     await waitUntilAsync(async () => Boolean(await nativeView.webContents.executeJavaScript(`!!document.querySelector('[data-testid="model-selector-button"]')`, true)), 15_000, 'Model seçici düğmesi oluşmadı.')

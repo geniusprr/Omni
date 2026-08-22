@@ -31,6 +31,8 @@ const LIBRECHAT_CHROME_SCRIPT = `
         display: none !important;
       }
       [data-kapanis-titlebar="true"] {
+        min-height: 38px !important;
+        height: 38px !important;
         padding-right: max(114px, env(titlebar-area-width, 0px)) !important;
         -webkit-app-region: drag !important;
       }
@@ -52,7 +54,7 @@ const LIBRECHAT_CHROME_SCRIPT = `
     const candidates = document.querySelectorAll('header, [class*="h-[52px]"]');
     for (const element of candidates) {
       const rect = element.getBoundingClientRect();
-      if (rect.top <= 8 && rect.height >= 44 && rect.height <= 60 && rect.width >= 280) {
+      if (rect.top <= 8 && rect.height >= 36 && rect.height <= 60 && rect.width >= 280) {
         element.setAttribute('data-kapanis-titlebar', 'true');
       }
     }
