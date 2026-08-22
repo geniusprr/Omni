@@ -97,6 +97,7 @@ export class BrowserManager {
   }
 
   reload(id: string) { this.tabs.reload(id) }
+  stop(id: string) { this.tabs.stop(id) }
   back(id: string) { this.tabs.back(id) }
   forward(id: string) { this.tabs.forward(id) }
 
@@ -110,6 +111,12 @@ export class BrowserManager {
   }
 
   setBounds(id: string, bounds: BrowserBounds) { this.tabs.setBounds(id, bounds) }
+  setZoomFactor(id: string, factor: number) { this.tabs.setZoomFactor(id, factor) }
+
+  async capturePage(id: string) {
+    const image = await this.tabs.capturePage(id)
+    if (image && !image.isEmpty()) clipboard.writeImage(image)
+  }
 
   async syncMetadata() { await this.media.syncAll() }
 

@@ -13,6 +13,7 @@ import { NotificationListenerManager } from './NotificationListenerManager.js'
 import { SystemManager } from './SystemManager.js'
 import { WindowManager } from './WindowManager.js'
 import { runBrowserLifecycleSmoke } from './browser-smoke.js'
+import { runLibreChatLifecycleSmoke } from './librechat-smoke.js'
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
 const isBrowserSmokeTest = process.env.KAPANIS_SMOKE_TEST === '1'
@@ -106,6 +107,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     if (isBrowserSmokeTest) {
       const startSmoke = () => {
         void runBrowserLifecycleSmoke(browser, mainWindow, process.env.KAPANIS_SMOKE_URL || 'http://127.0.0.1:4179')
+          .then(() => runLibreChatLifecycleSmoke(aiStore, libreChatServer, libreChatView, mainWindow))
           .then(() => app.quit())
           .catch((error) => {
             requestedExitCode = 1
@@ -191,12 +193,15 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('browser:activate-tab', (payload) => browser.activateTab(readString(payload, 'id'), Boolean(readObject(payload).visible)))
     handle('browser:close-tab', (payload) => browser.closeTab(readString(payload, 'id')))
     handle('browser:navigate', (payload) => browser.navigate(readString(payload, 'id'), readString(payload, 'url')))
+    handle('browser:stop', (payload) => browser.stop(readString(payload, 'id')))
     handle('browser:reload', (payload) => browser.reload(readString(payload, 'id')))
     handle('browser:back', (payload) => browser.back(readString(payload, 'id')))
     handle('browser:forward', (payload) => browser.forward(readString(payload, 'id')))
     handle('browser:set-visible', (payload) => browser.setVisible(Boolean(readObject(payload).visible)))
     handle('browser:deactivate', () => browser.deactivate())
     handle('browser:set-bounds', (payload) => browser.setBounds(readString(payload, 'id'), readBounds(readObject(payload).bounds)))
+    handle('browser:set-zoom', (payload) => browser.setZoomFactor(readString(payload, 'id'), readNumber(payload, 'factor')))
+    handle('browser:capture-page', (payload) => browser.capturePage(readString(payload, 'id')))
     handle('browser:sync-metadata', () => browser.syncMetadata())
     handle('browser:toggle-media', (payload) => browser.toggleMedia(readString(payload, 'id')))
     handle('browser:media-control', (payload) => browser.controlMedia(readString(payload, 'id'), readString(payload, 'action') as 'toggle-play' | 'next' | 'previous' | 'toggle-mute'))
@@ -246,6 +251,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('localsend:scan-network', () => localSend.scanNetwork())
     handle('localsend:send-text', (payload) => localSend.sendText(readString(payload, 'targetIp'), readNumber(payload, 'targetPort'), readString(payload, 'text')))
     handle('localsend:send-file', (payload) => localSend.sendFile(readString(payload, 'targetIp'), readNumber(payload, 'targetPort'), readString(payload, 'filePath')))
+    handle('localsend:send-cloud-file', (payload) => localSend.sendCloudFile(readString(payload, 'filePath'), readString(payload, 'controllerId')))
     handle('localsend:get-received-files', () => localSend.getReceivedFiles())
     handle('localsend:open-download-folder', () => localSend.openDownloadFolder())
     handle('localsend:set-auto-accept', (payload) => localSend.setAutoAccept(Boolean(readObject(payload).enabled)))

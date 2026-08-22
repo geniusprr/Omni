@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import Bell from 'lucide-react/dist/esm/icons/bell.js'
 import BellRing from 'lucide-react/dist/esm/icons/bell-ring.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
+import CloudIcon from 'lucide-react/dist/esm/icons/cloud.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
 import Laptop from 'lucide-react/dist/esm/icons/laptop.js'
@@ -31,13 +32,14 @@ import {
   testSupabaseConnection,
 } from '@/features/remote/client'
 import { desktop } from '@/lib/desktop'
-import type { AppSettings, PairedController, RemoteConnectionStatus } from '@/types'
+import type { AppSettings, LocalSendDevice, PairedController, RemoteConnectionStatus } from '@/types'
 
 interface SettingsPageProps {
   settings: AppSettings
   connectionStatus: RemoteConnectionStatus
   lastHeartbeat: number | null
   pairedControllers: PairedController[]
+  localDevices: LocalSendDevice[]
   onSettingsChange: (newSettings: AppSettings) => void
   onRefreshControllers: () => void
   themeMode: 'dark' | 'light'
@@ -123,6 +125,29 @@ create table public.device_notifications (
   created_at timestamptz not null default now()
 );
 
+-- 7. Bulut Dosya Kuyruğu (PC'den Telefona, uygulama kapalıyken teslim)
+create table public.device_transfers (
+  id uuid primary key default gen_random_uuid(),
+  device_id uuid not null references public.devices(id) on delete cascade,
+  controller_id text not null,
+  file_name text not null,
+  mime_type text not null default 'application/octet-stream',
+  size bigint not null default 0 check (size >= 0),
+  storage_path text not null unique,
+  status text not null default 'pending' check (status in ('pending', 'processing', 'completed', 'failed')),
+  local_uri text,
+  error_message text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+create index if not exists device_transfers_pending_idx
+  on public.device_transfers (device_id, controller_id, created_at)
+  where status = 'pending';
+
+grant select, insert, update, delete on table public.device_transfers to anon, authenticated;
+
 -- PostgREST erişimi RLS'den ayrıdır. Masaüstü INSERT, telefon SELECT kullanır.
 grant select, insert, update, delete on table public.device_notifications to anon, authenticated;
 
@@ -145,6 +170,7 @@ alter table public.devices enable row level security;
 alter table public.paired_controllers enable row level security;
 alter table public.device_commands enable row level security;
 alter table public.device_notifications enable row level security;
+alter table public.device_transfers enable row level security;
 
 -- 9. İzin Politikaları (Drop & Create)
 drop policy if exists "Allow public access to devices" on public.devices;
@@ -175,6 +201,27 @@ create policy "Allow public access to device_notifications"
   using (true)
   with check (true);
 
+drop policy if exists "Allow public access to device_transfers" on public.device_transfers;
+create policy "Allow public access to device_transfers"
+  on public.device_transfers for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('kapanis-transfers', 'kapanis-transfers', true, 536870912)
+on conflict (id) do update set public = true, file_size_limit = 536870912;
+
+drop policy if exists "kapanis transfer objects read" on storage.objects;
+create policy "kapanis transfer objects read" on storage.objects for select
+  to anon, authenticated using (bucket_id = 'kapanis-transfers');
+drop policy if exists "kapanis transfer objects insert" on storage.objects;
+create policy "kapanis transfer objects insert" on storage.objects for insert
+  to anon, authenticated with check (bucket_id = 'kapanis-transfers');
+drop policy if exists "kapanis transfer objects delete" on storage.objects;
+create policy "kapanis transfer objects delete" on storage.objects for delete
+  to anon, authenticated using (bucket_id = 'kapanis-transfers');
+
 -- 10. Supabase Realtime Yayınları
 do $$
 begin
@@ -201,9 +248,15 @@ begin
 
   if not exists (
     select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'device_notifications'
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'device_notifications'
   ) then
     alter publication supabase_realtime add table public.device_notifications;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'device_transfers'
+  ) then
+    alter publication supabase_realtime add table public.device_transfers;
   end if;
 end
 $$;`
@@ -213,6 +266,7 @@ export function SettingsPage({
   connectionStatus,
   lastHeartbeat,
   pairedControllers,
+  localDevices,
   onSettingsChange,
   onRefreshControllers,
   themeMode,
@@ -241,7 +295,6 @@ export function SettingsPage({
   const [showQrModal, setShowQrModal] = useState(false)
   const [showSqlModal, setShowSqlModal] = useState(false)
   const [heartbeatAgo, setHeartbeatAgo] = useState<string>('')
-  const [localDevices, setLocalDevices] = useState<import('@/types').LocalSendDevice[]>([])
   const [localIps, setLocalIps] = useState<string[]>([])
 
   useEffect(() => {
@@ -249,13 +302,7 @@ export function SettingsPage({
       if (st && st.allIps && st.allIps.length > 0) setLocalIps(st.allIps)
       else if (st && st.localIp) setLocalIps([st.localIp])
     }).catch(() => undefined)
-    void desktop.localsend.getDevices().then(setLocalDevices).catch(() => undefined)
-    const unlisten = desktop.localsend.onDeviceDiscovered(() => {
-      void desktop.localsend.getDevices().then(setLocalDevices).catch(() => undefined)
-    })
-    return () => {
-      unlisten()
-    }
+    return undefined
   }, [])
 
   useEffect(() => {
@@ -382,6 +429,18 @@ export function SettingsPage({
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const localUnpairedDevices = localDevices.filter((device) =>
+    !pairedControllers.some((controller) => controller.controllerId === device.fingerprint)
+  )
+  const activeLocal = (device: LocalSendDevice | undefined) => Boolean(device && Date.now() - device.lastSeen < 45_000)
+  const activeCloud = (controller: PairedController) => Boolean(
+    controller.lastActiveAt && Date.now() - Date.parse(controller.lastActiveAt) < 60_000,
+  )
+  const activeDeviceCount = new Set([
+    ...localDevices.map((device) => device.fingerprint),
+    ...pairedControllers.map((controller) => controller.controllerId),
+  ]).size
 
   return (
     <section className="utility-screen settings-screen" aria-labelledby="settings-title">
@@ -651,7 +710,7 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><Smartphone size={17} /></div>
             <div>
-              <h3>Eşleştirilen Cihazlar ({pairedControllers.length + localDevices.length})</h3>
+              <h3>Aktif Cihazlar ({activeDeviceCount})</h3>
               <p>Bu bilgisayara uzaktan erişim izni olan yerel Wi-Fi ve bulut cihazları.</p>
             </div>
           </div>
@@ -663,17 +722,17 @@ export function SettingsPage({
               </div>
             ) : (
               <div className="paired-list">
-                {localDevices.map((dev) => (
+                {localUnpairedDevices.map((dev) => (
                   <div className="paired-item" key={`local-${dev.ip}-${dev.port}`}>
                     <div className="paired-item__icon">
                       <Smartphone size={15} />
                     </div>
                     <div className="paired-item__info">
                       <strong>{dev.alias || 'Yerel Cihaz'}</strong>
-                      <small>Yerel Ağ (Wi-Fi) · {dev.ip}:{dev.port} · {dev.deviceModel || 'Mobil'}</small>
+                      <small>{dev.ip}:{dev.port} · {dev.deviceModel || 'Mobil'}</small>
                     </div>
-                    <span className="status-badge status-badge--online" style={{ fontSize: '11px', padding: '2px 8px' }}>
-                      <span className="status-badge__dot" /> Yerel Bağlı
+                    <span className={`status-badge ${activeLocal(dev) ? 'status-badge--online' : 'status-badge--offline'}`} style={{ fontSize: '11px', padding: '2px 8px' }}>
+                      <span className="status-badge__dot" /> {activeLocal(dev) ? 'Yerel' : 'Bekliyor'}
                     </span>
                   </div>
                 ))}
@@ -684,7 +743,12 @@ export function SettingsPage({
                     </div>
                     <div className="paired-item__info">
                       <strong>{ctrl.controllerName || 'Telefon Denetleyici'}</strong>
-                      <small>Bulut (Supabase) · Son aktiflik: {ctrl.lastActiveAt ? new Date(ctrl.lastActiveAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Bilinmiyor'}</small>
+                      <small>Son aktiflik: {ctrl.lastActiveAt ? new Date(ctrl.lastActiveAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Bilinmiyor'}</small>
+                    </div>
+                    <div className="paired-item__presence" title="Bağlantı kanalları">
+                      {activeLocal(localDevices.find((device) => device.fingerprint === ctrl.controllerId)) ? <span className="presence-chip presence-chip--local"><Wifi size={11} /> Yerel</span> : null}
+                      {activeCloud(ctrl) ? <span className="presence-chip presence-chip--cloud"><CloudIcon size={11} /> Bulut</span> : null}
+                      {!activeLocal(localDevices.find((device) => device.fingerprint === ctrl.controllerId)) && !activeCloud(ctrl) ? <span className="presence-chip presence-chip--offline"><WifiOff size={11} /> Bekliyor</span> : null}
                     </div>
                     <Button
                       size="compact"

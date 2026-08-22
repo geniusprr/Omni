@@ -1,6 +1,7 @@
 package com.kapanis.mobil.network
 
 import com.kapanis.mobil.data.ConnectionMode
+import com.kapanis.mobil.data.CloudTransfer
 import com.kapanis.mobil.data.MirroredNotification
 import com.kapanis.mobil.data.OnlineDeviceState
 import com.kapanis.mobil.data.PairedDeviceItem
@@ -14,6 +15,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import android.content.Context
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class SupabaseRemoteClient {
@@ -22,6 +28,11 @@ class SupabaseRemoteClient {
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    private val downloadClient: OkHttpClient = client.newBuilder()
+        .readTimeout(5, TimeUnit.MINUTES)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -210,6 +221,208 @@ class SupabaseRemoteClient {
         }
     }
 
+    /** Keep the phone visible as an active cloud controller while the UI is closed. */
+    suspend fun heartbeatController(
+        url: String,
+        anonKey: String,
+        deviceId: String,
+        controllerId: String,
+        controllerName: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val cleanUrl = url.trim().removeSuffix("/")
+            val endpoint = "$cleanUrl/rest/v1/paired_controllers?on_conflict=device_id,controller_id"
+            val payload = JSONObject()
+                .put("device_id", deviceId)
+                .put("controller_id", controllerId)
+                .put("controller_name", controllerName)
+                .put("controller_type", "mobile")
+                .put("last_active_at", java.time.Instant.now().toString())
+            val request = Request.Builder()
+                .url(endpoint)
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) Result.success(true)
+                else Result.failure(Exception("Bulut cihaz kalp atışı başarısız (${response.code})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchPendingTransfers(
+        url: String,
+        anonKey: String,
+        deviceId: String,
+        controllerId: String
+    ): Result<List<CloudTransfer>> = withContext(Dispatchers.IO) {
+        try {
+            val cleanUrl = url.trim().removeSuffix("/")
+            val endpoint = "$cleanUrl/rest/v1/device_transfers" +
+                "?device_id=eq.${encodeQuery(deviceId)}" +
+                "&controller_id=eq.${encodeQuery(controllerId)}" +
+                "&status=eq.pending&order=created_at.asc&limit=5"
+            val request = Request.Builder()
+                .url(endpoint)
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("Bulut dosya kuyruğu okunamadı (${response.code})"))
+                }
+                val array = JSONArray(response.body?.string().orEmpty())
+                val transfers = buildList {
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i) ?: continue
+                        add(
+                            CloudTransfer(
+                                id = obj.optString("id", ""),
+                                deviceId = obj.optString("device_id", ""),
+                                controllerId = obj.optString("controller_id", ""),
+                                filename = obj.optString("file_name", "dosya"),
+                                mimeType = obj.optString("mime_type", "application/octet-stream"),
+                                size = obj.optLong("size", 0L),
+                                storagePath = obj.optString("storage_path", ""),
+                                status = obj.optString("status", "pending"),
+                                createdAt = parseIsoTimestamp(obj.optString("created_at", ""))
+                            )
+                        )
+                    }
+                }
+                Result.success(transfers)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** Atomically claims a pending row so a restarted service does not download it twice. */
+    suspend fun claimTransfer(
+        url: String,
+        anonKey: String,
+        transfer: CloudTransfer,
+        controllerId: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val cleanUrl = url.trim().removeSuffix("/")
+            val endpoint = "$cleanUrl/rest/v1/device_transfers" +
+                "?id=eq.${encodeQuery(transfer.id)}" +
+                "&device_id=eq.${encodeQuery(transfer.deviceId)}" +
+                "&controller_id=eq.${encodeQuery(controllerId)}&status=eq.pending"
+            val payload = JSONObject()
+                .put("status", "processing")
+                .put("updated_at", java.time.Instant.now().toString())
+            val request = Request.Builder()
+                .url(endpoint)
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .addHeader("Prefer", "return=representation")
+                .patch(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext Result.failure(Exception("Bulut dosya kilitlenemedi (${response.code})"))
+                val body = response.body?.string().orEmpty()
+                Result.success(body.trim().startsWith("[") && body.trim() != "[]")
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun downloadTransferToFile(
+        context: Context,
+        url: String,
+        anonKey: String,
+        storagePath: String,
+        expectedSize: Long,
+        onProgress: (Float) -> Unit = {}
+    ): Result<File> = withContext(Dispatchers.IO) {
+        val tempFile = runCatching { File.createTempFile("kapanis-transfer-", ".part", context.cacheDir) }.getOrNull()
+            ?: return@withContext Result.failure(Exception("Geçici dosya oluşturulamadı."))
+        try {
+            val cleanUrl = url.trim().removeSuffix("/")
+            val encodedPath = storagePath.split('/').joinToString("/") { encodeQuery(it) }
+            val endpoint = "$cleanUrl/storage/v1/object/kapanis-transfers/$encodedPath"
+            val request = Request.Builder()
+                .url(endpoint)
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .get()
+                .build()
+
+            downloadClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("Bulut dosya indirilemedi (${response.code})")
+                val body = response.body ?: throw IOException("Bulut dosya gövdesi boş.")
+                val total = if (expectedSize > 0L) expectedSize else body.contentLength()
+                var copied = 0L
+                body.byteStream().use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            copied += count.toLong()
+                            if (total > 0L) onProgress((copied.toFloat() / total.toFloat()).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+                if (expectedSize >= 0L && copied != expectedSize) {
+                    throw IOException("Bulut dosya boyutu doğrulanamadı.")
+                }
+            }
+            Result.success(tempFile)
+        } catch (e: Exception) {
+            tempFile.delete()
+            Result.failure(e)
+        }
+    }
+
+    suspend fun finishTransfer(
+        url: String,
+        anonKey: String,
+        transfer: CloudTransfer,
+        controllerId: String,
+        success: Boolean,
+        localUri: String = "",
+        errorMessage: String = ""
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val cleanUrl = url.trim().removeSuffix("/")
+            val endpoint = "$cleanUrl/rest/v1/device_transfers" +
+                "?id=eq.${encodeQuery(transfer.id)}" +
+                "&device_id=eq.${encodeQuery(transfer.deviceId)}" +
+                "&controller_id=eq.${encodeQuery(controllerId)}"
+            val payload = JSONObject()
+                .put("status", if (success) "completed" else "failed")
+                .put("completed_at", if (success) java.time.Instant.now().toString() else JSONObject.NULL)
+                .put("local_uri", localUri)
+                .put("error_message", errorMessage.take(500).ifBlank { JSONObject.NULL })
+            val request = Request.Builder()
+                .url(endpoint)
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .addHeader("Prefer", "return=minimal")
+                .patch(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) Result.success(true)
+                else Result.failure(Exception("Bulut aktarım durumu güncellenemedi (${response.code})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun pairWithPayload(
         payload: PairingPayload,
         controllerId: String,
@@ -275,5 +488,12 @@ class SupabaseRemoteClient {
             timerState = timerState
         )
     }
-}
 
+    private fun encodeQuery(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+    private fun parseIsoTimestamp(value: String): Long {
+        if (value.isBlank()) return System.currentTimeMillis()
+        return runCatching { java.time.Instant.parse(value).toEpochMilli() }
+            .getOrDefault(System.currentTimeMillis())
+    }
+}

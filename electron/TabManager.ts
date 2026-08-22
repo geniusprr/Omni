@@ -23,6 +23,12 @@ interface TabRecord {
   webContents: WebContents
   projection: BrowserTabProjection
   removeListeners: () => void
+  navigationRequests: NavigationRequest[]
+}
+
+interface NavigationRequest {
+  url: string
+  superseded: boolean
 }
 
 interface TabManagerCallbacks {
@@ -104,6 +110,7 @@ export class TabManager {
       webContents,
       projection,
       removeListeners: () => undefined,
+      navigationRequests: [],
     }
     ;(webContents as WebContents & { kapanisTabId?: string }).kapanisTabId = id
     record.removeListeners = this.bindEvents(record)
@@ -112,12 +119,12 @@ export class TabManager {
     // stronger than toggling visibility on Windows and guarantees that a page
     // cannot stay above the renderer when a new-tab or a panel is shown.
     view.setBounds(bounds)
-    view.setBackgroundColor('#ffffff')
+    // BrowserView bounds are intentionally rectangular. Keep its compositor
+    // background transparent so the native page fills the measured content
+    // host without a renderer-side corner mask.
+    view.setBackgroundColor('#00000000')
     if (projection.muted) webContents.setAudioMuted(true)
-    void webContents.loadURL(url).catch((error) => {
-      if (this.closing.has(id)) return
-      this.update(id, { loading: false, error: error instanceof Error ? error.message : 'Sayfa açılamadı.' })
-    })
+    this.load(record, url)
     this.callbacks.onProjection({ ...projection })
     return { ...projection }
   }
@@ -173,10 +180,7 @@ export class TabManager {
     record.projection.loading = true
     record.projection.error = null
     this.emit(record)
-    void record.webContents.loadURL(url).catch((error) => {
-      if (this.closing.has(id)) return
-      this.update(id, { loading: false, error: error instanceof Error ? error.message : 'Sayfa açılamadı.' })
-    })
+    this.load(record, url)
   }
 
   reload(id: string) {
@@ -186,6 +190,25 @@ export class TabManager {
     record.projection.error = null
     this.emit(record)
     record.webContents.reload()
+  }
+
+  stop(id: string) {
+    const record = this.records.get(id)
+    if (!record) return
+    record.webContents.stop()
+  }
+
+  setZoomFactor(id: string, factor: number) {
+    const record = this.records.get(id)
+    if (!record) return
+    const safeFactor = Math.min(2, Math.max(0.5, Number.isFinite(factor) ? factor : 1))
+    record.webContents.setZoomFactor(safeFactor)
+  }
+
+  async capturePage(id: string) {
+    const record = this.records.get(id)
+    if (!record || record.webContents.isDestroyed()) return null
+    return record.webContents.capturePage()
   }
 
   back(id: string) {
@@ -344,6 +367,7 @@ export class TabManager {
       if (!record.projection.incognito) {
         this.callbacks.onHistory({ ...record.projection })
       }
+      record.navigationRequests = record.navigationRequests.filter((request) => !request.superseded)
     }
     const onNavigate = (_event: Electron.Event, url: string) => {
       this.update(id, {
@@ -368,7 +392,8 @@ export class TabManager {
       this.update(id, { favicon })
     }
     const onFail = (_event: Electron.Event, errorCode: number, description: string, validatedUrl: string, isMainFrame: boolean) => {
-      if (!isMainFrame || errorCode === -3 || this.closing.has(id)) return
+      if (!isMainFrame || this.closing.has(id)) return
+      if (errorCode === -3 && this.isSupersededNavigation(record, validatedUrl)) return
       const message = description || `Sayfa yüklenemedi (${errorCode}).`
       const projection = this.update(id, { url: validatedUrl || record.projection.url, loading: false, error: message })
       if (projection) this.callbacks.onRendererFailure(projection, message)
@@ -463,6 +488,21 @@ export class TabManager {
     ).catch(() => undefined)
   }
 
+  private load(record: TabRecord, url: string) {
+    for (const request of record.navigationRequests) request.superseded = true
+    const request: NavigationRequest = { url, superseded: false }
+    record.navigationRequests.push(request)
+    void record.webContents.loadURL(url).catch((error) => {
+      if (this.closing.has(record.id)) return
+      if (request.superseded && isNavigationAborted(error)) return
+      this.update(record.id, { loading: false, error: error instanceof Error ? error.message : 'Sayfa açılamadı.' })
+    })
+  }
+
+  private isSupersededNavigation(record: TabRecord, failedUrl: string) {
+    return record.navigationRequests.some((request) => request.superseded && request.url === failedUrl)
+  }
+
   private emit(record: TabRecord) {
     this.callbacks.onProjection({ ...record.projection })
   }
@@ -496,6 +536,10 @@ function safeCanGoBack(webContents: WebContents) {
 
 function safeCanGoForward(webContents: WebContents) {
   try { return webContents.navigationHistory.canGoForward() } catch { return false }
+}
+
+function isNavigationAborted(cause: unknown) {
+  return cause instanceof Error && /ERR_ABORTED|\(-3\)/.test(cause.message)
 }
 
 function isAllowedWebUrl(value: string) {

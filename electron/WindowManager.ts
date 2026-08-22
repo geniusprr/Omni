@@ -54,17 +54,25 @@ export class WindowManager {
     // The renderer owns the landscape wallpaper. Keep the native window fully
     // opaque so neither Acrylic nor the desktop can show through it.
     const options: BrowserWindowConstructorOptions = {
-      width: 1180,
-      height: 740,
-      minWidth: 320,
-      minHeight: 500,
+      width: 1440,
+      height: 900,
+      minWidth: 720,
+      minHeight: 520,
       title: 'kapanış.',
       show: false,
-      frame: false,
+      // Use the operating system's real caption buttons. The titlebar is
+      // hidden into the client area so the wallpaper remains visible behind
+      // the controls instead of introducing a second renderer chrome layer.
+      frame: true,
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#00000000',
+        symbolColor: '#263448',
+        height: 38,
+      },
       transparent: false,
       roundedCorners: true,
-      // Electron's Windows native rounded-corner path requires WS_THICKFRAME;
-      // the frameless client still supplies the visible content and controls.
+      // Keep native resize and rounded-corner behavior available on Windows.
       thickFrame: true,
       backgroundColor: '#0b1324',
       center: true,
@@ -79,12 +87,10 @@ export class WindowManager {
     }
     const window = new BrowserWindow(options)
     this.mainWindow = window
-    window.on('close', (event) => {
-      if (!this.allowClose) {
-        event.preventDefault()
-        this.hideToTray()
-      }
-    })
+    // Normal launches open maximized. The smoke runner intentionally keeps a
+    // deterministic restored window so its fixed BrowserView bounds remain
+    // meaningful and independent of the developer display.
+    if (process.env.KAPANIS_SMOKE_TEST !== '1' && !window.isMaximized()) window.maximize()
     window.on('closed', () => {
       this.mainWindow = null
     })
@@ -200,9 +206,12 @@ export class WindowManager {
   }
 
   close() {
-    // Keep the existing kapanış. close-to-tray behavior. The tray's Quit action
-    // sets app.isQuitting and lets the normal close path destroy every renderer.
-    this.hideToTray()
+    const window = this.getMainWindow()
+    if (!window) return
+    // Let the native close button and the renderer fallback share one real
+    // close path. main.ts owns the asynchronous cleanup in before-quit.
+    this.allowClose = true
+    window.close()
   }
 
   quit() {

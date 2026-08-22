@@ -3,17 +3,22 @@ import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js'
 import Bookmark from 'lucide-react/dist/esm/icons/bookmark.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
+import Cloud from 'lucide-react/dist/esm/icons/cloud.js'
+import Columns2 from 'lucide-react/dist/esm/icons/columns-2.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import History from 'lucide-react/dist/esm/icons/history.js'
 import LoaderCircle from 'lucide-react/dist/esm/icons/loader-circle.js'
 import Lock from 'lucide-react/dist/esm/icons/lock.js'
+import Pause from 'lucide-react/dist/esm/icons/pause.js'
 import Pin from 'lucide-react/dist/esm/icons/pin.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
 import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js'
+import ScanLine from 'lucide-react/dist/esm/icons/scan-line.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js'
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
@@ -22,6 +27,8 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import Volume2 from 'lucide-react/dist/esm/icons/volume-2.js'
 import VolumeX from 'lucide-react/dist/esm/icons/volume-x.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
+import Minus from 'lucide-react/dist/esm/icons/minus.js'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   BROWSER_EVENTS,
   desktop,
@@ -83,9 +90,24 @@ interface TabContextMenuState {
   y: number
 }
 
+interface BrowserTooltipProps {
+  label: string
+  children: ReactNode
+  side?: 'top' | 'right' | 'bottom' | 'left'
+}
+
 const TABS_KEY = 'minios_browser_tabs_v2'
 const ACTIVE_KEY = 'minios_browser_active_tab_v2'
 const SHOW_FAVORITES_BAR_KEY = 'minios_browser_show_favorites_bar_v1'
+
+function BrowserTooltip({ label, children, side = 'bottom' }: BrowserTooltipProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side} sideOffset={6}>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 function loadState(): BrowserState {
   try {
@@ -185,6 +207,8 @@ export function BrowserPage({
   const [copiedUrl, setCopiedUrl] = useState(false)
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
   const [nativeRestoreReady, setNativeRestoreReady] = useState(!isElectronRuntime())
+  const [zoomByTabId, setZoomByTabId] = useState<Record<string, number>>({})
+  const [clockNow, setClockNow] = useState(() => new Date())
 
   const chromeRef = useRef<HTMLDivElement>(null)
   const nativeSurfaceRef = useRef<HTMLDivElement>(null)
@@ -202,6 +226,27 @@ export function BrowserPage({
 
   stateRef.current = state
   const active = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null
+  const activeZoom = active?.id ? zoomByTabId[active.id] ?? 1 : 1
+
+  const setActiveZoom = useCallback(
+    (value: number) => {
+      if (!active?.id) return
+      const next = Math.min(2, Math.max(0.5, Number.isFinite(value) ? value : 1))
+      setZoomByTabId((current) => ({ ...current, [active.id]: next }))
+      void desktop.browser.setZoom(active.id, next).catch(() => undefined)
+    },
+    [active?.id],
+  )
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (!active?.id || !isElectronRuntime()) return
+    void desktop.browser.setZoom(active.id, activeZoom).catch(() => undefined)
+  }, [active?.id, activeZoom])
 
   /**
    * Electron child views are positioned in window-content coordinates, not in
@@ -267,6 +312,14 @@ export function BrowserPage({
   const synchronizeBrowserSurface = useCallback(
     async (nextState: BrowserState) => {
       if (!isElectronRuntime()) return
+
+      // The initial renderer state can contain a local fallback tab while the
+      // persisted Electron session is still being read. Creating it here would
+      // begin a load that session restore immediately supersedes.
+      if (!sessionHydrated.current) {
+        await desktop.browser.deactivate()
+        return
+      }
       const version = ++surfaceSyncVersionRef.current
       const action = nativeViewAction(nextState)
       const canShowNativeSurface = isVisible
@@ -885,6 +938,7 @@ export function BrowserPage({
     active?.incognito,
     active?.url,
     isVisible,
+    nativeRestoreReady,
     panel,
     permissionRequest,
     synchronizeBrowserSurface,
@@ -936,6 +990,26 @@ export function BrowserPage({
     void navigator.clipboard.writeText(active.url)
     setCopiedUrl(true)
     setTimeout(() => setCopiedUrl(false), 1500)
+  }
+
+  function stopActivePage() {
+    if (active?.id) void desktop.browser.stop(active.id)
+  }
+
+  function captureActivePage() {
+    if (active?.id) void desktop.browser.capturePage(active.id)
+  }
+
+  function openActivePageExternally() {
+    if (active?.url) void desktop.openExternal(active.url).catch(() => undefined)
+  }
+
+  function toggleActiveMute() {
+    if (active?.id) void toggleMute(active.id)
+  }
+
+  function syncBrowserMetadata() {
+    void desktop.browser.syncMetadata().catch(() => undefined)
   }
 
   function handleTabMiddleClick(event: MouseEvent, id: string) {
@@ -1015,133 +1089,136 @@ export function BrowserPage({
   const isBlankActiveTab = !active?.url
 
   return (
-    <section
-      className={`edge-browser ${browserThemeClass}`}
-      style={{ colorScheme: theme }}
-      aria-label="Gömülü tarayıcı"
-    >
-      {/* Floating Curved Acrylic Browser Chrome Bar */}
-      <div ref={chromeRef} className="edge-browser__chrome" data-window-drag>
-        {/* Upper Tab Strip Row */}
-        <div className="edge-browser__tabs" role="tablist" aria-label="Tarayıcı sekmeleri" data-window-drag>
-          {/* Scrollable Tabs */}
-          <div
-            ref={tabScrollRef}
-            className="edge-browser__tab-scroll"
-            onWheel={handleTabScrollWheel}
-            data-window-drag
-          >
-            {state.tabs.map((tab) => {
-              const media = state.mediaByTabId[tab.id]
-              const isMuted = tab.muted === true
-              const isSelected = tab.id === active?.id
-              const isTabIncognito = tab.incognito === true
+    <TooltipProvider delayDuration={400} skipDelayDuration={150}>
+      <section
+        className={`edge-browser ${browserThemeClass}`}
+        style={{ colorScheme: theme }}
+        aria-label="Gömülü tarayıcı"
+      >
+        <div ref={chromeRef} className="edge-browser__chrome" data-window-drag>
+          {/* The browser tab strip stays in its original top position. */}
+          <div className="edge-browser__tabs" role="tablist" aria-label="Tarayıcı sekmeleri" data-window-drag>
+            <div
+              ref={tabScrollRef}
+              className="edge-browser__tab-scroll"
+              onWheel={handleTabScrollWheel}
+              data-window-drag
+            >
+              {state.tabs.map((tab) => {
+                const media = state.mediaByTabId[tab.id]
+                const isMuted = tab.muted === true
+                const isSelected = tab.id === active?.id
+                const isTabIncognito = tab.incognito === true
 
-              return (
-                <div
-                  key={tab.id}
-                  role="tab"
-                  tabIndex={0}
-                  aria-selected={isSelected}
-                  className={`edge-browser__tab ${isSelected ? 'edge-browser__tab--active' : ''} ${tab.pinned ? 'edge-browser__tab--pinned' : ''} ${isTabIncognito ? 'edge-browser__tab--incognito' : ''}`}
-                  onClick={() => void select(tab.id)}
-                  onAuxClick={(event) => handleTabMiddleClick(event, tab.id)}
-                  onMouseDown={(event) => handleTabMiddleClick(event, tab.id)}
-                  onContextMenu={(event) => handleTabContextMenu(event, tab.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
+                return (
+                  <BrowserTooltip
+                    key={tab.id}
+                    label={`${tab.title}${isTabIncognito ? ' (Gizli Sekme)' : ''}`}
+                    side="bottom"
+                  >
+                    <div
+                      role="tab"
+                      tabIndex={0}
+                      aria-selected={isSelected}
+                      className={`edge-browser__tab ${isSelected ? 'edge-browser__tab--active' : ''} ${tab.pinned ? 'edge-browser__tab--pinned' : ''} ${isTabIncognito ? 'edge-browser__tab--incognito' : ''}`}
+                      onClick={() => void select(tab.id)}
+                      onAuxClick={(event) => handleTabMiddleClick(event, tab.id)}
+                      onMouseDown={(event) => handleTabMiddleClick(event, tab.id)}
+                      onContextMenu={(event) => handleTabContextMenu(event, tab.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          void select(tab.id)
+                        }
+                      }}
+                    >
+                      <div className="edge-browser__tab-icon">
+                        {isTabIncognito ? (
+                          <EyeOff size={13} className="edge-browser__tab-incognito-icon" aria-label="Gizli Sekme" />
+                        ) : tab.favicon ? (
+                          <img src={tab.favicon} alt="" onError={(event) => { (event.target as HTMLElement).style.display = 'none' }} />
+                        ) : (
+                          <Globe2 size={13} />
+                        )}
+                      </div>
+
+                      {!tab.pinned && <span className="edge-browser__tab-title">{tab.title}</span>}
+                      {tab.pinned && <Pin size={11} className="edge-browser__tab-pin-badge" aria-label="Sabitlenmiş" />}
+
+                      {media?.playing && (
+                        <BrowserTooltip
+                          label={isMuted ? 'Sekme sesi kapalı (Sesi aç)' : 'Medya çalıyor (Sessize al)'}
+                          side="bottom"
+                        >
+                          <button
+                            type="button"
+                            className={`edge-browser__tab-media-btn ${isMuted ? 'edge-browser__tab-media-btn--muted' : ''}`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void toggleMute(tab.id)
+                            }}
+                            aria-label={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
+                          >
+                            {isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                          </button>
+                        </BrowserTooltip>
+                      )}
+
+                      {tab.loading && <LoaderCircle className="edge-browser__spinner" size={12} />}
+
+                      {!tab.pinned && (
+                        <BrowserTooltip label="Sekmeyi kapat (Orta tık / Ctrl+W)" side="bottom">
+                          <button
+                            type="button"
+                            className="edge-browser__tab-close-btn"
+                            aria-label={`${tab.title} sekmesini kapat (Orta tık veya Ctrl+W)`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void close(tab.id)
+                            }}
+                          >
+                            <X size={11} />
+                          </button>
+                        </BrowserTooltip>
+                      )}
+                    </div>
+                  </BrowserTooltip>
+                )
+              })}
+            </div>
+
+            <div className="edge-browser__tabs-actions" data-window-drag>
+              <BrowserTooltip label="Yeni sekme (Ctrl+T)" side="bottom">
+                <button
+                  type="button"
+                  className="edge-browser__icon-button edge-browser__new-tab"
+                  onClick={() => void openTab()}
+                  onAuxClick={(event) => {
+                    if (event.button === 1) {
                       event.preventDefault()
-                      void select(tab.id)
+                      void openTab()
                     }
                   }}
-                  title={`${tab.title}${isTabIncognito ? ' (Gizli Sekme)' : ''}`}
+                  aria-label="Yeni sekme"
                 >
-                  {/* Tab Icon / Favicon / Incognito mask */}
-                  <div className="edge-browser__tab-icon">
-                    {isTabIncognito ? (
-                      <EyeOff size={13} className="edge-browser__tab-incognito-icon" aria-label="Gizli Sekme" />
-                    ) : tab.favicon ? (
-                      <img src={tab.favicon} alt="" onError={(e) => { (e.target as HTMLElement).style.display = 'none' }} />
-                    ) : (
-                      <Globe2 size={13} />
-                    )}
-                  </div>
-
-                  {/* Tab Title (hidden for pinned tabs) */}
-                  {!tab.pinned && <span className="edge-browser__tab-title">{tab.title}</span>}
-
-                  {/* Pinned Tab Badge */}
-                  {tab.pinned && <Pin size={11} className="edge-browser__tab-pin-badge" aria-label="Sabitlenmiş" />}
-
-                  {/* Audio / Media Playing Indicator */}
-                  {media?.playing && (
-                    <button
-                      type="button"
-                      className={`edge-browser__tab-media-btn ${isMuted ? 'edge-browser__tab-media-btn--muted' : ''}`}
-                      title={isMuted ? 'Sekme sesi kapalı (Sesi aç)' : 'Medya çalıyor (Sessize al)'}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void toggleMute(tab.id)
-                      }}
-                      aria-label={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
-                    >
-                      {isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-                    </button>
-                  )}
-
-                  {/* Loading Spinner */}
-                  {tab.loading && <LoaderCircle className="edge-browser__spinner" size={12} />}
-
-                  {/* Tab Close Button */}
-                  {!tab.pinned && (
-                    <button
-                      type="button"
-                      className="edge-browser__tab-close-btn"
-                      aria-label={`${tab.title} sekmesini kapat (Orta tık veya Ctrl+W)`}
-                      title="Sekmeyi kapat (Orta tık / Ctrl+W)"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void close(tab.id)
-                      }}
-                    >
-                      <X size={11} />
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+                  <Plus size={14} />
+                </button>
+              </BrowserTooltip>
+              <BrowserTooltip label="Yeni gizli sekme (Ctrl+Shift+N)" side="bottom">
+                <button
+                  type="button"
+                  className="edge-browser__icon-button edge-browser__new-incognito"
+                  onClick={() => void openTab(undefined, true)}
+                  aria-label="Yeni gizli sekme"
+                >
+                  <EyeOff size={14} />
+                </button>
+              </BrowserTooltip>
+            </div>
           </div>
 
-          {/* Tab Strip Action Buttons: New Tab & New Incognito Tab */}
-          <div className="edge-browser__tabs-actions" data-window-drag>
-            <button
-              type="button"
-              className="edge-browser__icon-button edge-browser__new-tab"
-              onClick={() => void openTab()}
-              onAuxClick={(event) => {
-                if (event.button === 1) {
-                  event.preventDefault()
-                  void openTab()
-                }
-              }}
-              title="Yeni sekme (Ctrl+T)"
-              aria-label="Yeni sekme"
-            >
-              <Plus size={14} />
-            </button>
-            <button
-              type="button"
-              className="edge-browser__icon-button edge-browser__new-incognito"
-              onClick={() => void openTab(undefined, true)}
-              title="Yeni gizli sekme (Ctrl+Shift+N)"
-              aria-label="Yeni gizli sekme"
-            >
-              <EyeOff size={14} />
-            </button>
-          </div>
-        </div>
-
-        {/* Lower Navigation & Address Bar Toolbar */}
+          {/* Navigation and address toolbar; the window controls stay aligned
+              with the top tab row at the app level. */}
         <div className="edge-browser__toolbar" data-window-drag>
           {/* Navigation History Group (Back / Forward / Reload) */}
           <div className="edge-browser__navigation-group">
@@ -1320,7 +1397,6 @@ export function BrowserPage({
             </div>
           </div>
         )}
-      </div>
 
       {(error || active?.error) && (
         <div className="edge-browser__error" role="alert">
@@ -1655,8 +1731,9 @@ export function BrowserPage({
         </div>
       )}
 
-      {/* This element is the measured, renderer-side contract for the native
-          WebContentsView. It deliberately stays in normal flex layout. */}
+        </div>
+
+      {/* The measured native surface keeps the original full-width layout. */}
       <div ref={nativeSurfaceRef} className="edge-browser__content" data-browser-native-surface>
         {isBlankActiveTab && emptyTabContent ? (
           <div className="edge-browser__empty-tab-home" aria-label="Ana sayfa">
@@ -1672,6 +1749,118 @@ export function BrowserPage({
           </div>
         )}
       </div>
-    </section>
+
+      <div className="edge-browser__statusbar" data-window-drag aria-label="Tarayıcı durum çubuğu">
+        <div className="edge-browser__statusbar-group edge-browser__statusbar-group--left">
+          <BrowserTooltip label={showFavoritesBar ? 'Sık kullanılanlar çubuğunu gizle' : 'Sık kullanılanlar çubuğunu göster'} side="top">
+            <button
+              type="button"
+              className={`edge-browser__statusbar-button ${showFavoritesBar ? 'edge-browser__statusbar-button--active' : ''}`}
+              onClick={toggleFavoritesBarVisibility}
+              aria-label="Sık kullanılanlar çubuğunu aç/kapat"
+              aria-pressed={showFavoritesBar}
+            >
+              <Bookmark size={14} />
+            </button>
+          </BrowserTooltip>
+          <BrowserTooltip label="Sayfa yüklemesini durdur" side="top">
+            <button
+              type="button"
+              className="edge-browser__statusbar-button"
+              onClick={stopActivePage}
+              disabled={!active?.loading}
+              aria-label="Sayfa yüklemesini durdur"
+            >
+              <Pause size={14} />
+            </button>
+          </BrowserTooltip>
+          <BrowserTooltip label="Sekme bilgilerini senkronize et" side="top">
+            <button
+              type="button"
+              className="edge-browser__statusbar-button"
+              onClick={syncBrowserMetadata}
+              aria-label="Sekme bilgilerini senkronize et"
+            >
+              <Cloud size={14} />
+            </button>
+          </BrowserTooltip>
+        </div>
+
+        <div className="edge-browser__statusbar-spacer" />
+
+        <div className="edge-browser__statusbar-group edge-browser__statusbar-group--right">
+          <BrowserTooltip label="Sayfayı harici tarayıcıda aç" side="top">
+            <button
+              type="button"
+              className="edge-browser__statusbar-button"
+              onClick={openActivePageExternally}
+              disabled={!active?.url}
+              aria-label="Sayfayı harici tarayıcıda aç"
+            >
+              <ExternalLink size={14} />
+            </button>
+          </BrowserTooltip>
+          <BrowserTooltip label="Sayfa görüntüsünü panoya kopyala" side="top">
+            <button
+              type="button"
+              className="edge-browser__statusbar-button"
+              onClick={captureActivePage}
+              disabled={!active?.id || !isElectronRuntime()}
+              aria-label="Sayfa görüntüsünü panoya kopyala"
+            >
+              <ScanLine size={14} />
+            </button>
+          </BrowserTooltip>
+          <BrowserTooltip label="İndirmeler panelini aç/kapat" side="top">
+            <button
+              type="button"
+              className={`edge-browser__statusbar-button ${panel === 'downloads' ? 'edge-browser__statusbar-button--active' : ''}`}
+              onClick={() => void togglePanel('downloads')}
+              aria-label="İndirmeler panelini aç/kapat"
+              aria-pressed={panel === 'downloads'}
+            >
+              <Columns2 size={14} />
+            </button>
+          </BrowserTooltip>
+          <BrowserTooltip label={active?.muted ? 'Sekme sesini aç' : 'Sekmeyi sessize al'} side="top">
+            <button
+              type="button"
+              className={`edge-browser__statusbar-button ${active?.muted ? 'edge-browser__statusbar-button--active' : ''}`}
+              onClick={toggleActiveMute}
+              disabled={!active?.id}
+              aria-label={active?.muted ? 'Sekme sesini aç' : 'Sekmeyi sessize al'}
+              aria-pressed={active?.muted}
+            >
+              {active?.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            </button>
+          </BrowserTooltip>
+          <button
+            type="button"
+            className="edge-browser__statusbar-reset"
+            onClick={() => setActiveZoom(1)}
+            aria-label="Yakınlaştırmayı sıfırla"
+          >
+            Sıfırla
+          </button>
+          <Minus size={12} className="edge-browser__statusbar-zoom-icon" aria-hidden="true" />
+          <input
+            className="edge-browser__statusbar-zoom"
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.05"
+            value={activeZoom}
+            onChange={(event) => setActiveZoom(Number(event.target.value))}
+            aria-label="Sayfa yakınlaştırma"
+          />
+          <Plus size={12} className="edge-browser__statusbar-zoom-icon" aria-hidden="true" />
+          <output className="edge-browser__statusbar-zoom-value" aria-live="polite">{Math.round(activeZoom * 100)}%</output>
+          <time className="edge-browser__statusbar-time" dateTime={clockNow.toISOString()}>
+            {clockNow.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+          </time>
+        </div>
+      </div>
+      </section>
+    </TooltipProvider>
   )
 }

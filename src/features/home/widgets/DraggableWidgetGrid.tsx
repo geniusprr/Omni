@@ -3,6 +3,7 @@ import AppWindow from 'lucide-react/dist/esm/icons/app-window.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
 import CircleCheck from 'lucide-react/dist/esm/icons/circle-check.js'
+import Cloud from 'lucide-react/dist/esm/icons/cloud.js'
 import Clock3 from 'lucide-react/dist/esm/icons/clock-3.js'
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
@@ -38,6 +39,7 @@ import { desktop, type ProgramCandidate } from '@/lib/desktop'
 import { durationLabel, targetLabel } from '@/lib/format'
 import type {
   PairedController,
+  LocalSendDevice,
   RemoteConnectionStatus,
   TimerAction,
   TimerState,
@@ -101,6 +103,7 @@ interface DraggableWidgetGridProps {
   pairingCode?: string
   connectionStatus?: RemoteConnectionStatus
   pairedControllers?: PairedController[]
+  localDevices?: LocalSendDevice[]
   onRefreshControllers?: () => void
   onOpenPairingModal?: () => void
 }
@@ -143,6 +146,7 @@ export function DraggableWidgetGrid({
   pairingCode = 'KAP-XXXX',
   connectionStatus = 'disconnected',
   pairedControllers = [],
+  localDevices = [],
   onRefreshControllers,
   onOpenPairingModal,
 }: DraggableWidgetGridProps) {
@@ -176,6 +180,21 @@ export function DraggableWidgetGrid({
   const [programIconByTarget, setProgramIconByTarget] = useState<Record<string, string | null>>({})
   const [websiteIconByUrl, setWebsiteIconByUrl] = useState<Record<string, string | null>>({})
   const [quoteIndex, setQuoteIndex] = useState(() => new Date().getDate() % QUOTES.length)
+
+  const presenceNow = Date.now()
+  const controllerPresenceRows = pairedControllers.map((controller) => {
+    const local = localDevices.find((device) => device.fingerprint === controller.controllerId)
+    return {
+      id: controller.id,
+      name: controller.controllerName || 'Mobil Cihaz',
+      type: controller.controllerType || 'Android',
+      localOnline: Boolean(local && presenceNow - local.lastSeen < 45_000),
+      cloudOnline: Boolean(controller.lastActiveAt && presenceNow - Date.parse(controller.lastActiveAt) < 60_000),
+    }
+  })
+  const pairedControllerIds = new Set(pairedControllers.map((controller) => controller.controllerId))
+  const unpairedLocalDevices = localDevices.filter((device) => !pairedControllerIds.has(device.fingerprint))
+  const activeDeviceCount = controllerPresenceRows.length + unpairedLocalDevices.length
 
   const hiddenSet = new Set(layout.hiddenWidgets)
   const remainingSeconds = timer ? Math.max(0, Math.ceil((timer.targetAt - now) / 1000)) : 0
@@ -1056,30 +1075,51 @@ export function DraggableWidgetGrid({
               </div>
 
               {/* Paired Remote Controllers List */}
-              <div className="widget-controllers-section">
-                <div className="widget-controllers-header">
-                  <span>Bağlı Kontrolcüler</span>
-                  <span className="widget-controllers-count">{pairedControllers.length}</span>
-                </div>
+                <div className="widget-controllers-section">
+                  <div className="widget-controllers-header">
+                    <span>Aktif Cihazlar</span>
+                    <span className="widget-controllers-count">{activeDeviceCount}</span>
+                  </div>
 
-                {pairedControllers.length > 0 ? (
+                {activeDeviceCount > 0 ? (
                   <div className="widget-controllers-list">
-                    {pairedControllers.map((ctrl) => (
-                      <div key={ctrl.id} className="widget-controller-row">
+                    {controllerPresenceRows.map((ctrl) => (
+                      <div key={ctrl.id} className="widget-controller-row widget-controller-row--presence">
                         <div className="widget-ctrl-icon">
                           <Smartphone size={12} className="text-slate-400" />
                         </div>
                         <div className="widget-ctrl-info">
-                          <span className="widget-ctrl-name">{ctrl.controllerName || 'Mobil Cihaz'}</span>
-                          <span className="widget-ctrl-type">{ctrl.controllerType || 'Android'}</span>
+                          <span className="widget-ctrl-name">{ctrl.name}</span>
+                          <span className="widget-ctrl-type">{ctrl.type}</span>
                         </div>
-                        <span className="status-micro-dot status-micro-dot--online" title="Aktif" />
+                        <div className="widget-presence-badges" title="Bağlantı kanalları">
+                          {ctrl.localOnline ? <span className="widget-presence-badge widget-presence-badge--local"><Wifi size={10} /> Yerel</span> : null}
+                          {ctrl.cloudOnline ? <span className="widget-presence-badge widget-presence-badge--cloud"><Cloud size={10} /> Bulut</span> : null}
+                          {!ctrl.localOnline && !ctrl.cloudOnline ? <span className="widget-presence-badge widget-presence-badge--offline">Bekliyor</span> : null}
+                        </div>
                       </div>
                     ))}
+                    {unpairedLocalDevices.map((device) => {
+                      const isOnline = presenceNow - device.lastSeen < 45_000
+                      return (
+                        <div key={`local-${device.ip}-${device.port}`} className="widget-controller-row widget-controller-row--presence">
+                          <div className="widget-ctrl-icon"><Smartphone size={12} className="text-slate-400" /></div>
+                          <div className="widget-ctrl-info">
+                            <span className="widget-ctrl-name">{device.alias || 'Yerel Telefon'}</span>
+                            <span className="widget-ctrl-type">Wi-Fi</span>
+                          </div>
+                          <div className="widget-presence-badges">
+                            <span className={`widget-presence-badge ${isOnline ? 'widget-presence-badge--local' : 'widget-presence-badge--offline'}`}>
+                              <Wifi size={10} /> {isOnline ? 'Yerel' : 'Bekliyor'}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="widget-no-controllers">
-                    <span>Bağlı mobil kontrolcü yok.</span>
+                    <span>Bağlı telefon yok.</span>
                     <button
                       type="button"
                       className="widget-mini-link-btn"

@@ -132,6 +132,28 @@ class MobileTransferServer(
 
     fun isRunning(): Boolean = running
 
+    /**
+     * Saves a file downloaded by the cloud worker into the same Downloads/kapanis
+     * location used by the local LocalSend receiver. The foreground service uses
+     * this entry point while the Compose UI is not running.
+     */
+    fun saveDownloadedFile(source: File, filename: String, mimeType: String): Uri {
+        val safeName = sanitizeFilename(filename)
+        val size = source.length()
+        if (size > MAX_UPLOAD_BYTES) throw IOException("Dosya boyutu desteklenmiyor.")
+        val incoming = IncomingFile(
+            id = UUID.randomUUID().toString(),
+            filename = safeName,
+            size = size,
+            mimeType = mimeType.ifBlank { "application/octet-stream" }
+        )
+        source.inputStream().buffered().use { input ->
+            val destination = saveIncomingFile(input, size, incoming)
+            showReceivedFileNotification(incoming.filename, destination, incoming.mimeType)
+            return destination
+        }
+    }
+
     private fun acceptConnections(server: ServerSocket) {
         while (running) {
             try {

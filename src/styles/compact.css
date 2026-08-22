@@ -1779,6 +1779,52 @@ textarea {
   color: var(--k-faint);
 }
 
+.paired-item__presence {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.presence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.16rem 0.36rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.presence-chip--local {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.presence-chip--cloud {
+  color: #7e22ce;
+  background: rgba(168, 85, 247, 0.12);
+}
+
+.presence-chip--offline {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.12);
+}
+
+.minios-window--dark .presence-chip--local {
+  color: #6ee7b7;
+}
+
+.minios-window--dark .presence-chip--cloud {
+  color: #d8b4fe;
+}
+
+.minios-window--dark .presence-chip--offline {
+  color: #94a3b8;
+}
+
 .paired-empty {
   display: flex;
   align-items: center;
@@ -3658,6 +3704,21 @@ textarea {
   flex: 1;
 }
 
+.localsend-device-section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.2rem 0.1rem;
+  color: #64748b;
+  font: 700 0.58rem var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.minios-window--dark .localsend-device-section-label {
+  color: #94a3b8;
+}
+
 .localsend-device-card {
   display: flex;
   align-items: center;
@@ -3702,6 +3763,28 @@ textarea {
   background: rgba(96, 165, 250, 0.15) !important;
   border-color: rgba(96, 165, 250, 0.5) !important;
   box-shadow: 0 0 14px rgba(96, 165, 250, 0.2) !important;
+}
+
+.localsend-device-card--cloud .localsend-device-card__icon--cloud {
+  background: rgba(168, 85, 247, 0.12);
+  color: #9333ea;
+}
+
+.minios-window--dark .localsend-device-card--cloud .localsend-device-card__icon--cloud {
+  background: rgba(192, 132, 252, 0.14);
+  color: #c084fc;
+}
+
+.localsend-cloud-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  color: #a855f7;
+  flex-shrink: 0;
+}
+
+.minios-window--dark .localsend-cloud-presence {
+  color: #c084fc;
 }
 
 .localsend-device-card__icon {
@@ -10943,6 +11026,10 @@ textarea {
   background: rgba(255, 255, 255, 0.3);
 }
 
+.widget-controller-row--presence {
+  min-width: 0;
+}
+
 .minios-window--dark .widget-controller-row {
   background: rgba(255, 255, 255, 0.02);
 }
@@ -10976,6 +11063,51 @@ textarea {
   background: rgba(0, 0, 0, 0.04);
   padding: 0.0625rem 0.25rem;
   border-radius: 0.25rem;
+}
+
+.widget-presence-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.widget-presence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16rem;
+  padding: 0.13rem 0.28rem;
+  border-radius: 999px;
+  font-size: 0.53rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.widget-presence-badge--local {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.widget-presence-badge--cloud {
+  color: #7e22ce;
+  background: rgba(168, 85, 247, 0.12);
+}
+
+.widget-presence-badge--offline {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.12);
+}
+
+.minios-window--dark .widget-presence-badge--local {
+  color: #6ee7b7;
+}
+
+.minios-window--dark .widget-presence-badge--cloud {
+  color: #d8b4fe;
+}
+
+.minios-window--dark .widget-presence-badge--offline {
+  color: #94a3b8;
 }
 
 .widget-no-controllers {
@@ -15239,13 +15371,17 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #0b0b0b;
+  border: 0;
+  border-radius: var(--radius-panel) 0 0 var(--radius-panel);
+  background: transparent;
+  box-shadow: none;
 }
 
 .librechat-view-host {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  border-radius: inherit;
   background: transparent;
 }
 
@@ -20113,7 +20249,300 @@ body {
   background: var(--acrylic-surface-strong);
 }
 
+/* BrowserView is a separate native surface, so the browser workspace cannot
+   use renderer spacing as a mask around it. Keep the measured native host
+   flush with its shell and keep the browser frame square. */
+.minios-shell--browser {
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
+.edge-browser__chrome {
+  border-radius: 0 !important;
+}
+
+/* Match the home tab strip's row geometry: the controls sit on the same
+   baseline and the tab content is anchored to the row's lower edge. */
+.edge-browser,
+.edge-browser__chrome {
+  --browser-tabs-height: 2.375rem;
+}
+
+.edge-browser__tabs {
+  min-height: var(--browser-tabs-height);
+  height: var(--browser-tabs-height);
+  align-items: flex-end;
+  padding-top: 0;
+}
+
+.edge-browser__tab-scroll {
+  height: 100%;
+  align-items: flex-end;
+  padding-block: 0;
+}
+
+.edge-browser__tabs-actions {
+  align-self: flex-end;
+  height: 100%;
+  /* The window buttons are an app-level overlay on this same row. Reserve
+     their exact width so tab actions keep the home tab bar's right edge. */
+  margin-right: 7.5rem;
+}
+
+/* These controls are shared by every renderer-owned workspace. Align their
+   group with the client edge instead of the browser's former floating inset. */
+.window-control-strip--top-right {
+  top: 0;
+  right: 0;
+  height: 2.375rem;
+  padding: 0;
+  gap: 0;
+}
+
+.window-control-strip--top-right .window-control-button {
+  width: 2.375rem;
+  min-width: 2.375rem;
+  height: 2.375rem;
+  border-radius: 0;
+}
+
+@media (max-width: 48rem) {
+  .edge-browser,
+  .edge-browser__chrome {
+    --browser-tabs-height: 2.75rem;
+  }
+}
+
+/* Radix renders this content through a document-body portal. The high layer
+   keeps tooltip labels above renderer panels/titlebars; browser controls place
+   their labels within chrome, before the native BrowserView viewport begins. */
+.ui-tooltip-content {
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+/* Hallmark · browser component: top tab strip + Vivaldi-style status bar
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: pass (acrylic text / line tokens)
+ */
+
+/* The browser frame is deliberately square. The native BrowserView is also
+   rectangular now; there is no renderer mask or compositor corner treatment. */
+.edge-browser,
+.edge-browser__chrome,
+.edge-browser__content,
+.edge-browser__statusbar {
+  border-radius: 0 !important;
+}
+
+.edge-browser {
+  overflow: hidden;
+}
+
+.edge-browser__chrome {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  box-shadow: 0 6px 20px var(--acrylic-shadow), inset 0 1px 0 var(--color-glass-highlight);
+}
+
+.edge-browser__statusbar-button {
+  display: inline-grid;
+  width: 1.875rem;
+  height: 1.875rem;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--acrylic-text-soft);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+}
+
+.edge-browser__statusbar-button:hover:not(:disabled),
+.edge-browser__statusbar-button:focus-visible {
+  border-color: var(--acrylic-line);
+  background: var(--acrylic-surface-hover);
+  color: var(--acrylic-text);
+}
+
+.edge-browser__statusbar-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.edge-browser__statusbar-button:focus-visible,
+.edge-browser__statusbar-reset:focus-visible,
+.edge-browser__statusbar-zoom:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.minios-window .edge-browser__content {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  border-top: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  border-left: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.edge-browser__statusbar {
+  display: flex;
+  min-width: 0;
+  min-height: 2.125rem;
+  height: 2.125rem;
+  flex: 0 0 2.125rem;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0 var(--space-sm);
+  border-top: 1px solid var(--acrylic-line);
+  background: color-mix(in oklch, var(--acrylic-surface-strong) 96%, transparent);
+  color: var(--acrylic-text-soft);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  -webkit-app-region: no-drag;
+}
+
+.edge-browser__statusbar-group {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.edge-browser__statusbar-spacer {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.edge-browser__statusbar-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0;
+}
+
+.edge-browser__statusbar-button--active {
+  border-color: color-mix(in oklch, var(--color-accent) 34%, var(--acrylic-line));
+  background: color-mix(in oklch, var(--color-accent) 12%, var(--acrylic-surface));
+  color: var(--color-accent);
+}
+
+.edge-browser__statusbar-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.edge-browser__statusbar-reset {
+  min-width: 3rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--acrylic-text-soft);
+  cursor: pointer;
+  font: 600 0.6rem var(--font-mono);
+  -webkit-app-region: no-drag;
+}
+
+.edge-browser__statusbar-reset:hover {
+  color: var(--acrylic-text);
+}
+
+.edge-browser__statusbar-zoom-icon {
+  flex: 0 0 auto;
+  color: var(--acrylic-text-soft);
+}
+
+.edge-browser__statusbar-zoom {
+  width: clamp(4.5rem, 8vw, 8rem);
+  height: 0.85rem;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.edge-browser__statusbar-zoom-value {
+  min-width: 2.5rem;
+  color: var(--acrylic-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.edge-browser__statusbar-time {
+  min-width: 3rem;
+  color: var(--acrylic-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 48rem) {
+  .edge-browser__statusbar {
+    padding-inline: var(--space-xs);
+  }
+
+  .edge-browser__statusbar-group--left .edge-browser__statusbar-button:nth-child(3),
+  .edge-browser__statusbar-group--right .edge-browser__statusbar-button:nth-child(3) {
+    display: none;
+  }
+
+  .edge-browser__statusbar-zoom {
+    width: 4rem;
+  }
+}
+
+@media (max-width: 30rem) {
+  .edge-browser__statusbar {
+    gap: var(--space-2xs);
+    padding-inline: var(--space-2xs);
+  }
+
+  .edge-browser__statusbar-group {
+    gap: 0;
+  }
+
+  .edge-browser__statusbar-group--right .edge-browser__statusbar-button:nth-child(-n + 2),
+  .edge-browser__statusbar-zoom-icon {
+    display: none;
+  }
+
+  .edge-browser__statusbar-reset {
+    min-width: 2.6rem;
+    font-size: 0.55rem;
+  }
+
+  .edge-browser__statusbar-zoom {
+    width: 3.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge-browser__statusbar-button {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Vivaldi-style status bar: only the lower-right browser edge is rounded. */
+.edge-browser__statusbar {
+  border-bottom-right-radius: var(--radius-xl, 1rem) !important;
+  border-bottom-left-radius: 0 !important;
+  overflow: hidden;
+}
+
 /* Native AI workspace: no hosted frame or companion backend is required. */
+.minios-shell--ai {
+  /* LibreChat is a native surface, so it must meet the window edges directly
+     just like the browser surface. Its only visible curve is the dock-side
+     left edge. */
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
 .ai-workspace {
   display: flex;
   min-width: 0;
@@ -20225,4 +20654,198 @@ body {
   .ai-model-pill { display: none; }
   .ai-messages { padding: 0.8rem 0.65rem; }
   .ai-settings { position: absolute; z-index: 3; inset: 0.35rem; width: auto; max-height: none; }
+}
+
+/* Hallmark · component: Mini-OS dock rail + shared shell gutter
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: pass (existing acrylic tokens)
+ *
+ * The dock and every workspace now share one spatial contract. The same
+ * gutter is used on the window edge and between the dock and the content
+ * surface, so switching modes cannot move the rail or collapse its breathing
+ * room. Browser and AI surfaces keep their native hosts inside this contract.
+ */
+.minios-shell {
+  --minios-shell-gutter: var(--app-edge-padding);
+  padding: var(--minios-shell-gutter);
+  gap: var(--minios-shell-gutter);
+}
+
+.minios-shell--browser,
+.minios-shell--ai {
+  padding: var(--minios-shell-gutter) !important;
+  gap: var(--minios-shell-gutter) !important;
+}
+
+@media (min-width: 48.0625rem) {
+  .minios-shell:not(.minios-shell--browser) .dock-rail,
+  .minios-shell--browser .dock-rail {
+    position: static;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+  }
+}
+
+@media (max-width: 48rem) {
+  .minios-shell {
+    --minios-shell-gutter: var(--space-xs);
+    padding: var(--minios-shell-gutter);
+    gap: var(--minios-shell-gutter);
+  }
+
+  .minios-shell--browser,
+  .minios-shell--ai {
+    padding: var(--minios-shell-gutter) !important;
+    gap: var(--minios-shell-gutter) !important;
+  }
+
+  .minios-shell .dock-rail {
+    position: static;
+    inset: auto;
+  }
+}
+
+/* Hallmark · shared bottom action bar + edge-to-edge native surfaces
+ * The standard workspace uses one compact gutter on both sides. Browser and
+ * LibreChat consume the top/right/bottom edge so their native surfaces can
+ * measure exactly to the app window again.
+ */
+.minios-shell {
+  --minios-shell-gutter: var(--space-xs);
+  padding: var(--minios-shell-gutter);
+  gap: var(--minios-shell-gutter);
+}
+
+.minios-shell--browser,
+.minios-shell--ai {
+  padding: 0 0 0 var(--minios-shell-gutter) !important;
+  gap: var(--minios-shell-gutter) !important;
+}
+
+.minios-shell--browser .minios-main-area,
+.minios-shell--ai .minios-main-area {
+  min-width: 0;
+  min-height: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.minios-shell--browser .minios-viewport,
+.minios-shell--ai .minios-viewport,
+.minios-shell--browser .minios-subscreen,
+.minios-shell--ai .minios-subscreen,
+.minios-shell--browser .edge-browser-persistent-screen {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.minios-shell--browser .minios-viewport,
+.minios-shell--browser .minios-subscreen,
+.minios-shell--browser .edge-browser-persistent-screen,
+.minios-shell--ai .minios-viewport,
+.minios-shell--ai .minios-subscreen {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.minios-action-bar {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.125rem;
+  flex: 0 0 2.125rem;
+}
+
+.minios-action-bar__context {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--acrylic-text-soft);
+  font: 700 0.58rem var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.minios-action-bar__context-icon {
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--acrylic-line);
+  border-radius: var(--radius-xs);
+  background: var(--acrylic-surface);
+  color: var(--color-accent);
+}
+
+.minios-action-bar__actions {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.minios-action-bar__button {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 48rem) {
+  .minios-shell--browser,
+  .minios-shell--ai {
+    padding: 0 0 0 var(--minios-shell-gutter) !important;
+    gap: var(--minios-shell-gutter) !important;
+  }
+}
+
+@media (max-width: 30rem) {
+  .minios-action-bar__context-label {
+    display: none;
+  }
+
+  .minios-action-bar__actions {
+    gap: 0;
+  }
+}
+
+/* Native Windows titlebar + one shared bottom track.
+ * The renderer no longer owns caption buttons. Every workspace reserves the
+ * same 2.125rem bottom track, while the native surfaces remain measured
+ * above it. Standard workspaces extend that track through the final 8px
+ * shell edge so Browser and LibreChat cannot appear vertically offset.
+ */
+.minios-shell {
+  padding: var(--minios-shell-gutter) var(--minios-shell-gutter) 0;
+}
+
+.minios-shell:not(.minios-shell--browser):not(.minios-shell--ai) .minios-main-area {
+  overflow: visible;
+}
+
+.minios-shell:not(.minios-shell--browser):not(.minios-shell--ai) .minios-action-bar {
+  width: calc(100% + var(--minios-shell-gutter));
+  margin-right: calc(var(--minios-shell-gutter) * -1);
+}
+
+.minios-shell--browser,
+.minios-shell--ai {
+  padding: 0 0 0 var(--minios-shell-gutter) !important;
+}
+
+/* Leave the native Windows caption-button overlay its own tab-strip lane. */
+.edge-browser__tabs-actions {
+  margin-right: max(7.5rem, env(titlebar-area-width, 0px));
+}
+
+@media (max-width: 48rem) {
+  .minios-shell {
+    padding: var(--minios-shell-gutter) var(--minios-shell-gutter) 0;
+  }
+
+  .minios-shell--browser,
+  .minios-shell--ai {
+    padding: 0 0 0 var(--minios-shell-gutter) !important;
+  }
 }

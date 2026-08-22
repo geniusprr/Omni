@@ -57,6 +57,19 @@ data class TransferItem(
     val isImage: Boolean = false
 )
 
+/** A file queued in Supabase for this phone's background transfer service. */
+data class CloudTransfer(
+    val id: String = "",
+    val deviceId: String = "",
+    val controllerId: String = "",
+    val filename: String = "",
+    val mimeType: String = "application/octet-stream",
+    val size: Long = 0L,
+    val storagePath: String = "",
+    val status: String = "pending",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 data class ConnectionTarget(
     val host: String = "192.168.1.100",
     val port: Int = 53317,

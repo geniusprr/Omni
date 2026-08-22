@@ -2,6 +2,85 @@ import { BrowserView, session, type BrowserWindow } from 'electron'
 import type { BrowserBounds } from '../shared/contracts.js'
 
 const ZERO_BOUNDS = { x: 0, y: 0, width: 1, height: 1 }
+const LIBRECHAT_CORNER_RADIUS = 16
+const LIBRECHAT_CHROME_SCRIPT = `
+(() => {
+  const styleId = 'kapanis-librechat-window-style';
+  const cornerRadius = '${LIBRECHAT_CORNER_RADIUS}px';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = \`
+      html,
+      body,
+      #root {
+        border-radius: \${cornerRadius} 0 0 \${cornerRadius} !important;
+        clip-path: inset(0 round \${cornerRadius} 0 0 \${cornerRadius}) !important;
+        -webkit-clip-path: inset(0 round \${cornerRadius} 0 0 \${cornerRadius}) !important;
+      }
+      html,
+      body {
+        overflow: hidden !important;
+      }
+      #root {
+        min-height: 100% !important;
+        overflow: hidden !important;
+      }
+      #export-menu-button,
+      [data-testid="share-conversation-menu-item"] {
+        display: none !important;
+      }
+      [data-kapanis-titlebar="true"] {
+        padding-right: max(114px, env(titlebar-area-width, 0px)) !important;
+        -webkit-app-region: drag !important;
+      }
+      [data-kapanis-titlebar="true"] button,
+      [data-kapanis-titlebar="true"] input,
+      [data-kapanis-titlebar="true"] textarea,
+      [data-kapanis-titlebar="true"] a,
+      [data-kapanis-titlebar="true"] [role="button"] {
+        -webkit-app-region: no-drag !important;
+      }
+    \`;
+    document.head.appendChild(style);
+  }
+
+  const decorate = () => {
+    document.querySelectorAll('#export-menu-button, [data-testid="share-conversation-menu-item"]').forEach((element) => {
+      element.setAttribute('data-kapanis-share-hidden', 'true');
+    });
+    const candidates = document.querySelectorAll('header, [class*="h-[52px]"]');
+    for (const element of candidates) {
+      const rect = element.getBoundingClientRect();
+      if (rect.top <= 8 && rect.height >= 44 && rect.height <= 60 && rect.width >= 280) {
+        element.setAttribute('data-kapanis-titlebar', 'true');
+      }
+    }
+  };
+
+  decorate();
+  if (!window.__kapanisLibreChatChromeObserver) {
+    window.__kapanisLibreChatChromeObserver = new MutationObserver(decorate);
+    window.__kapanisLibreChatChromeObserver.observe(document.body, { childList: true, subtree: true });
+  }
+  if (location.pathname === '/c/new' && !window.__kapanisLibreChatNewChatTimer) {
+    let attempts = 0;
+    window.__kapanisLibreChatNewChatTimer = window.setInterval(() => {
+      if (document.querySelector('[data-testid="model-selector-button"]')) {
+        clearInterval(window.__kapanisLibreChatNewChatTimer);
+        window.__kapanisLibreChatNewChatTimer = 0;
+        return;
+      }
+      const trigger = document.querySelector('[data-testid="nav-new-chat-fab"], [data-testid="header-new-chat-button"], [data-testid="new-chat-button"]');
+      if (trigger instanceof HTMLElement) trigger.click();
+      attempts += 1;
+      if (attempts >= 8) {
+        clearInterval(window.__kapanisLibreChatNewChatTimer);
+        window.__kapanisLibreChatNewChatTimer = 0;
+      }
+    }, 350);
+  }
+})();`
 
 /** Native presentation surface for the official LibreChat client. */
 export class LibreChatView {
@@ -9,6 +88,7 @@ export class LibreChatView {
   private view: BrowserView | null = null
   private attached = false
   private bounds: BrowserBounds = ZERO_BOUNDS
+  private sessionReady: Promise<void> | null = null
 
   constructor(window: BrowserWindow) {
     this.window = window
@@ -18,10 +98,12 @@ export class LibreChatView {
     if (!/^https?:\/\//i.test(url)) throw new Error('LibreChat yerel adresi geçersiz.')
     const baseUrl = url.replace(/\/+$/, '')
     this.bounds = normalizeBounds(bounds)
+    await this.prepareSession()
     if (!this.view) {
+      const libreChatSession = session.fromPartition('persist:kapanis-librechat')
       this.view = new BrowserView({
         webPreferences: {
-          session: session.fromPartition('persist:kapanis-librechat'),
+          session: libreChatSession,
           nodeIntegration: false,
           contextIsolation: true,
           sandbox: true,
@@ -29,10 +111,11 @@ export class LibreChatView {
           spellcheck: true,
         },
       })
-      // LibreChat's embedded shell is light on first load. A white native
-      // surface prevents the empty conversation pane from flashing black
-      // while the client mounts its landing route.
-      this.view.setBackgroundColor('#ffffff')
+      // BrowserView is rectangular. Keep its backing surface transparent so
+      // the clipped LibreChat document reveals the rounded host underneath.
+      this.view.setBackgroundColor('#00000000')
+      this.view.webContents.on('did-finish-load', () => { void this.installChrome() })
+      this.view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     }
     this.view.setBounds(this.bounds)
     if (!this.attached) {
@@ -71,6 +154,37 @@ export class LibreChatView {
     try { view.webContents.close({ waitForBeforeUnload: false }) } catch { /* best effort */ }
     this.attached = false
   }
+
+  private prepareSession() {
+    if (this.sessionReady) return this.sessionReady
+    const libreChatSession = session.fromPartition('persist:kapanis-librechat')
+    this.sessionReady = Promise.all([
+      libreChatSession.clearCache(),
+      libreChatSession.clearStorageData({ storages: ['serviceworkers', 'cachestorage'] }),
+    ]).then(() => undefined).catch((error) => {
+      console.warn('[librechat] Eski istemci önbelleği temizlenemedi', error)
+    })
+    return this.sessionReady
+  }
+
+  private async installChrome() {
+    const view = this.view
+    if (!view || view.webContents.isDestroyed()) return
+    try {
+      const result = await view.webContents.executeJavaScript(`(() => {
+        try {
+          ${LIBRECHAT_CHROME_SCRIPT}
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, message: String(error), stack: error?.stack || '' };
+        }
+      })()`, true) as { ok?: boolean; message?: string; stack?: string }
+      if (!result?.ok) console.warn('[librechat] Pencere kontrolleri script hatası', result)
+    } catch (error) {
+      console.warn('[librechat] Pencere kontrolleri eklenemedi', error)
+    }
+  }
+
 }
 
 function normalizeBounds(bounds: BrowserBounds): BrowserBounds {

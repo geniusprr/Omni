@@ -21,7 +21,7 @@ const allowedChannels: ReadonlySet<string> = new Set([
   'transfers:list', 'transfers:open', 'transfers:show-in-folder', 'transfers:delete', 'transfers:clear',
   'mobile:get-connection-info',
   'localsend:get-status', 'localsend:get-devices', 'localsend:scan-network', 'localsend:send-text',
-  'localsend:send-file', 'localsend:get-received-files', 'localsend:open-download-folder',
+  'localsend:send-file', 'localsend:send-cloud-file', 'localsend:get-received-files', 'localsend:open-download-folder',
   'localsend:set-auto-accept', 'localsend:add-manual-device',
   'vault:select-folder', 'vault:get-default-path', 'vault:list-entries', 'vault:read-file',
   'vault:write-file', 'vault:create-file', 'vault:create-folder', 'vault:rename-entry',

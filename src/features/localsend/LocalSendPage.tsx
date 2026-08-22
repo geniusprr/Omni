@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
 import Clipboard from 'lucide-react/dist/esm/icons/clipboard.js'
+import Cloud from 'lucide-react/dist/esm/icons/cloud.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import FileIcon from 'lucide-react/dist/esm/icons/file.js'
@@ -35,7 +36,7 @@ import {
   setAutoAccept,
 } from '@/features/localsend/client'
 import { desktop } from '@/lib/desktop'
-import type { LocalSendDevice, LocalSendStatus, ReceivedFileRecord } from '@/types'
+import type { LocalSendDevice, LocalSendStatus, PairedController, ReceivedFileRecord } from '@/types'
 
 function formatFileSize(bytes: number): string {
   if (!bytes || bytes === 0) return '0 B'
@@ -56,10 +57,15 @@ function getDeviceIcon(deviceType: string) {
   }
 }
 
-export function LocalSendPage() {
+interface LocalSendPageProps {
+  pairedControllers?: PairedController[]
+}
+
+export function LocalSendPage({ pairedControllers = [] }: LocalSendPageProps) {
   const [status, setStatus] = useState<LocalSendStatus | null>(null)
   const [devices, setDevices] = useState<LocalSendDevice[]>([])
   const [selectedDevice, setSelectedDevice] = useState<LocalSendDevice | null>(null)
+  const [selectedController, setSelectedController] = useState<PairedController | null>(null)
   const [receivedFiles, setReceivedFiles] = useState<ReceivedFileRecord[]>([])
 
   // Main hub active tab: 'send' | 'received'
@@ -176,11 +182,13 @@ export function LocalSendPage() {
   }
 
   async function handleSendFile() {
-    if (!selectedDevice || !selectedFilePath) return
+    if ((!selectedDevice && !selectedController) || !selectedFilePath) return
     setSending(true)
     setSendResult(null)
     try {
-      const res = await desktop.localsend.sendFile(selectedDevice.ip, selectedDevice.port, selectedFilePath)
+      const res = selectedController
+        ? await desktop.localsend.sendCloudFile(selectedFilePath, selectedController.controllerId)
+        : await desktop.localsend.sendFile(selectedDevice!.ip, selectedDevice!.port, selectedFilePath)
       setSendResult({ success: true, message: res || 'Dosya başarıyla iletildi.' })
       setSelectedFilePath(null)
       setSelectedFileName(null)
@@ -234,6 +242,15 @@ export function LocalSendPage() {
     setTimeout(() => setCopiedIp(false), 2000)
   }
 
+  const hasTarget = Boolean(selectedDevice || selectedController)
+  const activeDeviceCount = new Set([
+    ...devices.map((device) => device.fingerprint || `${device.ip}:${device.port}`),
+    ...pairedControllers.map((controller) => controller.controllerId || controller.id),
+  ]).size
+  const localDeviceForController = (controller: PairedController) =>
+    devices.find((device) => device.fingerprint === controller.controllerId)
+  const hasLocalPresence = (device: LocalSendDevice | undefined) => Boolean(device && Date.now() - device.lastSeen < 45_000)
+
   return (
     <section className="localsend-screen" aria-labelledby="localsend-title">
       {/* Sleek Top Header Bar */}
@@ -244,7 +261,7 @@ export function LocalSendPage() {
           </div>
           <div>
             <h1 id="localsend-title" className="localsend-header__title">Ağ Paylaşımı</h1>
-            <p className="localsend-header__desc">Wi-Fi ağındaki cihazlarla anında dosya ve metin transferi yapın.</p>
+            <p className="localsend-header__desc">Yerel Wi-Fi ile anında, bulut kuyruğuyla uygulama kapalıyken dosya gönderin.</p>
           </div>
         </div>
 
@@ -300,8 +317,8 @@ export function LocalSendPage() {
           <div className="localsend-panel-header">
             <div className="localsend-panel-header__title">
               <Radio size={15} />
-              <span>Yakındaki Cihazlar</span>
-              <span className="localsend-badge-count">{devices.length}</span>
+              <span>Aktif Cihazlar</span>
+              <span className="localsend-badge-count">{activeDeviceCount}</span>
             </div>
             <div className="localsend-panel-header__actions">
               <Button
@@ -353,9 +370,9 @@ export function LocalSendPage() {
             </form>
           ) : null}
 
-          {/* Devices List or Radar Empty State */}
+          {/* Local + cloud targets */}
           <div className="localsend-devices-content">
-            {devices.length === 0 ? (
+            {devices.length === 0 && pairedControllers.length === 0 ? (
               <div className="localsend-radar-state">
                 <div className="localsend-radar-animation">
                   <div className="radar-ring radar-ring--1" />
@@ -367,7 +384,7 @@ export function LocalSendPage() {
                 </div>
                 <h4 className="localsend-radar-heading">Cihaz Aranıyor…</h4>
                 <p className="localsend-radar-subtext">
-                  Aynı Wi-Fi ağındaki telefon veya bilgisayarınızda Kapanış uygulamasını açık tutun.
+                  Yerel Wi-Fi için telefon servisinin, bulut içinse eşleştirme bilgilerinin hazır olması yeterlidir.
                 </p>
                 <Button
                   size="compact"
@@ -381,14 +398,18 @@ export function LocalSendPage() {
               </div>
             ) : (
               <div className="localsend-devices-scroll">
+                {devices.length > 0 ? <div className="localsend-device-section-label"><Wifi size={11} /> Yerel Wi-Fi</div> : null}
                 {devices.map((dev) => {
-                  const isSelected = selectedDevice && `${selectedDevice.ip}:${selectedDevice.port}` === `${dev.ip}:${dev.port}`
+                  const isSelected = Boolean(selectedDevice && `${selectedDevice.ip}:${selectedDevice.port}` === `${dev.ip}:${dev.port}`)
                   return (
                     <button
                       type="button"
                       key={`${dev.ip}:${dev.port}`}
                       className={`localsend-device-card ${isSelected ? 'localsend-device-card--selected' : ''}`}
-                      onClick={() => setSelectedDevice(dev)}
+                      onClick={() => {
+                        setSelectedDevice(dev)
+                        setSelectedController(null)
+                      }}
                     >
                       <div className="localsend-device-card__icon">
                         {getDeviceIcon(dev.deviceType)}
@@ -396,19 +417,48 @@ export function LocalSendPage() {
                       <div className="localsend-device-card__info">
                         <div className="localsend-device-card__name">
                           <strong>{dev.alias}</strong>
-                          {isSelected ? (
-                            <span className="localsend-selected-pill">Hedef</span>
-                          ) : null}
+                          {isSelected ? <span className="localsend-selected-pill">Hedef</span> : null}
                         </div>
                         <span className="localsend-device-card__meta">
                           {dev.deviceModel || dev.deviceType} · {dev.ip}
                         </span>
                       </div>
-                      {isSelected ? (
-                        <div className="localsend-device-card__check">
-                          <Check size={14} />
+                      {isSelected ? <div className="localsend-device-card__check"><Check size={14} /></div> : null}
+                    </button>
+                  )
+                })}
+
+                {pairedControllers.length > 0 ? <div className="localsend-device-section-label"><Cloud size={11} /> Bulut hedefleri</div> : null}
+                {pairedControllers.map((controller) => {
+                  const localMatch = localDeviceForController(controller)
+                  const isSelected = selectedController?.id === controller.id
+                  const cloudOnline = Boolean(controller.lastActiveAt && Date.now() - Date.parse(controller.lastActiveAt) < 60_000)
+                  return (
+                    <button
+                      type="button"
+                      key={`cloud-${controller.id}`}
+                      className={`localsend-device-card localsend-device-card--cloud ${isSelected ? 'localsend-device-card--selected' : ''}`}
+                      onClick={() => {
+                        setSelectedController(controller)
+                        setSelectedDevice(null)
+                        setSendMode('file')
+                      }}
+                    >
+                      <div className="localsend-device-card__icon localsend-device-card__icon--cloud"><Cloud size={20} /></div>
+                      <div className="localsend-device-card__info">
+                        <div className="localsend-device-card__name">
+                          <strong>{controller.controllerName || 'Telefon'}</strong>
+                          {isSelected ? <span className="localsend-selected-pill">Hedef</span> : null}
                         </div>
-                      ) : null}
+                        <span className="localsend-device-card__meta">
+                          {hasLocalPresence(localMatch) ? 'Yerel + Bulut hazır' : cloudOnline ? 'Bulut bağlı · Kuyruk hazır' : 'Bulut kuyruğu · Çevrim dışıyken de teslim edilir'}
+                        </span>
+                      </div>
+                      <span className="localsend-cloud-presence" title={hasLocalPresence(localMatch) ? 'Yerel Wi-Fi ve bulut bağlı' : cloudOnline ? 'Bulut bağlı' : 'Bulut kuyruğu hazır'}>
+                        {hasLocalPresence(localMatch) ? <Wifi size={12} /> : null}
+                        <Cloud size={12} />
+                      </span>
+                      {isSelected ? <div className="localsend-device-card__check"><Check size={14} /></div> : null}
                     </button>
                   )
                 })}
@@ -457,9 +507,15 @@ export function LocalSendPage() {
                       <strong>{selectedDevice.alias}</strong>
                       <small>({selectedDevice.ip})</small>
                     </div>
+                  ) : selectedController ? (
+                    <div className="localsend-target-banner__device localsend-target-banner__device--cloud">
+                      <Cloud size={16} />
+                      <strong>{selectedController.controllerName || 'Telefon'}</strong>
+                      <small>(Bulut kuyruğu)</small>
+                    </div>
                   ) : (
                     <span className="localsend-target-banner__empty">
-                      ⚠️ Sol listeden bir cihaz seçin
+                      ⚠️ Soldan bir yerel veya bulut cihazı seçin
                     </span>
                   )}
                 </div>
@@ -569,7 +625,7 @@ export function LocalSendPage() {
                       <Button
                         variant="accent"
                         className="localsend-primary-send-btn localsend-primary-send-btn--file"
-                        disabled={sending || !selectedDevice}
+                        disabled={sending || !hasTarget}
                         onClick={() => void handleSendFile()}
                       >
                         <Send size={15} />

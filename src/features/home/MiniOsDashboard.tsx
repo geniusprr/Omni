@@ -13,6 +13,7 @@ import {
 import { useVault } from '@/features/notes/stores/vaultStore'
 import type {
   PairedController,
+  LocalSendDevice,
   RemoteConnectionStatus,
   TimerAction,
   TimerState,
@@ -44,6 +45,7 @@ interface MiniOsDashboardProps {
   pairingCode?: string
   connectionStatus?: RemoteConnectionStatus
   pairedControllers?: PairedController[]
+  localDevices?: LocalSendDevice[]
   onRefreshControllers?: () => void
   onOpenPairingModal?: () => void
   isCustomizeOpen?: boolean
@@ -60,6 +62,7 @@ export function MiniOsDashboard({
   pairingCode = 'KAP-XXXX',
   connectionStatus = 'disconnected',
   pairedControllers = [],
+  localDevices = [],
   onRefreshControllers = () => {},
   onOpenPairingModal,
   isCustomizeOpen = false,
@@ -226,6 +229,7 @@ export function MiniOsDashboard({
             pairingCode={pairingCode}
             connectionStatus={connectionStatus}
             pairedControllers={pairedControllers}
+            localDevices={localDevices}
             onRefreshControllers={onRefreshControllers}
             onOpenPairingModal={onOpenPairingModal}
           />

@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import Minus from 'lucide-react/dist/esm/icons/minus.js'
-import Square from 'lucide-react/dist/esm/icons/square.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { MiniOsActionBar } from '@/components/layout/MiniOsActionBar'
 import { MiniOsDock, type MiniOsMode } from '@/components/layout/MiniOsDock'
 import { MiniOsHeader } from '@/components/layout/MiniOsHeader'
 import { PairingModal } from '@/components/PairingModal'
@@ -30,6 +28,7 @@ import type {
   Alarm,
   AppSettings,
   CreateAlarmInput,
+  LocalSendDevice,
   PairedController,
   RemoteConnectionStatus,
   TimerAction,
@@ -67,12 +66,35 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<RemoteConnectionStatus>('disconnected')
   const [lastHeartbeat, setLastHeartbeat] = useState<number | null>(null)
   const [pairedControllers, setPairedControllers] = useState<PairedController[]>([])
+  const [localDevices, setLocalDevices] = useState<LocalSendDevice[]>([])
 
   const timerRef = useRef<TimerState | null>(null)
   timerRef.current = timer
 
   useEffect(() => {
     void getEffectiveSettings().then(setSettings).catch(() => undefined)
+  }, [])
+
+  // Local phone discovery is owned by Electron so the dashboard can show the
+  // same presence state as the file-transfer screen immediately.
+  useEffect(() => {
+    let active = true
+    const refresh = () => {
+      void desktop.localsend.getDevices().then((devices) => {
+        if (active) setLocalDevices(devices)
+      }).catch(() => undefined)
+    }
+    refresh()
+    const unlisten = desktop.localsend.onDeviceDiscovered((device) => {
+      if (!active) return
+      setLocalDevices((current) => [device, ...current.filter((item) => `${item.ip}:${item.port}` !== `${device.ip}:${device.port}`)])
+    })
+    const interval = window.setInterval(refresh, 3_000)
+    return () => {
+      active = false
+      unlisten()
+      window.clearInterval(interval)
+    }
   }, [])
 
   // Keyboard shortcut (Ctrl+K for Quick Switcher)
@@ -320,6 +342,7 @@ export default function App() {
         pairingCode={settings?.pairingCode || 'KAP-XXXX'}
         connectionStatus={connectionStatus}
         pairedControllers={pairedControllers}
+        localDevices={localDevices}
         onRefreshControllers={refreshControllers}
         onOpenPairingModal={() => setPairingModalOpen(true)}
         isCustomizeOpen={isCustomizeWidgetsOpen}
@@ -336,40 +359,6 @@ export default function App() {
     <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'}`}>
       {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
       <div className="minios-wallpaper-backdrop" />
-      {/* The close button stays omitted by design; minimize and maximize must
-          remain above the native LibreChat BrowserView on every workspace. */}
-      <div className="window-control-strip window-control-strip--top-right">
-        <TooltipProvider delayDuration={400}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="window-control-button window-control-button--minimize"
-                onClick={() => void desktop.window.minimize()}
-                aria-label="Küçült"
-              >
-                <Minus size={13} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Küçült</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="window-control-button window-control-button--maximize"
-                onClick={() => void desktop.window.toggleMaximize()}
-                aria-label="Ekranı Kapla"
-              >
-                <Square size={11} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Ekranı Kapla</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
-
       {/* Main Mini-OS Shell Layout */}
       <div className={`minios-shell ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''}`}>
         {/* Left Floating Vertical Dock */}
@@ -384,13 +373,13 @@ export default function App() {
 
         {/* Right Main Working Area */}
         <div className="minios-main-area">
-          {/* Keep the shared title/tab rhythm stable while LibreChat occupies
-              the measured content area below it. */}
-          <MiniOsHeader
-            activeMode={mode}
-            onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
-            onExecuteCommand={handleExecuteCommand}
-          />
+          {mode !== 'ai' && (
+            <MiniOsHeader
+              activeMode={mode}
+              onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
+              onExecuteCommand={handleExecuteCommand}
+            />
+          )}
 
           {/* Central Working Screen / Widgets Area */}
           <main className={`minios-viewport ${mode === 'notes' ? 'minios-viewport--notes' : ''}`}>
@@ -431,7 +420,7 @@ export default function App() {
 
             {mode === 'localsend' && (
               <div className="minios-subscreen minios-subscreen--full">
-                <LocalSendPage />
+                <LocalSendPage pairedControllers={pairedControllers} />
               </div>
             )}
 
@@ -448,6 +437,7 @@ export default function App() {
                   connectionStatus={connectionStatus}
                   lastHeartbeat={lastHeartbeat}
                   pairedControllers={pairedControllers}
+                  localDevices={localDevices}
                   onSettingsChange={setSettings}
                   onRefreshControllers={refreshControllers}
                   themeMode={themeMode}
@@ -470,6 +460,18 @@ export default function App() {
               />
             </div>
           </main>
+
+          {mode !== 'browser' && (
+            <MiniOsActionBar
+              activeMode={mode}
+              onNavigate={setMode}
+              onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
+              onQuickAction={() => setQuickActionsOpen(true)}
+              onOpenPairing={() => setPairingModalOpen(true)}
+              onToggleTheme={() => setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'))}
+              themeMode={themeMode}
+            />
+          )}
         </div>
       </div>
 

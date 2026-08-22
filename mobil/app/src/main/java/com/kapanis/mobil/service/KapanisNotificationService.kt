@@ -24,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.LinkedHashSet
+import java.util.HashSet
 
 class KapanisNotificationService : Service() {
 
@@ -37,12 +38,17 @@ class KapanisNotificationService : Service() {
     private var isFirstSync = true
     private var transferServer: MobileTransferServer? = null
     private var nextPresenceUpdateAt = 0L
+    private var nextCloudPresenceUpdateAt = 0L
+    private var nextTransferPollAt = 0L
+    private val processingTransferIds = HashSet<String>()
 
     companion object {
         const val CHANNEL_SERVICE_ID = "kapanis_service_channel"
         const val CHANNEL_MIRRORED_ID = "kapanis_pc_mirrored_channel"
         const val FOREGROUND_NOTIFICATION_ID = 9911
         private const val SYNC_INTERVAL_MS = 2500L
+        private const val CLOUD_PRESENCE_INTERVAL_MS = 15_000L
+        private const val CLOUD_TRANSFER_POLL_INTERVAL_MS = 4_000L
 
         fun start(context: Context) {
             try {
@@ -98,6 +104,13 @@ class KapanisNotificationService : Service() {
         serviceScope.cancel()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Keep the receiver alive when Android removes the launcher task. A
+        // real Force stop still intentionally disables all background work.
+        start(this)
+        super.onTaskRemoved(rootIntent)
+    }
+
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
@@ -145,7 +158,7 @@ class KapanisNotificationService : Service() {
 
             val notification = NotificationCompat.Builder(this, CHANNEL_SERVICE_ID)
                 .setContentTitle("kapanış. Bildirim Aynalama")
-                .setContentText("Windows bildirimleri arka planda dinleniyor")
+                .setContentText("Yerel dosya alımı ve bulut bağlantısı aktif")
                 .setSmallIcon(android.R.drawable.ic_popup_sync)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
@@ -174,6 +187,8 @@ class KapanisNotificationService : Service() {
             while (isActive) {
                 try {
                     publishLocalTransferPresence()
+                    publishCloudPresence()
+                    syncCloudTransfers()
                     syncNotificationSources()
                 } catch (e: Exception) {
                     // ignore network blips
@@ -211,6 +226,92 @@ class KapanisNotificationService : Service() {
             transferPort = MobileTransferServer.PORT,
             fingerprint = prefs.controllerId
         )
+    }
+
+    /** Cloud presence is independent from the Compose screen and survives UI closure. */
+    private suspend fun publishCloudPresence() {
+        val now = System.currentTimeMillis()
+        if (now < nextCloudPresenceUpdateAt) return
+        nextCloudPresenceUpdateAt = now + CLOUD_PRESENCE_INTERVAL_MS
+
+        val url = prefs.supabaseUrl
+        val key = prefs.supabaseAnonKey
+        val deviceId = prefs.pairedDeviceId
+        if (url.isBlank() || key.isBlank() || deviceId.isBlank()) return
+
+        supabaseClient.heartbeatController(
+            url = url,
+            anonKey = key,
+            deviceId = deviceId,
+            controllerId = prefs.controllerId,
+            controllerName = prefs.controllerName
+        )
+    }
+
+    /**
+     * Pulls queued PC -> phone files from Supabase and stores them in the same
+     * Downloads/kapanis folder as local transfers. This loop intentionally lives
+     * in the foreground service, not in the activity.
+     */
+    private suspend fun syncCloudTransfers() {
+        val now = System.currentTimeMillis()
+        if (now < nextTransferPollAt) return
+        nextTransferPollAt = now + CLOUD_TRANSFER_POLL_INTERVAL_MS
+
+        val url = prefs.supabaseUrl
+        val key = prefs.supabaseAnonKey
+        val deviceId = prefs.pairedDeviceId
+        val controllerId = prefs.controllerId
+        val receiver = transferServer ?: return
+        if (url.isBlank() || key.isBlank() || deviceId.isBlank()) return
+
+        val pending = supabaseClient.fetchPendingTransfers(url, key, deviceId, controllerId).getOrDefault(emptyList())
+        for (transfer in pending) {
+            if (transfer.id.isBlank() || transfer.storagePath.isBlank() || !processingTransferIds.add(transfer.id)) continue
+            try {
+                val claimed = supabaseClient.claimTransfer(url, key, transfer, controllerId).getOrDefault(false)
+                if (!claimed) continue
+
+                val downloaded = supabaseClient.downloadTransferToFile(
+                    context = this,
+                    url = url,
+                    anonKey = key,
+                    storagePath = transfer.storagePath,
+                    expectedSize = transfer.size
+                )
+                if (downloaded.isFailure) {
+                    val message = downloaded.exceptionOrNull()?.message ?: "Dosya indirilemedi."
+                    supabaseClient.finishTransfer(url, key, transfer, controllerId, false, errorMessage = message)
+                    continue
+                }
+
+                val tempFile = downloaded.getOrThrow()
+                try {
+                    val localUri = receiver.saveDownloadedFile(tempFile, transfer.filename, transfer.mimeType)
+                    supabaseClient.finishTransfer(
+                        url = url,
+                        anonKey = key,
+                        transfer = transfer,
+                        controllerId = controllerId,
+                        success = true,
+                        localUri = localUri.toString()
+                    )
+                } finally {
+                    tempFile.delete()
+                }
+            } catch (error: Throwable) {
+                supabaseClient.finishTransfer(
+                    url = url,
+                    anonKey = key,
+                    transfer = transfer,
+                    controllerId = controllerId,
+                    success = false,
+                    errorMessage = error.message ?: "Dosya kaydedilemedi."
+                )
+            } finally {
+                processingTransferIds.remove(transfer.id)
+            }
+        }
     }
 
     private suspend fun syncNotificationSources() {

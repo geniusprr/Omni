@@ -6,6 +6,7 @@ import http from 'node:http'
 import https from 'node:https'
 import dgram from 'node:dgram'
 import { randomUUID } from 'node:crypto'
+import { createClient } from '@supabase/supabase-js'
 import type { ConnectionInfo, LocalSendDevice, LocalSendStatus, MirroredNotification, ReceivedFileRecord } from '../src/types.js'
 import type { AlarmManager } from './AlarmManager.js'
 import type { ContentManager } from './ContentManager.js'
@@ -15,6 +16,9 @@ interface UploadFile { id: string; fileName: string; size: number; fileType?: st
 interface UploadSession { sender: LocalSendDevice; files: Record<string, UploadFile>; tokens: Record<string, string>; createdAt: number }
 interface MobileHooks { system: SystemManager; alarms: AlarmManager; content: ContentManager; emit: (event: string, payload: unknown) => void }
 interface PairingAttempt { failures: number; windowStartedAt: number; lockedUntil: number }
+
+const CLOUD_TRANSFER_BUCKET = 'kapanis-transfers'
+const MAX_CLOUD_TRANSFER_BYTES = 512 * 1024 * 1024
 
 export class LocalSendManager {
   readonly port = 53317
@@ -37,6 +41,8 @@ export class LocalSendManager {
   private recentNotifications: MirroredNotification[] = []
   private readonly pairingAttempts = new Map<string, PairingAttempt>()
   private terminalRunning = false
+  private discoveryTimer: NodeJS.Timeout | null = null
+  private discoveryInFlight = false
 
   constructor(dataDir: string, emitDevice: (device: LocalSendDevice) => void, emitFile: (file: ReceivedFileRecord) => void, mobile: MobileHooks) {
     this.dataDir = dataDir
@@ -124,6 +130,13 @@ export class LocalSendManager {
     })
     server.listen(this.port, '0.0.0.0', () => console.info('[localsend] listening on ' + this.port))
 
+    // Keep local phone presence fresh without requiring the Share screen to be
+    // open. The Android foreground service answers these probes immediately.
+    void this.scanNetwork()
+    this.discoveryTimer = setInterval(() => {
+      void this.scanNetwork()
+    }, 4_000)
+
     // Start UDP discovery responder
     try {
       const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true })
@@ -160,6 +173,9 @@ export class LocalSendManager {
   }
 
   stop() {
+    if (this.discoveryTimer) clearInterval(this.discoveryTimer)
+    this.discoveryTimer = null
+    this.discoveryInFlight = false
     this.server?.close()
     this.server = null
     try { this.udpServer?.close() } catch {}
@@ -188,45 +204,51 @@ export class LocalSendManager {
   }
 
   async scanNetwork() {
-    const socket = dgram.createSocket('udp4')
-    const message = Buffer.from(JSON.stringify({ type: 'kapanis-localsend-discovery', device: this.deviceInfo() }))
-    await new Promise<void>((resolve) => {
-      let finished = false
-      let timeout: NodeJS.Timeout | null = null
-      const finish = () => {
-        if (finished) return
-        finished = true
-        if (timeout) clearTimeout(timeout)
-        try { socket.close() } catch {}
-        resolve()
-      }
-      socket.once('error', finish)
-      socket.on('message', (payload, rinfo) => {
-        try {
-          const response = JSON.parse(payload.toString('utf8')) as { type?: string; device?: unknown; port?: unknown }
-          if (response.type !== 'kapanis-discovery-response' && response.type !== 'kapanis-localsend-discovery-response') return
-          const info = response.device || response
-          const item = info && typeof info === 'object' ? info as { port?: unknown; fingerprint?: unknown } : {}
-          if (item.fingerprint === this.deviceInfo().fingerprint) return
-          const candidatePort = typeof item.port === 'number' ? item.port : typeof response.port === 'number' ? response.port : this.port
-          const port = Number.isInteger(candidatePort) && candidatePort > 0 && candidatePort <= 65_535 ? candidatePort : this.port
-          this.saveDevice(this.normalizeDevice(info, rinfo.address.replace(/^::ffff:/, ''), port, 'http'))
-        } catch {}
-      })
-      socket.bind(0, '0.0.0.0', () => {
-        try {
-          socket.setBroadcast(true)
-          const destinations = new Set(['255.255.255.255', ...localIps().map((ip) => {
-            const parts = ip.split('.')
-            return parts.length === 4 ? parts.slice(0, 3).concat('255').join('.') : ip
-          })])
-          for (const destination of destinations) socket.send(message, this.port, destination)
-          timeout = setTimeout(finish, 1_500)
-        } catch {
-          finish()
+    if (this.discoveryInFlight) return
+    this.discoveryInFlight = true
+    try {
+      const socket = dgram.createSocket('udp4')
+      const message = Buffer.from(JSON.stringify({ type: 'kapanis-localsend-discovery', device: this.deviceInfo() }))
+      await new Promise<void>((resolve) => {
+        let finished = false
+        let timeout: NodeJS.Timeout | null = null
+        const finish = () => {
+          if (finished) return
+          finished = true
+          if (timeout) clearTimeout(timeout)
+          try { socket.close() } catch {}
+          resolve()
         }
+        socket.once('error', finish)
+        socket.on('message', (payload, rinfo) => {
+          try {
+            const response = JSON.parse(payload.toString('utf8')) as { type?: string; device?: unknown; port?: unknown }
+            if (response.type !== 'kapanis-discovery-response' && response.type !== 'kapanis-localsend-discovery-response') return
+            const info = response.device || response
+            const item = info && typeof info === 'object' ? info as { port?: unknown; fingerprint?: unknown } : {}
+            if (item.fingerprint === this.deviceInfo().fingerprint) return
+            const candidatePort = typeof item.port === 'number' ? item.port : typeof response.port === 'number' ? response.port : this.port
+            const port = Number.isInteger(candidatePort) && candidatePort > 0 && candidatePort <= 65_535 ? candidatePort : this.port
+            this.saveDevice(this.normalizeDevice(info, rinfo.address.replace(/^::ffff:/, ''), port, 'http'))
+          } catch {}
+        })
+        socket.bind(0, '0.0.0.0', () => {
+          try {
+            socket.setBroadcast(true)
+            const destinations = new Set(['255.255.255.255', ...localIps().map((ip) => {
+              const parts = ip.split('.')
+              return parts.length === 4 ? parts.slice(0, 3).concat('255').join('.') : ip
+            })])
+            for (const destination of destinations) socket.send(message, this.port, destination)
+            timeout = setTimeout(finish, 1_500)
+          } catch {
+            finish()
+          }
+        })
       })
-    })
+    } finally {
+      this.discoveryInFlight = false
+    }
   }
 
   async addManualDevice(rawIp: string, targetPort = this.port) {
@@ -259,6 +281,54 @@ export class LocalSendManager {
   async sendFile(targetIp: string, targetPort: number, filePath: string) {
     if (!path.isAbsolute(filePath) || !fs.existsSync(filePath)) throw new Error('Dosya bulunamadı.')
     return this.sendFileBytes(targetIp, targetPort, path.basename(filePath), fs.readFileSync(filePath), 'application/octet-stream')
+  }
+
+  /** Queue a PC -> phone file in Supabase for delivery by the phone service. */
+  async sendCloudFile(filePath: string, controllerId: string) {
+    if (!path.isAbsolute(filePath) || !fs.existsSync(filePath)) throw new Error('Dosya bulunamadı.')
+    if (!controllerId.trim()) throw new Error('Bulut hedef cihazı seçilmedi.')
+
+    const settings = this.mobile.system.getSettings()
+    if (!settings?.supabaseUrl || !settings.supabaseAnonKey || !settings.deviceId) {
+      throw new Error('Bulut dosya aktarımı için Supabase bağlantısını önce tamamlayın.')
+    }
+
+    const stat = fs.statSync(filePath)
+    if (!stat.isFile()) throw new Error('Seçilen yol bir dosya değil.')
+    if (stat.size > MAX_CLOUD_TRANSFER_BYTES) throw new Error('Bulut dosyaları en fazla 512 MB olabilir.')
+
+    const transferId = randomUUID()
+    const fileName = sanitizeFilename(path.basename(filePath))
+    const storagePath = `${settings.deviceId}/${transferId}/${fileName}`
+    const mimeType = mimeTypeForFilename(fileName)
+    const bytes = fs.readFileSync(filePath)
+    const supabase = createClient(settings.supabaseUrl, settings.supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+
+    const upload = await supabase.storage
+      .from(CLOUD_TRANSFER_BUCKET)
+      .upload(storagePath, bytes, { contentType: mimeType, upsert: false })
+    if (upload.error) {
+      throw new Error(`Bulut depolama hatası: ${upload.error.message}`)
+    }
+
+    const insert = await supabase.from('device_transfers').insert({
+      id: transferId,
+      device_id: settings.deviceId,
+      controller_id: controllerId.trim(),
+      file_name: fileName,
+      mime_type: mimeType,
+      size: stat.size,
+      storage_path: storagePath,
+      status: 'pending',
+    })
+    if (insert.error) {
+      await supabase.storage.from(CLOUD_TRANSFER_BUCKET).remove([storagePath]).catch(() => undefined)
+      throw new Error(`Bulut aktarım kuyruğu oluşturulamadı: ${insert.error.message}`)
+    }
+
+    return `'${fileName}' buluta yüklendi. Telefon çevrim dışıysa bağlandığında otomatik indirilecek.`
   }
 
   getConnectionInfo(): ConnectionInfo {
@@ -740,6 +810,26 @@ function isPrivateLanAddress(rawAddress: string) {
 }
 
 function sanitizeFilename(value: string) { return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim() || 'file-' + Date.now() }
+function mimeTypeForFilename(fileName: string) {
+  const extension = path.extname(fileName).toLowerCase()
+  const known: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.md': 'text/markdown',
+    '.json': 'application/json',
+    '.zip': 'application/zip',
+  }
+  return known[extension] || 'application/octet-stream'
+}
 function uniquePath(value: string) {
   if (!fs.existsSync(value)) return value
   const ext = path.extname(value)

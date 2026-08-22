@@ -252,6 +252,8 @@ export interface AiConversation {
   createdAt: number
   updatedAt: number
   messageCount: number
+  pinned: boolean
+  isArchived: boolean
 }
 
 export interface AiMessage {
@@ -315,12 +317,15 @@ export type IpcChannel =
   | 'browser:activate-tab'
   | 'browser:close-tab'
   | 'browser:navigate'
+  | 'browser:stop'
   | 'browser:reload'
   | 'browser:back'
   | 'browser:forward'
   | 'browser:set-visible'
   | 'browser:deactivate'
   | 'browser:set-bounds'
+  | 'browser:set-zoom'
+  | 'browser:capture-page'
   | 'browser:sync-metadata'
   | 'browser:toggle-media'
   | 'browser:media-control'
@@ -361,6 +366,7 @@ export type IpcChannel =
   | 'localsend:scan-network'
   | 'localsend:send-text'
   | 'localsend:send-file'
+  | 'localsend:send-cloud-file'
   | 'localsend:get-received-files'
   | 'localsend:open-download-folder'
   | 'localsend:set-auto-accept'

@@ -1,16 +1,37 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
-import { access, stat } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { AiConversation, AiMessage, AiProviderId, AiSendResult } from '../shared/contracts.js'
-import { AiStore } from './AiStore.js'
+import type { AiConversation, AiMessage, AiProviderId, AiSendResult, AiSnapshot } from '../shared/contracts.js'
+import { AiStore, type AiSendObserver } from './AiStore.js'
+
+type CommittedTurn = Parameters<NonNullable<AiSendObserver['onUserCommitted']>>[0]
 
 type PendingGeneration = {
   payload: Record<string, unknown>
   startedAt: number
-  result: Promise<AiSendResult>
+  runId: string
+  stepId: string
+  result: Promise<AiSendResult | null>
+  error: unknown | null
+  tokens: string[]
+  committed: CommittedTurn | null
+  settled: boolean
+  waiters: Set<() => void>
 }
+
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
+const MODEL_CATALOG_TTL_MS = 6 * 60 * 60 * 1000
+const MODEL_CATALOG_TIMEOUT_MS = 8_000
+const OPENROUTER_FALLBACK_MODELS = [
+  'openrouter/auto',
+  'openai/gpt-4o-mini',
+  'anthropic/claude-3.5-haiku',
+  'google/gemini-2.0-flash',
+]
+const LIBRECHAT_MODELS_QUERY_OLD = 'XU=e=>Yi([`models`],()=>P_(),{initialData:eh,refetchOnWindowFocus:!1,refetchOnReconnect:!1,refetchOnMount:!1,staleTime:1/0,...e})'
+const LIBRECHAT_MODELS_QUERY_NEW = 'XU=e=>Yi([`models`],()=>P_(),{placeholderData:eh,refetchOnWindowFocus:!0,refetchOnReconnect:!0,refetchOnMount:!0,staleTime:3e5,...e})'
 
 const LOCAL_USER = {
   // LibreChat's persisted-user shape uses `_id` (the legacy `id` alias is
@@ -68,6 +89,7 @@ export class LibreChatServer {
   private server: Server | null = null
   private address: string | null = null
   private readonly generations = new Map<string, PendingGeneration>()
+  private modelCatalogRefresh: Promise<string[]> | null = null
 
   constructor(root: string, ai: AiStore) {
     this.root = path.resolve(root)
@@ -100,6 +122,9 @@ export class LibreChatServer {
     })
     const port = (this.server.address() as { port: number }).port
     this.address = `http://127.0.0.1:${port}`
+    // Warm the catalog without delaying the first window paint. The same
+    // promise is reused if LibreChat asks for models while the refresh runs.
+    void this.getOpenRouterModels().catch((error) => console.warn('[librechat] OpenRouter model kataloğu yenilenemedi', error))
     return this.address
   }
 
@@ -108,6 +133,7 @@ export class LibreChatServer {
     this.server = null
     this.address = null
     this.generations.clear()
+    this.modelCatalogRefresh = null
     if (!server) return
     // BrowserView/fetch keeps an HTTP keep-alive socket around even after the
     // page is detached. Destroy those sockets before waiting for `close`, so
@@ -172,7 +198,7 @@ export class LibreChatServer {
       return
     }
     if (pathname === '/api/config') {
-      this.json(response, 200, startupConfig())
+      this.json(response, 200, startupConfig(this.ai.getSnapshot()))
       return
     }
     if (pathname === '/api/endpoints') {
@@ -214,7 +240,100 @@ export class LibreChatServer {
       return
     }
     if (pathname === '/api/models') {
-      this.json(response, 200, modelsConfig())
+      response.setHeader('Cache-Control', 'no-store')
+      this.json(response, 200, await this.modelsConfig())
+      return
+    }
+    // These lightweight local responses keep LibreChat's restored navigation
+    // panels usable without reintroducing a remote Mongo/Redis backend.  The
+    // embedded build intentionally starts with empty collections; the chat,
+    // model and conversation data still live in AiStore/SQLite below.
+    if (pathname === '/api/presets' && request.method === 'GET') {
+      this.json(response, 200, [])
+      return
+    }
+    if (pathname === '/api/presets' && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+      const body = await readBody(request)
+      this.json(response, 200, { ...body, presetId: typeof body.presetId === 'string' ? body.presetId : randomUUID() })
+      return
+    }
+    if (pathname === '/api/presets/delete') {
+      this.json(response, 200, { success: true })
+      return
+    }
+    if (pathname === '/api/prompts' && request.method === 'GET') {
+      this.json(response, 200, [])
+      return
+    }
+    if (pathname === '/api/prompts' && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+      const body = await readBody(request)
+      this.json(response, 200, { prompt: { ...body, _id: typeof body._id === 'string' ? body._id : randomUUID() }, group: null })
+      return
+    }
+    if (pathname === '/api/prompts/random' || pathname === '/api/prompts/all') {
+      this.json(response, 200, [])
+      return
+    }
+    if (pathname === '/api/prompts/groups' && request.method === 'GET') {
+      this.json(response, 200, { data: [], has_more: false, after: null })
+      return
+    }
+    if (pathname === '/api/prompts/groups' && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+      const body = await readBody(request)
+      this.json(response, 200, { ...body, _id: typeof body._id === 'string' ? body._id : randomUUID() })
+      return
+    }
+    if (pathname.startsWith('/api/prompts/groups/')) {
+      this.json(response, 200, pathname.endsWith('/prompts') ? { data: [], has_more: false, after: null } : {})
+      return
+    }
+    if (pathname === '/api/categories') {
+      this.json(response, 200, [])
+      return
+    }
+    if (pathname === '/api/memories' && request.method === 'GET') {
+      this.json(response, 200, { memories: [], totalTokens: 0, tokenLimit: 10000, usagePercentage: 0 })
+      return
+    }
+    if (pathname === '/api/memories' && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+      const body = await readBody(request)
+      this.json(response, 200, { ...body, success: true })
+      return
+    }
+    if (pathname === '/api/memories/preferences' && (request.method === 'GET' || request.method === 'PATCH' || request.method === 'PUT')) {
+      this.json(response, 200, { enabled: false })
+      return
+    }
+    if (pathname.startsWith('/api/memories/') && (request.method === 'POST' || request.method === 'PATCH' || request.method === 'PUT' || request.method === 'DELETE')) {
+      this.json(response, 200, { success: true })
+      return
+    }
+    if (pathname === '/api/user/settings/favorites' && request.method === 'GET') {
+      this.json(response, 200, [])
+      return
+    }
+    if (pathname === '/api/user/settings/favorites' && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+      this.json(response, 200, { success: true })
+      return
+    }
+    if (pathname === '/api/user/settings/favorites/tools' && request.method === 'GET') {
+      this.json(response, 200, [])
+      return
+    }
+    if (pathname.startsWith('/api/user/settings/favorites/tools/')) {
+      this.json(response, 200, { success: true })
+      return
+    }
+    if (pathname === '/api/skills' && request.method === 'GET') {
+      this.json(response, 200, { data: [], has_more: false, after: null })
+      return
+    }
+    if (pathname === '/api/skills/states' && (request.method === 'GET' || request.method === 'POST' || request.method === 'PATCH')) {
+      this.json(response, 200, { skillStates: {} })
+      return
+    }
+    if (pathname.startsWith('/api/skills/')) {
+      this.json(response, 200, pathname.endsWith('/tree') ? { nodes: [] } : {})
       return
     }
     if (pathname.startsWith('/api/roles/')) {
@@ -239,7 +358,7 @@ export class LibreChatServer {
     }
     if (pathname.startsWith('/api/agents/chat/status/')) {
       const conversationId = decodeURIComponent(pathname.slice('/api/agents/chat/status/'.length))
-      const pending = [...this.generations.values()].find((generation) => generation.payload.conversationId === conversationId)
+      const pending = [...this.generations.values()].find((generation) => !generation.settled && generation.payload.conversationId === conversationId)
       this.json(response, 200, pending
         ? { active: true, status: 'running', streamId: [...this.generations.entries()].find(([, value]) => value === pending)?.[0] ?? null, createdAt: pending.startedAt, generationProtocolVersion: 2 }
         : { active: false, status: 'settled', conversationId, generationProtocolVersion: 2 })
@@ -298,12 +417,46 @@ export class LibreChatServer {
     }
     if (pathname === '/api/convos' && request.method === 'DELETE') {
       const body = await readBody(request)
-      const id = typeof body.conversationId === 'string' ? body.conversationId : typeof body.conversation_id === 'string' ? body.conversation_id : ''
+      const nested = body.arg && typeof body.arg === 'object' && !Array.isArray(body.arg)
+        ? body.arg as Record<string, unknown>
+        : null
+      const id = typeof body.arg === 'string'
+        ? body.arg
+        : typeof body.conversationId === 'string'
+          ? body.conversationId
+          : typeof body.conversation_id === 'string'
+            ? body.conversation_id
+            : typeof nested?.conversationId === 'string'
+              ? nested.conversationId
+              : ''
       if (id) this.ai.deleteConversation(id)
       this.json(response, 200, { success: true })
       return
     }
-    if (pathname === '/api/convos/update' || pathname === '/api/convos/pin' || pathname === '/api/convos/archive') {
+    if (pathname === '/api/convos/archive/all' && request.method === 'POST') {
+      this.ai.archiveAllConversations()
+      this.json(response, 200, { success: true })
+      return
+    }
+    if ((pathname === '/api/convos/update' || pathname === '/api/convos/pin' || pathname === '/api/convos/archive') && request.method === 'POST') {
+      const body = await readBody(request)
+      const input = body.arg && typeof body.arg === 'object' && !Array.isArray(body.arg)
+        ? body.arg as Record<string, unknown>
+        : body
+      const id = typeof input.conversationId === 'string' ? input.conversationId : ''
+      const updated = id ? this.ai.updateConversation(id, {
+        ...(pathname === '/api/convos/update' && typeof input.title === 'string' ? { title: input.title } : {}),
+        ...(pathname === '/api/convos/pin' ? { pinned: input.pinned === true } : {}),
+        ...(pathname === '/api/convos/archive' ? { isArchived: input.isArchived === true } : {}),
+      }) : null
+      if (!updated) {
+        this.json(response, 404, { message: 'Sohbet bulunamadı.' })
+        return
+      }
+      this.json(response, 200, this.toConversation(updated))
+      return
+    }
+    if (/^\/api\/messages\/[^/]+\/[^/]+\/feedback$/.test(pathname)) {
       this.json(response, 200, { success: true })
       return
     }
@@ -320,7 +473,9 @@ export class LibreChatServer {
     if (pathname.startsWith('/api/messages/')) {
       const conversationId = decodeURIComponent(pathname.slice('/api/messages/'.length))
       const messages = this.ai.listMessages(conversationId)
-      this.json(response, 200, messages.map((message, index) => this.toMessage(message, conversationId, index > 0 ? messages[index - 1]?.id ?? null : null)))
+      const conversation = this.ai.getSnapshot().conversations.find((item) => item.id === conversationId)
+      const endpoint = conversation ? toLibreEndpoint(conversation.providerId) : 'custom'
+      this.json(response, 200, messages.map((message, index) => this.toMessage(message, conversationId, index > 0 ? messages[index - 1]?.id ?? null : null, endpoint)))
       return
     }
     if (pathname === '/api/agents/chat/stream' || pathname.startsWith('/api/agents/chat/stream/')) {
@@ -343,8 +498,41 @@ export class LibreChatServer {
     const payload = await readBody(request)
     const streamId = randomUUID()
     const startedAt = Date.now()
-    const result = this.sendToLocalStore(payload)
-    this.generations.set(streamId, { payload, startedAt, result })
+    const generation: PendingGeneration = {
+      payload,
+      startedAt,
+      runId: randomUUID(),
+      stepId: randomUUID(),
+      result: Promise.resolve(null),
+      error: null,
+      tokens: [],
+      committed: null,
+      settled: false,
+      waiters: new Set(),
+    }
+    generation.result = this.sendToLocalStore(payload, {
+      onUserCommitted: (turn) => {
+        generation.committed = turn
+        generation.payload.conversationId = turn.conversation.id
+        wakeGeneration(generation)
+      },
+      onToken: (token) => {
+        if (!token) return
+        generation.tokens.push(token)
+        wakeGeneration(generation)
+      },
+    }).catch((error: unknown) => {
+      // Provider failures can happen before the client opens the SSE URL.
+      // Store the failure immediately so Node never sees an unhandled
+      // rejection; the subscriber still receives it as LibreChat's final
+      // error message below.
+      generation.error = error
+      return null
+    }).finally(() => {
+      generation.settled = true
+      wakeGeneration(generation)
+    })
+    this.generations.set(streamId, generation)
     // Keep a completed promise available for a reconnecting SSE subscriber,
     // then release it after a short grace period if the view navigates away.
     setTimeout(() => this.generations.delete(streamId), 5 * 60_000).unref?.()
@@ -368,24 +556,66 @@ export class LibreChatServer {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
     })
     try {
+      let tokenIndex = 0
+      let createdSent = false
+      while (!generation.settled || tokenIndex < generation.tokens.length) {
+        if (!createdSent && generation.committed) {
+          const { conversation, userMessage, responseMessageId } = generation.committed
+          const endpoint = toLibreEndpoint(conversation.providerId)
+          this.sse(response, {
+            generationProtocolVersion: 2,
+            created: true,
+            message: this.toMessage({ ...userMessage, conversationId: conversation.id }, conversation.id, null, endpoint),
+          })
+          // The client uses this stable id to assemble every token delta and
+          // the final SQLite-backed response into one assistant message.
+          generation.payload.responseMessageId = responseMessageId
+          // LibreChat's generation protocol v2 does not consume the legacy
+          // `{ message: true, text }` frames below. It first registers a
+          // message-creation run step, then associates each text delta with
+          // that step. Without this pair the browser receives the SSE bytes
+          // but leaves the assistant bubble empty until the final event.
+          this.sse(response, {
+            generationProtocolVersion: 2,
+            event: 'on_run_step',
+            data: {
+              stepIndex: 0,
+              id: generation.stepId,
+              type: 'message_creation',
+              index: 0,
+              stepDetails: {
+                type: 'message_creation',
+                message_creation: { message_id: responseMessageId },
+              },
+              usage: null,
+              runId: generation.runId,
+            },
+          })
+          createdSent = true
+        }
+        while (tokenIndex < generation.tokens.length) {
+          const token = generation.tokens[tokenIndex++]
+          this.sse(response, {
+            generationProtocolVersion: 2,
+            event: 'on_message_delta',
+            data: {
+              id: generation.stepId,
+              delta: { content: [{ type: 'text', text: token }] },
+            },
+          })
+        }
+        if (!generation.settled) await waitForGeneration(generation)
+      }
       const result = await generation.result
+      if (!result) throw generation.error ?? new Error('AI isteği başarısız.')
       const conversation = this.ai.getSnapshot().conversations.find((item) => item.id === result.conversationId)
-      const userMessage = this.toMessage({ ...result.userMessage, conversationId: result.conversationId }, result.conversationId)
-      const assistantMessage = this.toMessage({ ...result.assistantMessage, conversationId: result.conversationId }, result.conversationId, userMessage.messageId)
-      this.sse(response, {
-        generationProtocolVersion: 2,
-        created: true,
-        message: userMessage,
-      })
-      this.sse(response, {
-        generationProtocolVersion: 2,
-        message: true,
-        messageId: assistantMessage.messageId,
-        parentMessageId: userMessage.messageId,
-        text: assistantMessage.text,
-      })
+      const endpoint = conversation ? toLibreEndpoint(conversation.providerId) : 'custom'
+      const userMessage = this.toMessage({ ...result.userMessage, conversationId: result.conversationId }, result.conversationId, null, endpoint)
+      const assistantMessage = this.toMessage({ ...result.assistantMessage, conversationId: result.conversationId }, result.conversationId, userMessage.messageId, endpoint)
+      if (!createdSent) this.sse(response, { generationProtocolVersion: 2, created: true, message: userMessage })
       this.sse(response, {
         generationProtocolVersion: 2,
         final: true,
@@ -404,11 +634,11 @@ export class LibreChatServer {
           role: 'user',
           content: String(generation.payload.text ?? ''),
           createdAt: Date.now(),
-        }, String(generation.payload.conversationId ?? '')),
+        }, String(generation.payload.conversationId ?? ''), null, typeof generation.payload.endpoint === 'string' ? toLibreEndpoint(resolveProvider(generation.payload.endpoint)) : 'custom'),
         responseMessage: {
-          messageId: randomUUID(),
+          messageId: generation.committed?.responseMessageId ?? randomUUID(),
           conversationId: generation.payload.conversationId ?? null,
-          parentMessageId: generation.payload.overrideUserMessageId ?? null,
+          parentMessageId: generation.committed?.userMessage.id ?? generation.payload.overrideUserMessageId ?? null,
           text: message,
           sender: 'LibreChat',
           isCreatedByUser: false,
@@ -423,56 +653,98 @@ export class LibreChatServer {
     }
   }
 
-  private sendToLocalStore(payload: Record<string, unknown>) {
+  private sendToLocalStore(payload: Record<string, unknown>, observer?: AiSendObserver) {
     const model = typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : undefined
     const spec = typeof payload.spec === 'string' ? payload.spec : ''
     const endpoint = typeof payload.endpoint === 'string' ? payload.endpoint : ''
     const providerId = resolveProvider(`${spec} ${endpoint}`, model)
     const normalizedModel = normalizeModel(providerId, model)
     const userApiKey = typeof payload.apiKey === 'string' ? payload.apiKey.trim() : typeof payload.userApiKey === 'string' ? payload.userApiKey.trim() : ''
-    if (userApiKey) this.ai.setProvider({ id: providerId, apiKey: userApiKey })
+    if (userApiKey || normalizedModel) this.ai.setProvider({
+      id: providerId,
+      ...(userApiKey ? { apiKey: userApiKey } : {}),
+      ...(normalizedModel ? { model: normalizedModel } : {}),
+    })
     return this.ai.sendMessage({
       conversationId: typeof payload.conversationId === 'string' ? payload.conversationId : null,
       providerId,
       model: normalizedModel,
       content: typeof payload.text === 'string' ? payload.text : '',
-    })
+    }, observer)
+  }
+
+  private async modelsConfig() {
+    const openRouterModels = await this.getOpenRouterModels()
+    return buildModelsConfig(openRouterModels, this.ai.getSnapshot())
+  }
+
+  private getOpenRouterModels(): Promise<string[]> {
+    const stored = this.ai.getModelCatalog('openrouter')
+    if (stored && Date.now() - stored.updatedAt < MODEL_CATALOG_TTL_MS) return Promise.resolve(stored.models)
+    if (this.modelCatalogRefresh) return this.modelCatalogRefresh
+
+    this.modelCatalogRefresh = (async () => {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), MODEL_CATALOG_TIMEOUT_MS)
+      try {
+        const response = await fetch(OPENROUTER_MODELS_URL, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json', 'HTTP-Referer': 'https://kapanis.app', 'X-Title': 'kapanis' },
+        })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const payload = await response.json() as { data?: Array<{ id?: unknown }> }
+        const models = uniqueStrings((payload.data ?? []).map((item) => item?.id))
+        if (models.length === 0) throw new Error('OpenRouter boş model kataloğu döndürdü.')
+        return this.ai.setModelCatalog('openrouter', models).models
+      } catch (error) {
+        if (stored?.models.length) return stored.models
+        console.warn('[librechat] OpenRouter model kataloğu için yerel yedek kullanılıyor', error)
+        return OPENROUTER_FALLBACK_MODELS
+      } finally {
+        clearTimeout(timer)
+        this.modelCatalogRefresh = null
+      }
+    })()
+    return this.modelCatalogRefresh
   }
 
   private listConversations(searchParams: URLSearchParams) {
     const search = (searchParams.get('search') ?? '').trim().toLowerCase()
     const pinnedOnly = searchParams.get('pinned') === 'true'
+    const archivedOnly = searchParams.get('isArchived') === 'true' || searchParams.get('archived') === 'true'
     return this.ai.getSnapshot().conversations
       .filter((conversation) => !search || conversation.title.toLowerCase().includes(search))
-      .filter(() => !pinnedOnly)
+      .filter((conversation) => archivedOnly ? conversation.isArchived : !conversation.isArchived)
+      .filter((conversation) => !pinnedOnly || conversation.pinned)
       .map((conversation) => this.toConversation(conversation))
   }
 
   private toConversation(conversation: AiConversation, includeMessages = false) {
+    const endpoint = toLibreEndpoint(conversation.providerId)
     return {
       conversationId: conversation.id,
-      endpoint: conversation.providerId,
-      endpointType: 'custom',
+      endpoint,
+      endpointType: endpoint === 'openAI' ? 'openAI' : endpoint === 'anthropic' ? 'anthropic' : endpoint === 'google' ? 'google' : 'custom',
       title: conversation.title,
       model: conversation.model,
       user: LOCAL_USER.id,
-      ...(includeMessages ? { messages: this.ai.listMessages(conversation.id).map((message, index, all) => this.toMessage(message, conversation.id, index > 0 ? all[index - 1]?.id ?? null : null)) } : {}),
+      ...(includeMessages ? { messages: this.ai.listMessages(conversation.id).map((message, index, all) => this.toMessage(message, conversation.id, index > 0 ? all[index - 1]?.id ?? null : null, endpoint)) } : {}),
       createdAt: new Date(conversation.createdAt).toISOString(),
       updatedAt: new Date(conversation.updatedAt).toISOString(),
-      isArchived: false,
-      pinned: false,
+      isArchived: conversation.isArchived,
+      pinned: conversation.pinned,
       spec: conversation.providerId,
     }
   }
 
-  private toMessage(message: AiMessage & { conversationId?: string | null }, conversationId: string | null, parentMessageId: string | null = null) {
+  private toMessage(message: AiMessage & { conversationId?: string | null }, conversationId: string | null, parentMessageId: string | null = null, endpoint = 'custom') {
     const isUser = message.role === 'user'
     return {
       messageId: message.id,
       conversationId: conversationId || message.conversationId || null,
       parentMessageId,
       responseMessageId: null,
-      endpoint: 'custom',
+      endpoint,
       model: undefined,
       sender: isUser ? 'User' : 'LibreChat',
       text: message.content,
@@ -504,6 +776,17 @@ export class LibreChatServer {
       }
       file = path.join(this.root, 'index.html')
     }
+    if (/^hooks\.[^.]+\.js$/.test(path.basename(file))) {
+      const source = await readFile(file, 'utf8')
+      const patched = source.replace(LIBRECHAT_MODELS_QUERY_OLD, LIBRECHAT_MODELS_QUERY_NEW)
+      if (patched === source) console.warn('[librechat] Model sorgusu uyumluluk patch noktası bulunamadı.')
+      response.writeHead(200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-store',
+      })
+      response.end(patched)
+      return
+    }
     response.writeHead(200, {
       'Content-Type': MIME_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
       'Cache-Control': path.basename(file) === 'index.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
@@ -525,6 +808,16 @@ export class LibreChatServer {
   private sse(response: ServerResponse, data: unknown) {
     response.write(`data: ${JSON.stringify(data)}\n\n`)
   }
+}
+
+function wakeGeneration(generation: PendingGeneration) {
+  const waiters = [...generation.waiters]
+  generation.waiters.clear()
+  for (const resolve of waiters) resolve()
+}
+
+function waitForGeneration(generation: PendingGeneration) {
+  return new Promise<void>((resolve) => generation.waiters.add(resolve))
 }
 
 async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -553,26 +846,51 @@ function resolveProvider(spec: string, model?: string): AiProviderId {
   return 'openrouter'
 }
 
+function toLibreEndpoint(provider: AiProviderId) {
+  return provider === 'openai' ? 'openAI' : provider
+}
+
 function normalizeModel(provider: AiProviderId, model?: string) {
   const value = model?.trim() || ''
   if (!value) return undefined
+  // OpenRouter model ids are already provider-qualified (for example
+  // `openrouter/auto` and `anthropic/claude-*`). Removing `openrouter/`
+  // would turn OpenRouter's own native ids into invalid model names.
+  if (provider === 'openrouter') return value
   const prefix = `${provider}/`
   return value.toLowerCase().startsWith(prefix) ? value.slice(prefix.length) : value
 }
 
+function uniqueStrings(values: unknown[]) {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const item = value.trim()
+    if (!item || seen.has(item)) continue
+    seen.add(item)
+    result.push(item)
+  }
+  return result
+}
+
 function endpointsConfig() {
-  return Object.fromEntries([
-    ['openrouter', 'OpenRouter', true],
-    ['openai', 'OpenAI', true],
-    ['anthropic', 'Anthropic', true],
-    ['google', 'Google Gemini', true],
-    ['mistral', 'Mistral', true],
-    ['groq', 'Groq', true],
-    ['ollama', 'Ollama (yerel)', false],
-    ['custom', 'Kapanış yerel AI', false],
-  ].map(([id, label, userProvide], order) => [id, {
+  // Keep the endpoint ids aligned with LibreChat's own endpoint enum.  The
+  // OpenAI id is intentionally `openAI` (capital A); the client treats
+  // `openai` as a different, unknown endpoint and silently drops its models.
+  const definitions = [
+    ['openrouter', 'OpenRouter', 'custom', true],
+    ['openAI', 'OpenAI', 'openAI', true],
+    ['anthropic', 'Anthropic', 'anthropic', true],
+    ['google', 'Google Gemini', 'google', true],
+    ['mistral', 'Mistral', 'custom', true],
+    ['groq', 'Groq', 'custom', true],
+    ['ollama', 'Ollama (yerel)', 'custom', false],
+    ['custom', 'Kapanış yerel AI', 'custom', false],
+  ] as const
+  return Object.fromEntries(definitions.map(([id, label, type, userProvide], order) => [id, {
     order,
-    type: 'custom',
+    type,
     name: label,
     modelDisplayLabel: label,
     titleConvo: false,
@@ -581,40 +899,46 @@ function endpointsConfig() {
   }]))
 }
 
-function modelsConfig() {
+function buildModelsConfig(openRouterModels: string[], snapshot: AiSnapshot) {
+  const configured = new Map(snapshot.providers.map((provider) => [provider.id, provider.model]))
   return {
     initial: [],
-    custom: [
-      'openrouter/openai/gpt-4o-mini',
-      'openai/gpt-4o-mini',
-      'anthropic/claude-3-5-haiku-latest',
-      'google/gemini-2.0-flash',
-      'mistral/mistral-small-latest',
-      'groq/llama-3.3-70b-versatile',
-      'ollama/llama3.2',
-    ],
+    openAI: uniqueStrings([configured.get('openai'), 'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini']),
+    openrouter: uniqueStrings([configured.get('openrouter'), ...openRouterModels]),
+    anthropic: uniqueStrings([configured.get('anthropic'), 'claude-3-5-haiku-latest', 'claude-3-5-sonnet-latest']),
+    google: uniqueStrings([configured.get('google'), 'gemini-2.0-flash', 'gemini-1.5-flash']),
+    mistral: uniqueStrings([configured.get('mistral'), 'mistral-small-latest', 'mistral-large-latest']),
+    groq: uniqueStrings([configured.get('groq'), 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant']),
+    ollama: uniqueStrings([configured.get('ollama'), 'llama3.2', 'qwen2.5:7b']),
+    custom: uniqueStrings([configured.get('custom'), 'local-model']),
   }
 }
 
-function startupConfig() {
+function startupConfig(snapshot: AiSnapshot) {
+  const configured = new Map(snapshot.providers.map((provider) => [provider.id, provider.model]))
   const specs = [
-    ['openrouter', 'OpenRouter', 'openrouter/openai/gpt-4o-mini', true],
-    ['openai', 'OpenAI', 'openai/gpt-4o-mini', false],
-    ['anthropic', 'Anthropic', 'anthropic/claude-3-5-haiku-latest', false],
-    ['google', 'Google Gemini', 'google/gemini-2.0-flash', false],
-    ['mistral', 'Mistral', 'mistral/mistral-small-latest', false],
-    ['groq', 'Groq', 'groq/llama-3.3-70b-versatile', false],
-    ['ollama', 'Ollama (yerel)', 'ollama/llama3.2', false],
-  ].map(([name, label, model, isDefault]) => ({
+    ['openrouter', 'OpenRouter', 'openrouter', configured.get('openrouter') || 'openai/gpt-4o-mini', true],
+    ['openai', 'OpenAI', 'openAI', configured.get('openai') || 'gpt-4o-mini', false],
+    ['anthropic', 'Anthropic', 'anthropic', configured.get('anthropic') || 'claude-3-5-haiku-latest', false],
+    ['google', 'Google Gemini', 'google', configured.get('google') || 'gemini-2.0-flash', false],
+    ['mistral', 'Mistral', 'mistral', configured.get('mistral') || 'mistral-small-latest', false],
+    ['groq', 'Groq', 'groq', configured.get('groq') || 'llama-3.3-70b-versatile', false],
+    ['ollama', 'Ollama (yerel)', 'ollama', configured.get('ollama') || 'llama3.2', false],
+    ['local', 'Kapanış yerel AI', 'custom', configured.get('custom') || 'local-model', false],
+  ].map(([name, label, endpoint, model, isDefault]) => ({
     name,
     label,
     default: isDefault,
     showInMenu: true,
     showOnLanding: true,
-    preset: { endpoint: name, model },
+    showIconInMenu: true,
+    showIconInHeader: true,
+    preset: { endpoint, model },
     conversation_starters: [],
   }))
   return {
+    version: '1.3.14',
+    cache: true,
     appTitle: 'LibreChat',
     serverDomain: '127.0.0.1',
     emailLoginEnabled: false,
@@ -641,17 +965,28 @@ function startupConfig() {
     interface: {
       modelSelect: true,
       parameters: true,
-      multiConvo: false,
-      bookmarks: false,
-      memories: false,
-      presets: false,
-      prompts: false,
-      agents: false,
-      temporaryChat: false,
-      webSearch: false,
-      fileSearch: false,
-      fileCitations: false,
-      feedback: false,
+      multiConvo: true,
+      bookmarks: true,
+      memories: true,
+      presets: true,
+      prompts: { use: true, create: true, share: false, public: false },
+      agents: { use: true, create: true, share: false, public: false },
+      temporaryChat: true,
+      autoSubmitFromUrl: true,
+      runCode: true,
+      webSearch: true,
+      contextUsage: true,
+      contextCost: false,
+      fileSearch: true,
+      fileCitations: true,
+      feedback: true,
+      peoplePicker: { users: true, groups: true, roles: true },
+      marketplace: { use: false },
+      mcpServers: { use: true, create: true, share: false, public: false },
+      buildInfo: true,
+      remoteAgents: { use: false, create: false, share: false, public: false },
+      skills: { use: true, create: true, share: false, public: false, defaultActiveOnShare: false },
+      sharedLinks: { create: false, share: false, public: false, snapshotFiles: false },
       termsOfService: { modalAcceptance: false },
     },
     modelSpecs: { enforce: false, prioritize: true, list: specs },
