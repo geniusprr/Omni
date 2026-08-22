@@ -2,8 +2,16 @@ package com.kapanis.mobil.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.spec.GCMParameterSpec
 import java.util.UUID
 
 class PreferencesManager(context: Context) {
@@ -80,8 +88,8 @@ class PreferencesManager(context: Context) {
 
     // Local Auth Token (PIN gate token loc_...)
     fun getLocalAuthToken(key: String): String {
-        if (key.isBlank()) return prefs.getString("last_active_local_auth_token", "") ?: ""
-        val direct = prefs.getString("local_auth_token_$key", "") ?: ""
+        if (key.isBlank()) return readSecureToken("last_active_local_auth_token")
+        val direct = readSecureToken("local_auth_token_$key")
         if (direct.isNotEmpty()) return direct
 
         // Search in paired devices by ID or host
@@ -94,19 +102,17 @@ class PreferencesManager(context: Context) {
         // Active device fallback
         val activeId = activeDeviceId
         if (activeId.isNotEmpty() && activeId != key) {
-            val activeToken = prefs.getString("local_auth_token_$activeId", "") ?: ""
+            val activeToken = readSecureToken("local_auth_token_$activeId")
             if (activeToken.isNotEmpty()) return activeToken
         }
 
-        return prefs.getString("last_active_local_auth_token", "") ?: ""
+        return readSecureToken("last_active_local_auth_token")
     }
 
     fun saveLocalAuthToken(key: String, token: String) {
         if (token.isBlank()) return
-        prefs.edit()
-            .putString("local_auth_token_$key", token)
-            .putString("last_active_local_auth_token", token)
-            .apply()
+        writeSecureToken("local_auth_token_$key", token)
+        writeSecureToken("last_active_local_auth_token", token)
 
         // Also persist in paired devices record
         val devices = getPairedDevices().toMutableList()
@@ -126,10 +132,14 @@ class PreferencesManager(context: Context) {
     fun getPairedDevices(): List<PairedDeviceItem> {
         val raw = prefs.getString("paired_devices_json", "[]") ?: "[]"
         val list = mutableListOf<PairedDeviceItem>()
+        var migratedLegacyToken = false
         try {
             val array = JSONArray(raw)
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
+                val itemId = obj.optString("id", "").ifBlank { UUID.randomUUID().toString() }
+                val legacyToken = obj.optString("localAuthToken", "")
+                if (legacyToken.isNotBlank()) migratedLegacyToken = true
                 val modeStr = obj.optString("mode", ConnectionMode.LOCAL.name)
                 val mode = try { ConnectionMode.valueOf(modeStr) } catch (e: Exception) { ConnectionMode.LOCAL }
                 
@@ -143,7 +153,7 @@ class PreferencesManager(context: Context) {
 
                 list.add(
                     PairedDeviceItem(
-                        id = obj.optString("id", UUID.randomUUID().toString()),
+                        id = itemId,
                         name = obj.optString("name", "Windows PC"),
                         host = obj.optString("host", "192.168.1.100"),
                         port = obj.optInt("port", 53317),
@@ -155,7 +165,7 @@ class PreferencesManager(context: Context) {
                         supabaseAnonKey = obj.optString("supabaseAnonKey", ""),
                         localIps = ipsList,
                         ntfyTopic = obj.optString("ntfyTopic", ""),
-                        localAuthToken = obj.optString("localAuthToken", ""),
+                        localAuthToken = readDeviceToken(itemId, legacyToken),
                         lastConnectedAt = obj.optLong("lastConnectedAt", System.currentTimeMillis()),
                         isOnline = obj.optBoolean("isOnline", false),
                         osInfo = obj.optString("osInfo", "Windows 11")
@@ -165,6 +175,7 @@ class PreferencesManager(context: Context) {
         } catch (e: Exception) {
             // ignore
         }
+        if (migratedLegacyToken) persistPairedDevices(list)
         return list.sortedByDescending { it.lastConnectedAt }
     }
 
@@ -193,11 +204,38 @@ class PreferencesManager(context: Context) {
         }
         activeDeviceId = updated.id
         if (tokenToKeep.isNotEmpty()) {
-            prefs.edit().putString("local_auth_token_${updated.id}", tokenToKeep).putString("local_auth_token_${updated.host}", tokenToKeep).apply()
+            writeSecureToken("local_auth_token_${updated.id}", tokenToKeep)
+            writeSecureToken("local_auth_token_${updated.host}", tokenToKeep)
         }
 
+        persistPairedDevices(current.take(30))
+    }
+
+    fun removePairedDevice(id: String) {
+        val existing = getPairedDevices()
+        val removedDevice = existing.firstOrNull { it.id == id }
+        val filtered = existing.filter { it.id != id }
+        persistPairedDevices(filtered)
+        if (activeDeviceId == id) {
+            val next = filtered.firstOrNull()
+            activeDeviceId = next?.id ?: ""
+            prefs.edit().remove("last_active_local_auth_token").apply()
+            if (next != null) {
+                val nextToken = readSecureToken("local_auth_token_${next.id}")
+                if (nextToken.isNotBlank()) writeSecureToken("last_active_local_auth_token", nextToken)
+            }
+        }
+        val tokenEditor = prefs.edit().remove("local_auth_token_$id")
+        removedDevice?.let { device ->
+            tokenEditor.remove("local_auth_token_${device.host}")
+            device.localIps.forEach { ip -> tokenEditor.remove("local_auth_token_$ip") }
+        }
+        tokenEditor.apply()
+    }
+
+    private fun persistPairedDevices(items: List<PairedDeviceItem>) {
         val array = JSONArray()
-        for (item in current.take(30)) {
+        for (item in items) {
             val obj = JSONObject().apply {
                 put("id", item.id.ifEmpty { UUID.randomUUID().toString() })
                 put("name", item.name)
@@ -210,7 +248,8 @@ class PreferencesManager(context: Context) {
                 put("supabaseUrl", item.supabaseUrl)
                 put("supabaseAnonKey", item.supabaseAnonKey)
                 put("ntfyTopic", item.ntfyTopic)
-                put("localAuthToken", item.localAuthToken)
+                // Auth tokens live in the Android Keystore-backed store, never in this JSON blob.
+                put("localAuthToken", "")
                 put("lastConnectedAt", item.lastConnectedAt)
                 put("isOnline", item.isOnline)
                 put("osInfo", item.osInfo)
@@ -223,35 +262,81 @@ class PreferencesManager(context: Context) {
         prefs.edit().putString("paired_devices_json", array.toString()).apply()
     }
 
-    fun removePairedDevice(id: String) {
-        val filtered = getPairedDevices().filter { it.id != id }
-        val array = JSONArray()
-        for (item in filtered) {
-            val obj = JSONObject().apply {
-                put("id", item.id)
-                put("name", item.name)
-                put("host", item.host)
-                put("port", item.port)
-                put("mode", item.mode.name)
-                put("wifiSsid", item.wifiSsid)
-                put("pairingCode", item.pairingCode)
-                put("pairingSecret", item.pairingSecret)
-                put("supabaseUrl", item.supabaseUrl)
-                put("supabaseAnonKey", item.supabaseAnonKey)
-                put("ntfyTopic", item.ntfyTopic)
-                put("localAuthToken", item.localAuthToken)
-                put("lastConnectedAt", item.lastConnectedAt)
-                put("isOnline", item.isOnline)
-                put("osInfo", item.osInfo)
-                val ipsArr = JSONArray()
-                item.localIps.forEach { ipsArr.put(it) }
-                put("localIps", ipsArr)
-            }
-            array.put(obj)
+    private fun readDeviceToken(id: String, legacyToken: String): String {
+        val secure = readSecureToken("local_auth_token_$id")
+        if (secure.isNotEmpty()) return secure
+        if (legacyToken.isNotBlank()) {
+            writeSecureToken("local_auth_token_$id", legacyToken)
+            return legacyToken
         }
-        prefs.edit().putString("paired_devices_json", array.toString()).apply()
-        if (activeDeviceId == id) {
-            activeDeviceId = filtered.firstOrNull()?.id ?: ""
+        return ""
+    }
+
+    private fun readSecureToken(key: String): String {
+        val raw = prefs.getString(key, "") ?: ""
+        if (raw.isBlank()) return ""
+        return if (raw.startsWith("enc:")) decrypt(raw.removePrefix("enc:")) else raw
+    }
+
+    private fun writeSecureToken(key: String, value: String) {
+        if (value.isBlank()) return
+        val encrypted = encrypt(value)
+        if (encrypted == null) {
+            // Never fall back to plaintext token persistence. The user can pair again
+            // on devices where Android Keystore is unavailable.
+            prefs.edit().remove(key).apply()
+            return
+        }
+        prefs.edit().putString(key, "enc:$encrypted").apply()
+    }
+
+    private fun encryptionKey(): javax.crypto.SecretKey? {
+        return try {
+            val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            val alias = "kapanis.local.auth"
+            if (!store.containsAlias(alias)) {
+                val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+                generator.init(
+                    KeyGenParameterSpec.Builder(
+                        alias,
+                        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                    ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .build()
+                )
+                generator.generateKey()
+            }
+            (store.getEntry(alias, null) as? KeyStore.SecretKeyEntry)?.secretKey
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun encrypt(value: String): String? {
+        return try {
+            val key = encryptionKey() ?: return null
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+            val iv = cipher.iv
+            val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+            Base64.encodeToString(ByteBuffer.allocate(4 + iv.size + encrypted.size).putInt(iv.size).put(iv).put(encrypted).array(), Base64.NO_WRAP)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun decrypt(value: String): String {
+        return try {
+            val bytes = Base64.decode(value, Base64.NO_WRAP)
+            val buffer = ByteBuffer.wrap(bytes)
+            val ivLength = buffer.int
+            val iv = ByteArray(ivLength).also { buffer.get(it) }
+            val encrypted = ByteArray(buffer.remaining()).also { buffer.get(it) }
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, encryptionKey(), GCMParameterSpec(128, iv))
+            String(cipher.doFinal(encrypted), Charsets.UTF_8)
+        } catch (_: Exception) {
+            ""
         }
     }
 

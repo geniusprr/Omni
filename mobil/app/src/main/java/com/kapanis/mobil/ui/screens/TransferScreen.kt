@@ -111,7 +111,7 @@ fun TransferScreen(
                     return Result.failure(Exception("Dosya aktarımı için PC eşleştirme kodu gerekli."))
                 }
 
-                val authResult = apiClient.authenticatePairingPin(host, port, pairingCredential)
+                val authResult = apiClient.authenticatePairingPin(host, port, pairingCredential, prefs.controllerId, prefs.controllerName)
                 if (authResult.isFailure) return authResult
 
                 val token = authResult.getOrDefault("")

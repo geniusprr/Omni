@@ -187,7 +187,7 @@ fun ConnectScreen(
                     val codeToUse = payload.code.ifEmpty { payload.secret }
                     var token = ""
                     if (codeToUse.isNotEmpty()) {
-                        val authRes = apiClient.authenticatePairingPin(candidateHost, payload.port, codeToUse)
+                        val authRes = apiClient.authenticatePairingPin(candidateHost, payload.port, codeToUse, prefs.controllerId, prefs.controllerName)
                         if (authRes.isSuccess) {
                             token = authRes.getOrDefault("")
                         }
@@ -339,7 +339,7 @@ fun ConnectScreen(
         isAuthenticatingPin = true
         pinError = null
         scope.launch {
-            val res = apiClient.authenticatePairingPin(pendingPinHost, pendingPinPort, inputPinCode)
+            val res = apiClient.authenticatePairingPin(pendingPinHost, pendingPinPort, inputPinCode, prefs.controllerId, prefs.controllerName)
             isAuthenticatingPin = false
             if (res.isSuccess) {
                 val token = res.getOrThrow()
@@ -531,6 +531,27 @@ fun ConnectScreen(
                                             color = colors.textMuted,
                                             fontSize = 11.sp
                                         )
+                                    }
+                                }
+
+                                if (pc.mode == ConnectionMode.LOCAL) {
+                                    IconButton(
+                                        onClick = {
+                                            val token = prefs.getLocalAuthToken(pc.id.ifEmpty { pc.host })
+                                            scope.launch {
+                                                val revoked = apiClient.revokeRemoteTrust(pc.host, pc.port, token)
+                                                if (revoked.getOrNull() == true) {
+                                                    prefs.removePairedDevice(pc.id)
+                                                    refreshDevicesList()
+                                                    Toast.makeText(context, "${pc.name} güveni kaldırıldı", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "PC'ye ulaşılamadı; güven iptali yapılmadı", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Lock, contentDescription = "PC güvenini kaldır", tint = colors.warning, modifier = Modifier.size(16.dp))
                                     }
                                 }
 

@@ -236,7 +236,7 @@ fun MainScreen(
                         ).firstOrNull { it.isNotBlank() }.orEmpty()
 
                         if (pairingCredential.isNotBlank()) {
-                            val authResult = apiClient.authenticatePairingPin(target.host, target.port, pairingCredential)
+                            val authResult = apiClient.authenticatePairingPin(target.host, target.port, pairingCredential, prefs.controllerId, prefs.controllerName)
                             if (authResult.isSuccess) {
                                 currentToken = authResult.getOrDefault("")
                                 val knownDeviceId = state?.deviceId.orEmpty().ifEmpty { savedDevice?.id.orEmpty() }
@@ -458,6 +458,20 @@ fun MainScreen(
     val minutes = (remainingSeconds % 3600) / 60
     val seconds = remainingSeconds % 60
     val countdownFormatted = String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds)
+
+    // Remote desktop is an isolated full-screen surface. It intentionally
+    // bypasses the app header, animated tab container, and global bottom nav.
+    if (currentTab == NavTab.REMOTE_DESKTOP) {
+        RemoteDesktopScreen(
+            target = target,
+            mode = mode,
+            prefs = prefs,
+            apiClient = apiClient,
+            onAuthExpired = { currentTab = NavTab.CONNECT },
+            onExit = { currentTab = NavTab.HOME }
+        )
+        return
+    }
 
     Box(
         modifier = Modifier
@@ -748,6 +762,16 @@ fun MainScreen(
                                     }
                                 }
 
+                                item {
+                                    QuickActionTile(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        icon = Icons.Rounded.Laptop,
+                                        title = "PC Ekranı",
+                                        subtitle = if (mode == ConnectionMode.LOCAL) "Aynı Wi‑Fi'da tek dokunuşla kontrol et" else "Ekran kontrolü için yerel ağa geç",
+                                        onClick = { currentTab = NavTab.REMOTE_DESKTOP }
+                                    )
+                                }
+
                                 // 3. HIZLI ARAÇLAR (2x2 Zarif Grid)
                                 item {
                                     Text(
@@ -906,6 +930,17 @@ fun MainScreen(
                                 mode = mode,
                                 prefs = prefs,
                                 apiClient = apiClient
+                            )
+                        }
+
+                        NavTab.REMOTE_DESKTOP -> {
+                            RemoteDesktopScreen(
+                                target = target,
+                                mode = mode,
+                                prefs = prefs,
+                                apiClient = apiClient,
+                                onAuthExpired = { currentTab = NavTab.CONNECT },
+                                onExit = { currentTab = NavTab.HOME }
                             )
                         }
 

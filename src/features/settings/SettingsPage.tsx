@@ -7,6 +7,7 @@ import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
 import Laptop from 'lucide-react/dist/esm/icons/laptop.js'
 import Moon from 'lucide-react/dist/esm/icons/moon.js'
+import MousePointer2 from 'lucide-react/dist/esm/icons/mouse-pointer-2.js'
 import Palette from 'lucide-react/dist/esm/icons/palette.js'
 import QrCode from 'lucide-react/dist/esm/icons/qr-code.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
@@ -32,7 +33,7 @@ import {
   testSupabaseConnection,
 } from '@/features/remote/client'
 import { desktop } from '@/lib/desktop'
-import type { AppSettings, LocalSendDevice, PairedController, RemoteConnectionStatus } from '@/types'
+import type { AppSettings, LocalSendDevice, PairedController, RemoteConnectionStatus, RemoteDesktopStatus, RemoteTrustedDevice } from '@/types'
 
 interface SettingsPageProps {
   settings: AppSettings
@@ -296,6 +297,9 @@ export function SettingsPage({
   const [showSqlModal, setShowSqlModal] = useState(false)
   const [heartbeatAgo, setHeartbeatAgo] = useState<string>('')
   const [localIps, setLocalIps] = useState<string[]>([])
+  const [remoteEnabled, setRemoteEnabled] = useState(settings.remoteDesktopEnabled !== false)
+  const [remoteStatus, setRemoteStatus] = useState<RemoteDesktopStatus>({ state: 'ready', sessionId: null, controllerId: null, controllerName: null, display: null, lastError: null })
+  const [trustedRemoteDevices, setTrustedRemoteDevices] = useState<RemoteTrustedDevice[]>([])
 
   useEffect(() => {
     void desktop.localsend.getStatus().then((st) => {
@@ -304,6 +308,13 @@ export function SettingsPage({
     }).catch(() => undefined)
     return undefined
   }, [])
+
+  useEffect(() => {
+    setRemoteEnabled(settings.remoteDesktopEnabled !== false)
+    void desktop.remoteDesktop.getStatus().then(setRemoteStatus).catch(() => undefined)
+    void desktop.remoteDesktop.listTrustedDevices().then(setTrustedRemoteDevices).catch(() => undefined)
+    return desktop.remoteDesktop.onState(setRemoteStatus)
+  }, [settings.remoteDesktopEnabled])
 
   useEffect(() => {
     void desktop.notifications.getStatus().then(setListenerStatus).catch(() => undefined)
@@ -327,6 +338,7 @@ export function SettingsPage({
     setNotifMirroring(settings.notificationMirroringEnabled !== false)
     setNtfyEnabled(Boolean(settings.ntfyEnabled))
     setNtfyTopic(settings.ntfyTopic || `kapanis_${settings.deviceId.slice(0, 8)}`)
+    setRemoteEnabled(settings.remoteDesktopEnabled !== false)
   }, [settings])
 
   useEffect(() => {
@@ -379,6 +391,7 @@ export function SettingsPage({
       notificationMirroringEnabled: notifMirroring,
       ntfyEnabled,
       ntfyTopic: ntfyTopic.trim(),
+      remoteDesktopEnabled: remoteEnabled,
       lastSavedAt: Date.now(),
     }
     try {
@@ -422,6 +435,24 @@ export function SettingsPage({
     if (!settings.supabaseUrl || !settings.supabaseAnonKey) return
     await removePairedController(settings.supabaseUrl, settings.supabaseAnonKey, id)
     onRefreshControllers()
+  }
+
+  async function handleRemoteEnabledChange(enabled: boolean) {
+    setRemoteEnabled(enabled)
+    await desktop.remoteDesktop.setEnabled(enabled)
+    const updated = { ...settings, remoteDesktopEnabled: enabled }
+    await saveEffectiveSettings(updated)
+    onSettingsChange(updated)
+  }
+
+  async function handleRevokeRemoteDevice(id: string) {
+    await desktop.remoteDesktop.revokeTrustedDevice(id)
+    setTrustedRemoteDevices(await desktop.remoteDesktop.listTrustedDevices())
+  }
+
+  async function handleRevokeAllRemoteDevices() {
+    await desktop.remoteDesktop.revokeAllTrustedDevices()
+    setTrustedRemoteDevices([])
   }
 
   function copyText(text: string, setCopied: (v: boolean) => void) {
@@ -701,6 +732,58 @@ export function SettingsPage({
             <div className="heartbeat-info">
               <span className="runtime-dot" />
               <span>Kalp atışı aktif (15 sn) {heartbeatAgo ? `· Son sinyal: ${heartbeatAgo}` : ''}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobil PC Ekranı */}
+        <div className="settings-card settings-card--highlight" data-settings-section="devices">
+          <div className="settings-card__header">
+            <div className="settings-card__icon"><MousePointer2 size={17} /></div>
+            <div>
+              <h3>Mobil PC Ekranı</h3>
+              <p>Aynı Wi‑Fi ağındaki telefondan ekranı gör, mouse’u hareket ettir ve yazı yaz.</p>
+            </div>
+          </div>
+          <div className="settings-card__body">
+            <div className="settings-row" style={{ marginBottom: '12px' }}>
+              <div>
+                <Label htmlFor="remote-desktop-toggle" style={{ fontWeight: 600 }}>PC Ekranı aktif</Label>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0' }}>
+                  {remoteStatus.state === 'connected' ? `${remoteStatus.controllerName || 'Mobil cihaz'} bağlı` : remoteEnabled ? 'LAN bağlantısı için hazır' : 'Mobil ekran kontrolü kapalı'}
+                </p>
+              </div>
+              <Switch id="remote-desktop-toggle" checked={remoteEnabled} onCheckedChange={(value) => void handleRemoteEnabledChange(value)} />
+            </div>
+
+            {remoteStatus.sessionId ? (
+              <div className="heartbeat-info" style={{ marginBottom: '12px' }}>
+                <span className="runtime-dot" />
+                <span>{remoteStatus.controllerName || 'Mobil cihaz'} şu anda PC ekranını kontrol ediyor.</span>
+                <Button size="compact" variant="ghost" onClick={() => void desktop.remoteDesktop.stopSession()}>Oturumu Kapat</Button>
+              </div>
+            ) : null}
+
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px' }}>
+              <div className="settings-row" style={{ marginBottom: '8px' }}>
+                <div>
+                  <Label style={{ fontWeight: 600 }}>Güvenilen telefonlar</Label>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0' }}>PIN yalnızca yeni eşleşmede istenir.</p>
+                </div>
+                {trustedRemoteDevices.length > 0 ? <Button size="compact" variant="ghost" onClick={() => void handleRevokeAllRemoteDevices()}>Tümünü İptal Et</Button> : null}
+              </div>
+              {trustedRemoteDevices.length === 0 ? (
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Henüz güvenilen mobil cihaz yok.</p>
+              ) : trustedRemoteDevices.map((device) => (
+                <div className="paired-item" key={device.id}>
+                  <div className="paired-item__icon"><Smartphone size={15} /></div>
+                  <div className="paired-item__info">
+                    <strong>{device.controllerName}</strong>
+                    <small>Son kullanım: {new Date(device.lastActiveAt).toLocaleString('tr-TR')}</small>
+                  </div>
+                  <Button size="compact" variant="icon" title="Güveni kaldır" onClick={() => void handleRevokeRemoteDevice(device.id)}><Trash2 size={14} /></Button>
+                </div>
+              ))}
             </div>
           </div>
         </div>

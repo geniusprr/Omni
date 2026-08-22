@@ -23,6 +23,8 @@ const allowedChannels: ReadonlySet<string> = new Set([
   'localsend:get-status', 'localsend:get-devices', 'localsend:scan-network', 'localsend:send-text',
   'localsend:send-file', 'localsend:send-cloud-file', 'localsend:get-received-files', 'localsend:open-download-folder',
   'localsend:set-auto-accept', 'localsend:add-manual-device',
+  'remote-desktop:get-status', 'remote-desktop:set-enabled', 'remote-desktop:stop-session',
+  'remote-desktop:list-trusted-devices', 'remote-desktop:revoke-trusted-device', 'remote-desktop:revoke-all-trusted-devices',
   'vault:select-folder', 'vault:get-default-path', 'vault:list-entries', 'vault:read-file',
   'vault:write-file', 'vault:create-file', 'vault:create-folder', 'vault:rename-entry',
   'vault:delete-entry', 'vault:reveal-in-explorer', 'vault:start-watcher', 'vault:stop-watcher',
@@ -42,6 +44,7 @@ const allowedEvents: ReadonlySet<string> = new Set([
   'remote:command', 'mobile:note', 'mobile:file', 'mobile:notification', 'notification:mirrored', 'localsend:device-discovered',
   'localsend:file-received', 'vault:fs-change', 'youtube-music-state',
   'ai:updated',
+  'remote-desktop:state',
 ])
 
 const bridge: ElectronDesktopBridge = {

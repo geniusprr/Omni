@@ -67,6 +67,7 @@ export async function getDefaultSettings(): Promise<AppSettings> {
     autostart,
     heartbeatIntervalSeconds: 15,
     lastSavedAt: Date.now(),
+    remoteDesktopEnabled: true,
   }
 }
 
@@ -86,6 +87,7 @@ export async function getEffectiveSettings(): Promise<AppSettings> {
     deviceName: stored.deviceName || defaults.deviceName,
     pairingCode: stored.pairingCode || defaults.pairingCode,
     pairingSecret: stored.pairingSecret || defaults.pairingSecret,
+    remoteDesktopEnabled: stored.remoteDesktopEnabled !== false,
   }
 
   // Ensure deviceId is a valid UUID for PostgreSQL uuid type

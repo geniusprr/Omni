@@ -11,11 +11,16 @@ import type { ConnectionInfo, LocalSendDevice, LocalSendStatus, MirroredNotifica
 import type { AlarmManager } from './AlarmManager.js'
 import type { ContentManager } from './ContentManager.js'
 import type { SystemManager } from './SystemManager.js'
+import { TrustedDeviceStore } from './TrustedDeviceStore.js'
 
 interface UploadFile { id: string; fileName: string; size: number; fileType?: string }
 interface UploadSession { sender: LocalSendDevice; files: Record<string, UploadFile>; tokens: Record<string, string>; createdAt: number }
 interface MobileHooks { system: SystemManager; alarms: AlarmManager; content: ContentManager; emit: (event: string, payload: unknown) => void }
 interface PairingAttempt { failures: number; windowStartedAt: number; lockedUntil: number }
+interface RemoteDesktopHandlers {
+  handleRequest: (request: http.IncomingMessage, response: http.ServerResponse, url: URL) => Promise<boolean>
+  handleUpgrade: (request: http.IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => void
+}
 
 const CLOUD_TRANSFER_BUCKET = 'kapanis-transfers'
 const MAX_CLOUD_TRANSFER_BYTES = 512 * 1024 * 1024
@@ -26,12 +31,11 @@ export class LocalSendManager {
   private readonly downloadDir: string
   private readonly devicesPath: string
   private readonly filesPath: string
-  private readonly authTokensPath: string
   private readonly emitDevice: (device: LocalSendDevice) => void
   private readonly emitFile: (file: ReceivedFileRecord) => void
   private readonly mobile: MobileHooks
   private readonly devices = new Map<string, LocalSendDevice>()
-  private readonly authorizedTokens = new Set<string>()
+  private readonly trustedDevices: TrustedDeviceStore
   private receivedFiles: ReceivedFileRecord[] = []
   private sessions = new Map<string, UploadSession>()
   private server: http.Server | null = null
@@ -43,13 +47,13 @@ export class LocalSendManager {
   private terminalRunning = false
   private discoveryTimer: NodeJS.Timeout | null = null
   private discoveryInFlight = false
+  private remoteDesktopHandlers: RemoteDesktopHandlers | null = null
 
   constructor(dataDir: string, emitDevice: (device: LocalSendDevice) => void, emitFile: (file: ReceivedFileRecord) => void, mobile: MobileHooks) {
     this.dataDir = dataDir
     this.downloadDir = path.join(app.getPath('downloads'), 'kapanis_received')
     this.devicesPath = path.join(dataDir, 'localsend-devices.json')
     this.filesPath = path.join(dataDir, 'localsend-files.json')
-    this.authTokensPath = path.join(dataDir, 'local-auth-tokens.json')
     this.emitDevice = emitDevice
     this.emitFile = emitFile
     this.mobile = mobile
@@ -57,28 +61,44 @@ export class LocalSendManager {
     for (const device of readArray<LocalSendDevice>(this.devicesPath)) {
       if (device && typeof device.ip === 'string' && typeof device.port === 'number') this.devices.set(device.ip + ':' + device.port, device)
     }
-    for (const token of readArray<string>(this.authTokensPath)) {
-      if (typeof token === 'string' && token) this.authorizedTokens.add(token)
-    }
+    this.trustedDevices = new TrustedDeviceStore(dataDir)
     this.receivedFiles = readArray<ReceivedFileRecord>(this.filesPath).slice(0, 200)
   }
 
-  private saveAuthTokens() {
-    try {
-      fs.writeFileSync(this.authTokensPath, JSON.stringify(Array.from(this.authorizedTokens)), 'utf8')
-    } catch {}
+  setRemoteDesktopHandlers(handlers: RemoteDesktopHandlers | null) {
+    this.remoteDesktopHandlers = handlers
   }
 
-  private isAuthorized(request: http.IncomingMessage, url: URL): boolean {
+  listTrustedDevices() {
+    return this.trustedDevices.list()
+  }
+
+  revokeTrustedDevice(id: string) {
+    return this.trustedDevices.revoke(id)
+  }
+
+  revokeAllTrustedDevices() {
+    return this.trustedDevices.revokeAll()
+  }
+
+  private getAuthorizationToken(request: http.IncomingMessage, url?: URL) {
     const authHeader = request.headers['authorization'] || request.headers['x-auth-token']
     let token = ''
     if (typeof authHeader === 'string') {
       token = authHeader.replace(/^Bearer\s+/i, '').trim()
     }
     if (!token) {
-      token = url.searchParams.get('token') || url.searchParams.get('auth') || ''
+      token = url?.searchParams.get('token') || url?.searchParams.get('auth') || ''
     }
-    return Boolean(token && this.authorizedTokens.has(token))
+    return token
+  }
+
+  authorizeRequest(request: http.IncomingMessage, url?: URL) {
+    return this.trustedDevices.authorize(this.getAuthorizationToken(request, url))
+  }
+
+  private isAuthorized(request: http.IncomingMessage, url: URL): boolean {
+    return Boolean(this.authorizeRequest(request, url))
   }
 
   private getPairingRetryAfterSeconds(senderIp: string) {
@@ -123,6 +143,17 @@ export class LocalSendManager {
       })
     })
     this.server = server
+    server.on('upgrade', (request, socket, head) => {
+      if (!this.remoteDesktopHandlers) {
+        socket.destroy()
+        return
+      }
+      try {
+        this.remoteDesktopHandlers.handleUpgrade(request, socket, head)
+      } catch {
+        socket.destroy()
+      }
+    })
     server.on('error', (error) => {
       if (this.server === server) this.server = null
       const code = (error as NodeJS.ErrnoException).code
@@ -196,6 +227,10 @@ export class LocalSendManager {
       downloadDir: this.downloadDir,
       discoveredCount: this.devices.size,
     }
+  }
+
+  async handleRemoteDesktopRequest(request: http.IncomingMessage, response: http.ServerResponse, url: URL) {
+    return this.remoteDesktopHandlers?.handleRequest(request, response, url) ?? false
   }
 
   getDevices() {
@@ -364,6 +399,10 @@ export class LocalSendManager {
     if (request.method === 'OPTIONS') { response.statusCode = 204; response.end(); return }
     const senderIp = request.socket.remoteAddress?.replace(/^::ffff:/, '') || 'unknown'
 
+    if (this.remoteDesktopHandlers && url.pathname.startsWith('/api/remote/')) {
+      if (await this.remoteDesktopHandlers.handleRequest(request, response, url)) return
+    }
+
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const settings = this.mobile.system.getSettings()
       response.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -390,18 +429,20 @@ export class LocalSendManager {
       const validSecret = settings?.pairingSecret?.trim().toUpperCase() || ''
       if (inputCode && (inputCode === validCode || inputCode === validSecret)) {
         this.pairingAttempts.delete(senderIp)
-        const token = 'loc_' + randomUUID().replace(/-/g, '')
-        this.authorizedTokens.add(token)
-        this.saveAuthTokens()
+        const trusted = this.trustedDevices.issueToken(
+          typeof body?.controllerId === 'string' ? body.controllerId : '',
+          typeof body?.controllerName === 'string' ? body.controllerName : 'Mobil cihaz',
+        )
         const clientDevice = this.normalizeDevice(body, senderIp, Number(body?.port) || this.port, 'http')
         this.saveDevice(clientDevice)
         sendJson(response, {
           success: true,
-          authToken: token,
+          authToken: trusted.token,
           deviceName: settings?.deviceName || os.hostname() || 'Windows PC',
           deviceId: settings?.deviceId,
           pairingCode: validCode,
           timerState: this.mobile.system.getTimerStatus(),
+          trustedDevice: trusted.device,
         })
         return
       }

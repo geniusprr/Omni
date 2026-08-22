@@ -9,6 +9,10 @@ import com.kapanis.mobil.data.MirroredNotification
 import com.kapanis.mobil.data.NoteItem
 import com.kapanis.mobil.data.RemoteTimerState
 import com.kapanis.mobil.data.RemoteTerminalStatus
+import com.kapanis.mobil.data.RemoteDisplayInfo
+import com.kapanis.mobil.data.RemoteAuthRequired
+import com.kapanis.mobil.data.RemoteSessionConflict
+import com.kapanis.mobil.data.RemoteSessionInfo
 import com.kapanis.mobil.data.ServerStatus
 import com.kapanis.mobil.data.TerminalCommandResult
 import com.kapanis.mobil.data.TransferItem
@@ -225,7 +229,9 @@ class KapanisApiClient {
     suspend fun authenticatePairingPin(
         host: String,
         port: Int,
-        pin: String
+        pin: String,
+        controllerId: String = "",
+        controllerName: String = "Android Telefon"
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val url = "http://$host:$port/api/auth/pair"
@@ -233,6 +239,8 @@ class KapanisApiClient {
             val json = JSONObject().apply {
                 put("code", cleanCode)
                 put("pairingCode", cleanCode)
+                if (controllerId.isNotBlank()) put("controllerId", controllerId)
+                if (controllerName.isNotBlank()) put("controllerName", controllerName)
             }
             val body = json.toString().toRequestBody(jsonMediaType)
             val request = Request.Builder().url(url).post(body).build()
@@ -250,6 +258,134 @@ class KapanisApiClient {
                     val msg = try { JSONObject(respBody).optString("error", "Geçersiz şifre / PIN kodu") } catch (e: Exception) { "Eşleştirme başarısız" }
                     Result.failure(Exception(msg))
                 }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createRemoteSession(
+        host: String,
+        port: Int,
+        token: String,
+        controllerId: String,
+        controllerName: String
+    ): Result<RemoteSessionInfo> = withContext(Dispatchers.IO) {
+        if (token.isBlank()) return@withContext Result.failure(Exception("PC Ekranı için önce PIN ile eşleşmelisiniz."))
+        try {
+            val payload = JSONObject().apply {
+                put("version", 1)
+                put("controllerId", controllerId)
+                put("controllerName", controllerName)
+                put("display", "primary")
+            }
+            val request = Request.Builder()
+                .url("http://$host:$port/api/remote/session")
+                .addHeader("Authorization", "Bearer $token")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                val json = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                if (!response.isSuccessful) {
+                    val message = json.optString("error", "PC Ekranı oturumu başlatılamadı (${response.code})")
+                    if (response.code == 401) {
+                        return@withContext Result.failure(RemoteAuthRequired(message))
+                    }
+                    if (response.code == 409) {
+                        return@withContext Result.failure(RemoteSessionConflict(json.optString("sessionId"), message))
+                    }
+                    return@withContext Result.failure(Exception(message))
+                }
+                val displayJson = json.optJSONObject("display") ?: JSONObject()
+                Result.success(
+                    RemoteSessionInfo(
+                        sessionId = json.optString("sessionId"),
+                        sessionToken = json.optString("sessionToken"),
+                        wsPath = json.optString("wsPath"),
+                        display = RemoteDisplayInfo(
+                            width = displayJson.optInt("width", 1),
+                            height = displayJson.optInt("height", 1),
+                            scaleFactor = displayJson.optDouble("scaleFactor", 1.0).toFloat()
+                        ),
+                        expiresAt = json.optLong("expiresAt", System.currentTimeMillis() + 60_000L)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun takeoverRemoteSession(
+        host: String,
+        port: Int,
+        token: String,
+        controllerId: String,
+        controllerName: String,
+        sessionId: String
+    ): Result<RemoteSessionInfo> = withContext(Dispatchers.IO) {
+        if (token.isBlank() || sessionId.isBlank()) return@withContext Result.failure(Exception("Devralınacak PC Ekranı oturumu bulunamadı."))
+        try {
+            val payload = JSONObject().apply {
+                put("version", 1)
+                put("controllerId", controllerId)
+                put("controllerName", controllerName)
+                put("display", "primary")
+            }
+            val request = Request.Builder()
+                .url("http://$host:$port/api/remote/session/$sessionId/takeover")
+                .addHeader("Authorization", "Bearer $token")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                val json = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                if (!response.isSuccessful) {
+                    val message = json.optString("error", "PC Ekranı devralınamadı (${response.code})")
+                    if (response.code == 401) {
+                        return@withContext Result.failure(RemoteAuthRequired(message))
+                    }
+                    return@withContext Result.failure(Exception(message))
+                }
+                val displayJson = json.optJSONObject("display") ?: JSONObject()
+                Result.success(
+                    RemoteSessionInfo(
+                        sessionId = json.optString("sessionId"),
+                        sessionToken = json.optString("sessionToken"),
+                        wsPath = json.optString("wsPath"),
+                        display = RemoteDisplayInfo(
+                            width = displayJson.optInt("width", 1),
+                            height = displayJson.optInt("height", 1),
+                            scaleFactor = displayJson.optDouble("scaleFactor", 1.0).toFloat()
+                        ),
+                        expiresAt = json.optLong("expiresAt", System.currentTimeMillis() + 60_000L)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun revokeRemoteTrust(
+        host: String,
+        port: Int,
+        token: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        if (token.isBlank()) return@withContext Result.success(false)
+        try {
+            val request = Request.Builder()
+                .url("http://$host:$port/api/remote/trusted/revoke-self")
+                .addHeader("Authorization", "Bearer $token")
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("PC güveni kaldırılamadı (${response.code})"))
+                }
+                val body = response.body?.string().orEmpty()
+                Result.success(JSONObject(body).optBoolean("success", false))
             }
         } catch (e: Exception) {
             Result.failure(e)

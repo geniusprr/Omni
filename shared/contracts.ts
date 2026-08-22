@@ -10,11 +10,17 @@ import type {
   NoteItem,
   ReceivedFileRecord,
   RemoteDesktopStatus,
+  RemoteDesktopInput,
+  RemoteDesktopSignal,
   RemoteTrustedDevice,
   TimerAction,
   TimerState,
   TransferItem,
 } from '../src/types.js'
+
+export const REMOTE_DESKTOP_PROTOCOL_VERSION = 1 as const
+export type RemoteDesktopInputMessage = RemoteDesktopInput
+export type RemoteDesktopSignalMessage = RemoteDesktopSignal
 
 export const BROWSER_EVENTS = {
   tabCreated: 'browser:tab-created',

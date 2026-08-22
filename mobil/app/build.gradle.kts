@@ -54,6 +54,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("com.pexip.webrtc:webrtc:124.0.0")
 
+    testImplementation("junit:junit:4.13.2")
     debugImplementation(libs.androidx.ui.tooling)
 }

@@ -15,7 +15,7 @@
     "dev:ui": "vite",
     "build": "tsc -b && vite build && npm run build:electron",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "test": "npx tsx src/features/notes/lib/markdownParser.test.ts && npx tsx src/features/notes/lib/vaultEngine.test.ts && npx tsx src/features/music/providers/youtube/youtubeUrl.test.ts && npx tsx src/features/music/core/queue.test.ts && npx tsx src/features/music/core/persistence.test.ts && npx tsx src/features/music/core/musicStore.test.ts && npx tsx src/features/browser/browserState.test.ts",
+    "test": "npx tsx electron/TrustedDeviceStore.test.ts && npx tsx src/features/notes/lib/markdownParser.test.ts && npx tsx src/features/notes/lib/vaultEngine.test.ts && npx tsx src/features/music/providers/youtube/youtubeUrl.test.ts && npx tsx src/features/music/core/queue.test.ts && npx tsx src/features/music/core/persistence.test.ts && npx tsx src/features/music/core/musicStore.test.ts && npx tsx src/features/browser/browserState.test.ts",
     "test:browser": "npm run build && node electron/browser-smoke-runner.mjs",
     "dist": "npm run build && electron-builder --win nsis"
   },
@@ -86,6 +86,9 @@
       "dist-electron/**/*",
       "app-icon.png",
       "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/koffi/**/*"
     ],
     "extraResources": [
       {

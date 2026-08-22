@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.DesktopWindows
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.FolderShared
 import androidx.compose.material.icons.rounded.Home
@@ -39,6 +40,7 @@ import com.kapanis.mobil.ui.theme.KapanisTheme
 
 enum class NavTab(val title: String, val icon: ImageVector) {
     HOME("Anasayfa", Icons.Rounded.Home),
+    REMOTE_DESKTOP("PC", Icons.Rounded.DesktopWindows),
     TERMINAL("CMD", Icons.Rounded.Terminal),
     NOTIFY("Bildirimler", Icons.Rounded.Notifications),
     TRANSFER("Dosyalar", Icons.Rounded.FolderShared),

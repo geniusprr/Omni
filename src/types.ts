@@ -207,11 +207,26 @@ export interface RemoteTrustedDevice {
 
 export type RemoteDesktopInput =
   | { version: 1; sequence: number; type: 'move'; x: number; y: number }
+  | { version: 1; sequence: number; type: 'moveRelative'; dx: number; dy: number }
   | { version: 1; sequence: number; type: 'button'; button: 'left' | 'right' | 'middle'; pressed: boolean }
   | { version: 1; sequence: number; type: 'wheel'; deltaX: number; deltaY: number }
   | { version: 1; sequence: number; type: 'key'; code: string; pressed: boolean; modifiers?: string[] }
   | { version: 1; sequence: number; type: 'text'; value: string }
   | { version: 1; sequence: number; type: 'releaseAll' }
+
+export interface RemoteIceCandidate {
+  candidate: string
+  sdpMid?: string | null
+  sdpMLineIndex?: number | null
+  usernameFragment?: string | null
+}
+
+export type RemoteDesktopSignal =
+  | { version: 1; type: 'offer' | 'answer'; sdp: string }
+  | { version: 1; type: 'ice'; candidate: RemoteIceCandidate }
+  | { version: 1; type: 'state'; state: 'ready' | 'connecting' | 'connected' | 'failed' | 'closed'; reason?: string | null }
+  | { version: 1; type: 'heartbeat' }
+  | { version: 1; type: 'close'; reason?: string | null }
 
 export interface ConnectionInfo {
   port: number

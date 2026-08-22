@@ -1,7 +1,7 @@
 import { app, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { BROWSER_EVENTS, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type BrowserBounds, type BrowserSessionSnapshot, type PermissionSetInput } from '../shared/contracts.js'
+import { APP_EVENTS, BROWSER_EVENTS, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type BrowserBounds, type BrowserSessionSnapshot, type PermissionSetInput } from '../shared/contracts.js'
 import { AiStore } from './AiStore.js'
 import { LibreChatServer } from './LibreChatServer.js'
 import { LibreChatView } from './LibreChatView.js'
@@ -10,6 +10,7 @@ import { BrowserManager } from './BrowserManager.js'
 import { ContentManager } from './ContentManager.js'
 import { LocalSendManager } from './LocalSendManager.js'
 import { NotificationListenerManager } from './NotificationListenerManager.js'
+import { RemoteDesktopManager } from './RemoteDesktopManager.js'
 import { SystemManager } from './SystemManager.js'
 import { WindowManager } from './WindowManager.js'
 import { runBrowserLifecycleSmoke } from './browser-smoke.js'
@@ -34,6 +35,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
   let aiStore: AiStore
   let libreChatServer: LibreChatServer
   let libreChatView: LibreChatView
+  let remoteDesktop: RemoteDesktopManager
   let quitting = false
   let requestedExitCode = 0
 
@@ -77,6 +79,18 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       },
       { system, alarms, content, emit: send },
     )
+    remoteDesktop = new RemoteDesktopManager({
+      getSettings: () => system.getSettings(),
+      authorize: (request, url) => localSend.authorizeRequest(request, url),
+      revokeTrustedDevice: (id) => localSend.revokeTrustedDevice(id),
+      preloadPath: path.join(moduleDirectory, 'remote-capture-preload.cjs'),
+      captureUrl: `http://127.0.0.1:${localSend.port}/api/remote/capture`,
+      emit: (status) => send(APP_EVENTS.remoteDesktopState, status),
+    })
+    localSend.setRemoteDesktopHandlers({
+      handleRequest: (request, response, url) => remoteDesktop.handleRequest(request, response, url),
+      handleUpgrade: (request, socket, head) => remoteDesktop.handleUpgrade(request, socket, head),
+    })
     notifications = new NotificationListenerManager({
       dataDir: browser.sessions.dataDir,
       onNotification: (notif) => {
@@ -131,6 +145,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       await browser?.destroyAll()
       alarms?.destroy()
       content?.stopWatcher()
+      await remoteDesktop?.dispose()
       localSend?.stop()
       notifications?.stop()
       libreChatView?.destroy()
@@ -259,6 +274,17 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       const item = readObject(payload)
       return localSend.addManualDevice(readString(item, 'targetIp'), (item.targetPort as number | undefined) || localSend.port)
     })
+    handle('remote-desktop:get-status', () => remoteDesktop.getStatus())
+    handle('remote-desktop:set-enabled', (payload) => {
+      const enabled = Boolean(readObject(payload).enabled)
+      const settings = system.getSettings()
+      if (settings) system.saveSettings({ ...settings, remoteDesktopEnabled: enabled, lastSavedAt: Date.now() })
+      return remoteDesktop.setEnabled(enabled)
+    })
+    handle('remote-desktop:stop-session', () => remoteDesktop.stopSession())
+    handle('remote-desktop:list-trusted-devices', () => localSend.listTrustedDevices())
+    handle('remote-desktop:revoke-trusted-device', (payload) => localSend.revokeTrustedDevice(readString(payload, 'id')))
+    handle('remote-desktop:revoke-all-trusted-devices', () => localSend.revokeAllTrustedDevices())
 
     handle('vault:select-folder', () => content.selectVaultFolder())
     handle('vault:get-default-path', () => content.getDefaultVaultPath())
