@@ -9,6 +9,7 @@ import { PairingModal } from '@/components/PairingModal'
 import { QuickActionsPanel } from '@/components/QuickActionsPanel'
 import { RingingOverlay } from '@/components/RingingOverlay'
 import { AlarmsPage } from '@/features/alarms/AlarmsPage'
+import { LibreChatPage } from '@/features/ai/LibreChatPage'
 import { BrowserPage } from '@/features/browser/BrowserPage'
 import { requestBrowserNavigation } from '@/features/browser/browserData'
 import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
@@ -299,6 +300,8 @@ export default function App() {
       setMode('notes')
     } else if (lower.startsWith('/paylas') || lower.startsWith('paylaş')) {
       setMode('localsend')
+    } else if (lower.startsWith('/ai')) {
+      setMode('ai')
     } else {
       setMode('browser')
       requestBrowserNavigation(cmd)
@@ -333,7 +336,8 @@ export default function App() {
     <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'}`}>
       {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
       <div className="minios-wallpaper-backdrop" />
-      {/* Top-Right Fixed Minimalist Window Controls */}
+      {/* The close button stays omitted by design; minimize and maximize must
+          remain above the native LibreChat BrowserView on every workspace. */}
       <div className="window-control-strip window-control-strip--top-right">
         <TooltipProvider delayDuration={400}>
           <Tooltip>
@@ -363,25 +367,11 @@ export default function App() {
             </TooltipTrigger>
             <TooltipContent side="bottom">Ekranı Kapla</TooltipContent>
           </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="window-control-button window-control-button--close"
-                onClick={() => void desktop.window.close()}
-                aria-label="Kapat"
-              >
-                <X size={13} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Kapat</TooltipContent>
-          </Tooltip>
         </TooltipProvider>
       </div>
 
       {/* Main Mini-OS Shell Layout */}
-      <div className={`minios-shell ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''}`}>
+      <div className={`minios-shell ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''}`}>
         {/* Left Floating Vertical Dock */}
         <MiniOsDock
           activeMode={mode}
@@ -394,7 +384,8 @@ export default function App() {
 
         {/* Right Main Working Area */}
         <div className="minios-main-area">
-          {/* Browser and home share one titlebar; utility screens keep the same window controls. */}
+          {/* Keep the shared title/tab rhythm stable while LibreChat occupies
+              the measured content area below it. */}
           <MiniOsHeader
             activeMode={mode}
             onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
@@ -427,6 +418,12 @@ export default function App() {
                   onCreate={createAlarm}
                   onCancel={cancelAlarm}
                 />
+              </div>
+            )}
+
+            {mode === 'ai' && (
+              <div className="minios-subscreen minios-subscreen--full">
+                <LibreChatPage />
               </div>
             )}
 

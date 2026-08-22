@@ -42,6 +42,7 @@ export const APP_EVENTS = {
   localSendFile: 'localsend:file-received',
   vaultFsChange: 'vault:fs-change',
   youtubeMusicState: 'youtube-music-state',
+  aiUpdated: 'ai:updated',
 } as const
 
 export type AppEventName = (typeof APP_EVENTS)[keyof typeof APP_EVENTS]
@@ -222,6 +223,67 @@ export interface ProgramCandidate {
   source: 'start-menu' | 'app-paths' | 'manual'
 }
 
+export type AiProviderId = 'openrouter' | 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama' | 'custom'
+
+export interface AiProviderState {
+  id: AiProviderId
+  label: string
+  baseUrl: string
+  model: string
+  enabled: boolean
+  requiresApiKey: boolean
+  apiKeySet: boolean
+}
+
+export interface AiProviderConfigInput {
+  id: AiProviderId
+  apiKey?: string
+  clearApiKey?: boolean
+  model?: string
+  baseUrl?: string
+  enabled?: boolean
+}
+
+export interface AiConversation {
+  id: string
+  title: string
+  providerId: AiProviderId
+  model: string
+  createdAt: number
+  updatedAt: number
+  messageCount: number
+}
+
+export interface AiMessage {
+  id: string
+  role: 'system' | 'user' | 'assistant'
+  content: string
+  createdAt: number
+  cached?: boolean
+}
+
+export interface AiSnapshot {
+  providers: AiProviderState[]
+  conversations: AiConversation[]
+  cacheEntries: number
+}
+
+export interface AiSendInput {
+  conversationId?: string | null
+  providerId: AiProviderId
+  model?: string
+  content: string
+}
+
+export interface AiSendResult {
+  conversationId: string
+  userMessage: AiMessage
+  assistantMessage: AiMessage
+  cached: boolean
+}
+
+export type AiUpdate = { type: 'snapshot'; snapshot: AiSnapshot }
+
 export type IpcChannel =
   | 'window:minimize'
   | 'window:toggle-maximize'
@@ -233,6 +295,7 @@ export type IpcChannel =
   | 'programs:list'
   | 'programs:icon'
   | 'programs:pick'
+  | 'website-icons:get'
   | 'system:get-timer-status'
   | 'system:schedule-shutdown'
   | 'system:cancel-shutdown'
@@ -319,6 +382,16 @@ export type IpcChannel =
   | 'notifications:test'
   | 'notifications:get-status'
   | 'notifications:clear-history'
+  | 'ai:get-state'
+  | 'ai:get-messages'
+  | 'ai:create-conversation'
+  | 'ai:delete-conversation'
+  | 'ai:set-provider'
+  | 'ai:send-message'
+  | 'ai:clear-cache'
+  | 'librechat:activate'
+  | 'librechat:set-bounds'
+  | 'librechat:deactivate'
 
 export interface ElectronDesktopBridge {
   invoke(channel: IpcChannel, payload?: unknown): Promise<unknown>
@@ -346,6 +419,12 @@ export type SharedAppPayload =
   | BrowserHistoryItem
   | YouTubeMusicState
   | RemoteCommandPayload
+  | AiProviderState
+  | AiConversation
+  | AiMessage
+  | AiSnapshot
+  | AiSendResult
+  | AiUpdate
   | string
   | null
 

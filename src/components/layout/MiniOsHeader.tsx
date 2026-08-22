@@ -1,9 +1,5 @@
 import { useEffect, useState, type FormEvent, type MouseEvent } from 'react'
-import Minus from 'lucide-react/dist/esm/icons/minus.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
-import Square from 'lucide-react/dist/esm/icons/square.js'
-import X from 'lucide-react/dist/esm/icons/x.js'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { desktop } from '@/lib/desktop'
 import type { MiniOsMode } from './MiniOsDock'
 
@@ -42,54 +38,6 @@ export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecu
     }
     setSearchQuery('')
   }
-
-  const windowControls = (
-    <div className="window-control-strip window-control-strip--top-right" data-window-drag>
-      <TooltipProvider delayDuration={400}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="window-control-button window-control-button--minimize"
-              onClick={() => void desktop.window.minimize()}
-              aria-label="Küçült"
-            >
-              <Minus size={14} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Küçült</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="window-control-button window-control-button--maximize"
-              onClick={() => void desktop.window.toggleMaximize()}
-              aria-label="Ekranı Kapla"
-            >
-              <Square size={12} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Ekranı Kapla</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="window-control-button window-control-button--close"
-              onClick={() => void desktop.window.close()}
-              aria-label="Kapat"
-            >
-              <X size={14} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Kapat / Tepsiye Küçült</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
-  )
 
   if (activeMode === 'browser') {
     return null

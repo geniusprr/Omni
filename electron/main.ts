@@ -1,7 +1,10 @@
 import { app, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { BROWSER_EVENTS, type BrowserBounds, type BrowserSessionSnapshot, type PermissionSetInput } from '../shared/contracts.js'
+import { BROWSER_EVENTS, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type BrowserBounds, type BrowserSessionSnapshot, type PermissionSetInput } from '../shared/contracts.js'
+import { AiStore } from './AiStore.js'
+import { LibreChatServer } from './LibreChatServer.js'
+import { LibreChatView } from './LibreChatView.js'
 import { AlarmManager } from './AlarmManager.js'
 import { BrowserManager } from './BrowserManager.js'
 import { ContentManager } from './ContentManager.js'
@@ -27,6 +30,9 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
   let content: ContentManager
   let localSend: LocalSendManager
   let notifications: NotificationListenerManager
+  let aiStore: AiStore
+  let libreChatServer: LibreChatServer
+  let libreChatView: LibreChatView
   let quitting = false
   let requestedExitCode = 0
 
@@ -40,7 +46,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     webContents.on('will-attach-webview', (event) => event.preventDefault())
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     const devServer = process.env.ELECTRON_START_URL || (app.isPackaged ? null : 'http://127.0.0.1:5173')
     const rendererTarget = devServer || pathToFileURL(path.join(app.getAppPath(), 'dist', 'index.html')).toString()
     const splashTarget = devServer || pathToFileURL(path.join(app.getAppPath(), 'dist', 'splash.html')).toString()
@@ -77,6 +83,17 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
         localSend.broadcastNotification(notif)
       },
     })
+    // AI is an in-process local client. It opens one SQLite file under the
+    // app data directory and serves the bundled LibreChat shell only on a
+    // loopback port; no external server, Docker stack, or login flow is used.
+    aiStore = new AiStore(browser.sessions.dataDir, (snapshot) => send('ai:updated', { type: 'snapshot', snapshot }))
+    void aiStore.ready().then((snapshot) => send('ai:updated', { type: 'snapshot', snapshot }))
+    const libreChatStaticRoot = app.isPackaged
+      ? path.join(process.resourcesPath, 'librechat-client')
+      : path.join(app.getAppPath(), 'vendor', 'librechat-client')
+    libreChatServer = new LibreChatServer(libreChatStaticRoot, aiStore)
+    await libreChatServer.start()
+    libreChatView = new LibreChatView(mainWindow)
     if (!isBrowserSmokeTest) {
       localSend.start()
       alarms.start()
@@ -114,6 +131,9 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       content?.stopWatcher()
       localSend?.stop()
       notifications?.stop()
+      libreChatView?.destroy()
+      await libreChatServer?.stop()
+      aiStore?.close()
       app.exit(requestedExitCode)
     })().catch((error) => {
       console.error('[shutdown] cleanup failed', error)
@@ -145,6 +165,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('programs:list', (payload) => windows.listPrograms(Boolean(readObject(payload).refresh)))
     handle('programs:icon', (payload) => windows.getProgramIcon(readString(payload, 'path')))
     handle('programs:pick', () => windows.pickProgram())
+    handle('website-icons:get', (payload) => windows.getWebsiteIcon(readString(payload, 'url')))
 
     handle('system:get-timer-status', () => system.getTimerStatus())
     handle('system:schedule-shutdown', (payload) => system.scheduleShutdown(readTimerAction(payload), readNumber(payload, 'seconds')))
@@ -262,6 +283,26 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       const body = typeof obj.body === 'string' && obj.body ? obj.body : 'Bilgisayarınızdan telefonunuza iletildi!'
       return notifications?.sendTestNotification(title, body)
     })
+
+    handle('ai:get-state', () => aiStore.getSnapshot())
+    handle('ai:get-messages', (payload) => aiStore.listMessages(readString(payload, 'conversationId')))
+    handle('ai:create-conversation', (payload) => {
+      const item = readObject(payload)
+      return aiStore.createConversation(item.providerId as AiProviderId | undefined, item.model as string | undefined)
+    })
+    handle('ai:delete-conversation', (payload) => aiStore.deleteConversation(readString(payload, 'conversationId')))
+    handle('ai:set-provider', (payload) => aiStore.setProvider(readObject(payload) as unknown as AiProviderConfigInput))
+    handle('ai:send-message', (payload) => aiStore.sendMessage(readObject(payload) as unknown as AiSendInput))
+    handle('ai:clear-cache', () => aiStore.clearCache())
+
+    handle('librechat:activate', async (payload) => {
+      const item = readObject(payload)
+      const url = libreChatServer.getUrl() || await libreChatServer.start()
+      await libreChatView.activate(url, readBounds(item.bounds))
+      return { url }
+    })
+    handle('librechat:set-bounds', (payload) => libreChatView?.setBounds(readBounds(readObject(payload).bounds)))
+    handle('librechat:deactivate', () => libreChatView?.deactivate())
   }
 
   function send(event: string, payload: unknown) {

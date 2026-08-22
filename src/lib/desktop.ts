@@ -13,11 +13,11 @@ import type {
   TimerState,
   TransferItem,
 } from '@/types'
-import { APP_EVENTS, BROWSER_EVENTS, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type ProgramCandidate, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
+import { APP_EVENTS, BROWSER_EVENTS, type AiConversation, type AiMessage, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type AiSendResult, type AiSnapshot, type AiUpdate, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type ProgramCandidate, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
 import type { VaultFileEntry } from '@/features/notes/types'
 
 export { APP_EVENTS, BROWSER_EVENTS }
-export type { BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, ProgramCandidate, SystemMediaSession, YouTubeMusicState }
+export type { AiConversation, AiMessage, AiProviderConfigInput, AiProviderId, AiSendInput, AiSendResult, AiSnapshot, AiUpdate, BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, ProgramCandidate, SystemMediaSession, YouTubeMusicState }
 
 type Unsubscribe = () => void
 
@@ -62,6 +62,10 @@ function readLocal<T>(key: string): T | null {
 }
 
 type TriggeredAlarmHandler = (alarm: Alarm) => void
+
+function emptyAiSnapshot(): AiSnapshot {
+  return { providers: [], conversations: [], cacheEntries: 0 }
+}
 
 export const desktop = {
   isElectron: isElectronRuntime,
@@ -123,6 +127,9 @@ export const desktop = {
     list: (refresh = false) => optionalInvoke<ProgramCandidate[]>('programs:list', [], { refresh }),
     icon: (path: string) => optionalInvoke<string | null>('programs:icon', null, { path }),
     pick: () => optionalInvoke<ProgramCandidate | null>('programs:pick', null),
+  },
+  websiteIcons: {
+    get: (url: string) => optionalInvoke<string | null>('website-icons:get', null, { url }),
   },
   window: {
     minimize: () => optionalInvoke<void>('window:minimize', undefined),
@@ -196,6 +203,16 @@ export const desktop = {
     onDeviceDiscovered: (callback: (device: LocalSendDevice) => void) => listen(APP_EVENTS.localSendDevice, callback),
     onFileReceived: (callback: (file: ReceivedFileRecord) => void) => listen(APP_EVENTS.localSendFile, callback),
   },
+  ai: {
+    getState: () => optionalInvoke<AiSnapshot>('ai:get-state', emptyAiSnapshot()),
+    getMessages: (conversationId: string) => optionalInvoke<AiMessage[]>('ai:get-messages', [], { conversationId }),
+    createConversation: (providerId?: AiProviderId, model?: string) => optionalInvoke<AiConversation | null>('ai:create-conversation', null, { providerId, model }),
+    deleteConversation: (conversationId: string) => optionalInvoke<boolean>('ai:delete-conversation', false, { conversationId }),
+    setProvider: (input: AiProviderConfigInput) => optionalInvoke<AiSnapshot>('ai:set-provider', emptyAiSnapshot(), input),
+    sendMessage: (input: AiSendInput) => optionalInvoke<AiSendResult | null>('ai:send-message', null, input),
+    clearCache: () => optionalInvoke<boolean>('ai:clear-cache', false),
+    onUpdate: (callback: (update: AiUpdate) => void) => listen(APP_EVENTS.aiUpdated, callback),
+  },
   vault: {
     selectFolder: () => optionalInvoke<string | null>('vault:select-folder', null),
     getDefaultPath: () => optionalInvoke<string>('vault:get-default-path', '/mock/vault'),
@@ -218,5 +235,10 @@ export const desktop = {
     getStatus: () => optionalInvoke<{ running: boolean; accessGranted: boolean; historyCount: number }>('notifications:get-status', { running: false, accessGranted: false, historyCount: 0 }),
     test: (title?: string, body?: string) => optionalInvoke<MirroredNotification | null>('notifications:test', null, { title, body }),
     onMirrored: (callback: (notification: MirroredNotification) => void) => listen(APP_EVENTS.notificationMirrored, callback),
+  },
+  libreChat: {
+    activate: (bounds: BrowserBounds) => optionalInvoke<{ url: string } | null>('librechat:activate', null, { bounds }),
+    setBounds: (bounds: BrowserBounds) => optionalInvoke<void>('librechat:set-bounds', undefined, { bounds }),
+    deactivate: () => optionalInvoke<void>('librechat:deactivate', undefined),
   },
 }

@@ -155,6 +155,7 @@ export function DraggableWidgetGrid({
   const widgetRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const quickAccessDialogRef = useRef<HTMLDialogElement>(null)
   const programIconRequestsRef = useRef(new Set<string>())
+  const websiteIconRequestsRef = useRef(new Set<string>())
   const componentMountedRef = useRef(true)
 
   // Local widget states
@@ -173,6 +174,7 @@ export function DraggableWidgetGrid({
   const [programsLoading, setProgramsLoading] = useState(false)
   const [programPickerBusy, setProgramPickerBusy] = useState(false)
   const [programIconByTarget, setProgramIconByTarget] = useState<Record<string, string | null>>({})
+  const [websiteIconByUrl, setWebsiteIconByUrl] = useState<Record<string, string | null>>({})
   const [quoteIndex, setQuoteIndex] = useState(() => new Date().getDate() % QUOTES.length)
 
   const hiddenSet = new Set(layout.hiddenWidgets)
@@ -194,6 +196,12 @@ export function DraggableWidgetGrid({
     ...visiblePrograms.map((program) => program.path),
   ]
   const programIconTargetKey = [...new Set(programIconPaths.map(normalizeProgramTarget))].sort().join('\u0001')
+  const websiteIconUrls = [...new Set(
+    quickAccessApps
+      .filter((item) => item.kind === 'website')
+      .map((item) => normalizeBrowserInput(item.target)),
+  )]
+  const websiteIconTargetKey = [...websiteIconUrls].sort().join('\u0001')
 
   function programIconFor(target: string) {
     return programIconByTarget[normalizeProgramTarget(target)] ?? null
@@ -363,6 +371,34 @@ export function DraggableWidgetGrid({
       for (const [key] of missing) programIconRequestsRef.current.delete(key)
     })
   }, [programIconByTarget, programIconTargetKey])
+
+  useEffect(() => {
+    if (!desktop.isElectron() || !websiteIconTargetKey) return
+
+    const missing = websiteIconUrls.filter((url) => (
+      !Object.prototype.hasOwnProperty.call(websiteIconByUrl, url)
+      && !websiteIconRequestsRef.current.has(url)
+    ))
+    if (missing.length === 0) return
+
+    for (const url of missing) websiteIconRequestsRef.current.add(url)
+    void Promise.all(missing.map(async (url) => {
+      try {
+        return [url, await desktop.websiteIcons.get(url)] as const
+      } catch {
+        return [url, null] as const
+      }
+    })).then((icons) => {
+      if (!componentMountedRef.current) return
+      setWebsiteIconByUrl((current) => {
+        const next = { ...current }
+        for (const [url, icon] of icons) next[url] = icon
+        return next
+      })
+    }).finally(() => {
+      for (const url of missing) websiteIconRequestsRef.current.delete(url)
+    })
+  }, [websiteIconByUrl, websiteIconTargetKey])
 
   function handleQuickAccessDialogClose() {
     setQuickAccessEditorOpen(false)
@@ -675,7 +711,7 @@ export function DraggableWidgetGrid({
 
             <div className="quick-access-8grid">
               {quickAccessApps.map((app) => {
-                const icon = shortcutIconFor(app, programIconByTarget)
+                const icon = shortcutIconFor(app, programIconByTarget, websiteIconByUrl)
                 return (
                   <button
                     type="button"
@@ -1323,7 +1359,7 @@ export function DraggableWidgetGrid({
             </div>
             <div className="quick-access-editor__list">
               {quickAccessApps.map((item) => {
-                const icon = shortcutIconFor(item, programIconByTarget)
+                const icon = shortcutIconFor(item, programIconByTarget, websiteIconByUrl)
                 return (
                   <div key={item.id} className={icon ? '' : 'is-iconless'}>
                     <ShortcutIcon className="quick-access-editor__item-icon" src={icon} />
@@ -1351,9 +1387,14 @@ function programSourceLabel(source: ProgramCandidate['source']) {
   return 'Dosyadan seçildi'
 }
 
-function shortcutIconFor(item: Pick<QuickAppItem, 'kind' | 'target'>, programIcons: Record<string, string | null>) {
+function shortcutIconFor(
+  item: Pick<QuickAppItem, 'kind' | 'target'>,
+  programIcons: Record<string, string | null>,
+  websiteIcons: Record<string, string | null>,
+) {
   if (item.kind === 'program') return programIcons[normalizeProgramTarget(item.target)] ?? null
-  return faviconForBrowserUrl(normalizeBrowserInput(item.target))
+  const url = normalizeBrowserInput(item.target)
+  return websiteIcons[url] ?? faviconForBrowserUrl(url)
 }
 
 function ShortcutIcon({ className, src }: { className: string; src: string | null }) {

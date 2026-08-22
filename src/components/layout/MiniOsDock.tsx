@@ -1,4 +1,5 @@
 import React from 'react'
+import Bot from 'lucide-react/dist/esm/icons/bot.js'
 import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
@@ -11,7 +12,7 @@ import Settings from 'lucide-react/dist/esm/icons/settings.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { RemoteConnectionStatus } from '@/types'
 
-export type MiniOsMode = 'home' | 'browser' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
+export type MiniOsMode = 'home' | 'browser' | 'ai' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
 
 interface MiniOsDockProps {
   activeMode: MiniOsMode
@@ -92,6 +93,21 @@ export function MiniOsDock({
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">Tarayıcı</TooltipContent>
+          </Tooltip>
+
+          {/* Official LibreChat workspace */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`dock-btn ${activeMode === 'ai' ? 'dock-btn--active' : ''}`}
+                onClick={() => onSelectMode('ai')}
+                aria-label="LibreChat"
+              >
+                <Bot size={18} strokeWidth={1.9} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">LibreChat</TooltipContent>
           </Tooltip>
 
           {/* 3. Clock / Time & Power Management */}

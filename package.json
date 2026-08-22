@@ -84,6 +84,13 @@
       "app-icon.png",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "vendor/librechat-client",
+        "to": "librechat-client",
+        "filter": ["**/*"]
+      }
+    ],
     "win": {
       "target": ["nsis"],
       "icon": "app-icon.png"

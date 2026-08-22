@@ -4,13 +4,13 @@ import {
   dialog,
   Menu,
   nativeImage,
+  net,
   shell,
   Tray,
   type BrowserWindowConstructorOptions,
 } from 'electron'
 import { execFile } from 'node:child_process'
 import { readdir } from 'node:fs/promises'
-import { release as osRelease } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -20,6 +20,9 @@ const execFileAsync = promisify(execFile)
 const PROGRAM_EXTENSIONS = new Set(['.exe', '.com', '.lnk'])
 const PROGRAM_INDEX_TTL_MS = 15 * 60 * 1_000
 const PROGRAM_INDEX_LIMIT = 400
+const WEBSITE_ICON_FETCH_TIMEOUT_MS = 8_000
+const WEBSITE_ICON_MAX_BYTES = 512 * 1024
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 function isHttpUrl(value: string) {
   try {
@@ -39,6 +42,7 @@ export class WindowManager {
   private rendererUrl: string | null = null
   private programIndex: { createdAt: number; items: ProgramCandidate[] } | null = null
   private programIconCache = new Map<string, string | null>()
+  private websiteIconCache = new Map<string, string | null>()
   private readonly preloadPath: string
 
   constructor(preloadPath: string) {
@@ -47,10 +51,8 @@ export class WindowManager {
 
   createMainWindow(rendererUrl: string) {
     this.rendererUrl = rendererUrl
-    // Acrylic is a Windows 11 22H2+ system backdrop. Letting the renderer be
-    // transparent is what exposes that native material through the app shell.
-    // Older Windows releases keep the existing opaque background as a fallback.
-    const useNativeAcrylic = supportsNativeAcrylic()
+    // The renderer owns the landscape wallpaper. Keep the native window fully
+    // opaque so neither Acrylic nor the desktop can show through it.
     const options: BrowserWindowConstructorOptions = {
       width: 1180,
       height: 740,
@@ -59,9 +61,12 @@ export class WindowManager {
       title: 'kapanış.',
       show: false,
       frame: false,
-      transparent: useNativeAcrylic,
-      backgroundColor: useNativeAcrylic ? '#00000000' : '#111722',
-      ...(useNativeAcrylic ? { backgroundMaterial: 'acrylic' } : {}),
+      transparent: false,
+      roundedCorners: true,
+      // Electron's Windows native rounded-corner path requires WS_THICKFRAME;
+      // the frameless client still supplies the visible content and controls.
+      thickFrame: true,
+      backgroundColor: '#0b1324',
       center: true,
       webPreferences: {
         preload: this.preloadPath,
@@ -108,8 +113,8 @@ export class WindowManager {
       title: 'kapanış.',
       show: false,
       frame: false,
-      transparent: true,
-      backgroundColor: '#00000000',
+      transparent: false,
+      backgroundColor: '#0b1324',
       resizable: false,
       maximizable: false,
       minimizable: false,
@@ -263,15 +268,45 @@ export class WindowManager {
     const cacheKey = path.normalize(resolved).toLowerCase()
     if (this.programIconCache.has(cacheKey)) return this.programIconCache.get(cacheKey) ?? null
 
-    try {
-      const icon = await app.getFileIcon(resolved, { size: 'normal' })
-      const dataUrl = icon.isEmpty() ? null : icon.toDataURL()
-      this.programIconCache.set(cacheKey, dataUrl)
-      return dataUrl
-    } catch {
-      this.programIconCache.set(cacheKey, null)
-      return null
+    const targets = await programIconTargets(resolved)
+    for (const target of targets) {
+      try {
+        // "large" is still a compact native icon, but avoids the low-detail
+        // shell thumbnail that some Windows shortcuts expose at normal size.
+        const icon = await app.getFileIcon(target, { size: 'large' })
+        if (!icon.isEmpty()) {
+          const dataUrl = icon.toDataURL()
+          this.programIconCache.set(cacheKey, dataUrl)
+          return dataUrl
+        }
+      } catch {
+        // A shortcut can reference an unavailable target; fall back to its own icon.
+      }
     }
+
+    this.programIconCache.set(cacheKey, null)
+    return null
+  }
+
+  async getWebsiteIcon(value: string): Promise<string | null> {
+    const url = value.trim()
+    if (!isHttpUrl(url)) return null
+
+    const parsed = new URL(url)
+    const cacheKey = parsed.origin.toLowerCase()
+    if (this.websiteIconCache.has(cacheKey)) return this.websiteIconCache.get(cacheKey) ?? null
+
+    const candidates = [new URL('/favicon.ico', parsed).toString(), ...await discoverWebsiteIconUrls(parsed.toString())]
+    for (const candidate of new Set(candidates)) {
+      const icon = await fetchWebsiteIcon(candidate)
+      if (icon) {
+        this.websiteIconCache.set(cacheKey, icon)
+        return icon
+      }
+    }
+
+    this.websiteIconCache.set(cacheKey, null)
+    return null
   }
 
   async pickProgram(): Promise<ProgramCandidate | null> {
@@ -329,12 +364,6 @@ export class WindowManager {
   }
 }
 
-function supportsNativeAcrylic() {
-  if (process.platform !== 'win32') return false
-  const build = Number(osRelease().split('.')[2])
-  return Number.isFinite(build) && build >= 22621
-}
-
 async function fileExists(value: string) {
   try {
     const fs = await import('node:fs/promises')
@@ -347,6 +376,246 @@ async function fileExists(value: string) {
 
 function isProgramPath(value: string) {
   return PROGRAM_EXTENSIONS.has(path.extname(value).toLowerCase())
+}
+
+async function programIconTargets(value: string) {
+  if (path.extname(value).toLowerCase() !== '.lnk') return [value]
+
+  try {
+    const shortcut = shell.readShortcutLink(value)
+    const target = shortcut.target?.trim()
+    const targets: string[] = []
+
+    // MSI "advertised" Start menu shortcuts point at a Windows Installer
+    // launcher, whose icon is often just a blank document. The working folder
+    // still contains the real executable, so identify the most likely one by
+    // the shortcut's label before falling back to the launcher.
+    if (target && isWindowsInstallerTarget(target)) {
+      const application = await advertisedShortcutApplication(
+        shortcut.cwd?.trim(),
+        `${programLabel(value)} ${shortcut.description ?? ''}`,
+      )
+      if (application) targets.push(application)
+    }
+
+    if (target && path.isAbsolute(target) && await fileExists(target)) targets.push(target)
+
+    const icon = shortcut.icon?.trim()
+    if (icon && path.isAbsolute(icon) && await fileExists(icon)) targets.push(icon)
+
+    return uniqueIconTargets([...targets, value])
+  } catch {
+    // The shortcut might be stale or protected; its own icon remains a safe fallback.
+  }
+
+  return [value]
+}
+
+function isWindowsInstallerTarget(value: string) {
+  const windowsDirectory = process.env.SystemRoot || 'C:\\Windows'
+  const installerDirectory = `${path.resolve(windowsDirectory, 'Installer')}${path.sep}`.toLowerCase()
+  return path.resolve(value).toLowerCase().startsWith(installerDirectory)
+}
+
+async function advertisedShortcutApplication(workingDirectory: string | undefined, label: string) {
+  if (!workingDirectory || !path.isAbsolute(workingDirectory)) return null
+
+  const entries = await readdir(workingDirectory, { withFileTypes: true }).catch(() => [])
+  const candidates = entries
+    .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.exe')
+    .map((entry) => path.join(workingDirectory, entry.name))
+
+  let best: { path: string; score: number } | null = null
+  for (const candidate of candidates) {
+    const score = programExecutableScore(candidate, label)
+    if (!best || score > best.score) best = { path: candidate, score }
+  }
+
+  // A modest threshold prevents an unrelated helper executable in the same
+  // folder from being presented as the program's icon.
+  return best && best.score >= 300 ? best.path : null
+}
+
+function programExecutableScore(candidate: string, label: string) {
+  const candidateName = normalizedProgramName(path.basename(candidate, path.extname(candidate)))
+  if (candidateName.length < 3) return 0
+
+  const candidateConsonants = candidateName.replace(/[aeiou]/g, '')
+  const terms = label
+    .split(/[\\/._\-\s]+/)
+    .map(normalizedProgramName)
+    .flatMap((term) => [term, term.replace(/\d+$/g, '')])
+    .filter((term, index, values) => term.length >= 3 && values.indexOf(term) === index)
+
+  return terms.reduce((best, term) => {
+    if (candidateName === term) return Math.max(best, 1_000)
+    if (candidateName.includes(term) || term.includes(candidateName)) return Math.max(best, 700 + Math.min(candidateName.length, term.length))
+
+    const termConsonants = term.replace(/[aeiou]/g, '')
+    if (candidateConsonants === termConsonants) return Math.max(best, 600)
+    if (candidateConsonants.includes(termConsonants) || termConsonants.includes(candidateConsonants)) {
+      return Math.max(best, 400 + Math.min(candidateConsonants.length, termConsonants.length))
+    }
+
+    return best
+  }, 0)
+}
+
+function normalizedProgramName(value: string) {
+  return value.toLocaleLowerCase('en-US').replace(/[^a-z0-9]/g, '')
+}
+
+function uniqueIconTargets(values: string[]) {
+  const seen = new Set<string>()
+  return values.filter((value) => {
+    const key = path.normalize(value).toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function fetchWebsiteIcon(value: string): Promise<string | null> {
+  if (!isHttpUrl(value)) return null
+
+  try {
+    const response = await net.fetch(value, {
+      headers: { Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8' },
+      signal: AbortSignal.timeout(WEBSITE_ICON_FETCH_TIMEOUT_MS),
+    })
+    if (!response.ok) return null
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    if (buffer.length === 0 || buffer.length > WEBSITE_ICON_MAX_BYTES) return null
+
+    const mimeType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() || ''
+    const detectedMimeType = imageMimeTypeForBuffer(buffer)
+    const usableMimeType = mimeType.startsWith('image/') ? mimeType : detectedMimeType
+    if (!usableMimeType) return null
+
+    return decodeWebsiteIcon(buffer, usableMimeType)
+  } catch {
+    return null
+  }
+}
+
+function imageMimeTypeForBuffer(buffer: Buffer) {
+  if (buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return 'image/png'
+  if (isIcoBuffer(buffer)) return 'image/x-icon'
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  if (buffer.subarray(0, 6).toString('ascii') === 'GIF87a' || buffer.subarray(0, 6).toString('ascii') === 'GIF89a') return 'image/gif'
+  if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
+  return null
+}
+
+function decodeWebsiteIcon(buffer: Buffer, mimeType: string) {
+  const image = nativeImage.createFromBuffer(buffer)
+  if (!image.isEmpty() && image.getSize().width > 0 && image.getSize().height > 0) return image.toDataURL()
+
+  const embeddedPng = pngFromIco(buffer)
+  if (embeddedPng) {
+    const pngImage = nativeImage.createFromBuffer(embeddedPng)
+    if (!pngImage.isEmpty()) return pngImage.toDataURL()
+    return `data:image/png;base64,${embeddedPng.toString('base64')}`
+  }
+
+  if (mimeType === 'image/x-icon' || mimeType === 'image/vnd.microsoft.icon') return null
+  return `data:${mimeType};base64,${buffer.toString('base64')}`
+}
+
+function pngFromIco(buffer: Buffer) {
+  if (!isIcoBuffer(buffer)) return null
+  const count = buffer.readUInt16LE(4)
+  let best: { buffer: Buffer; score: number } | null = null
+
+  for (let index = 0; index < count; index += 1) {
+    const entryOffset = 6 + index * 16
+    if (entryOffset + 16 > buffer.length) break
+    const size = buffer.readUInt32LE(entryOffset + 8)
+    const offset = buffer.readUInt32LE(entryOffset + 12)
+    if (size === 0 || offset + size > buffer.length) continue
+
+    const candidate = buffer.subarray(offset, offset + size)
+    if (!candidate.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) continue
+    const width = buffer[entryOffset] || 256
+    const height = buffer[entryOffset + 1] || 256
+    const bitDepth = buffer.readUInt16LE(entryOffset + 6)
+    const score = width * height * Math.max(bitDepth, 1)
+    if (!best || score > best.score) best = { buffer: candidate, score }
+  }
+
+  return best?.buffer ?? null
+}
+
+function isIcoBuffer(buffer: Buffer) {
+  return buffer.length >= 6 && buffer.readUInt16LE(0) === 0 && buffer.readUInt16LE(2) === 1
+}
+
+async function discoverWebsiteIconUrls(value: string) {
+  try {
+    const response = await net.fetch(value, {
+      headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1' },
+      signal: AbortSignal.timeout(WEBSITE_ICON_FETCH_TIMEOUT_MS),
+    })
+    if (!response.ok) return []
+
+    const contentType = response.headers.get('content-type')?.toLowerCase() || ''
+    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) return []
+
+    const html = (await response.text()).slice(0, 256 * 1024)
+    const baseUrl = response.url || value
+    const candidates: string[] = []
+    const manifests: string[] = []
+    for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
+      const rel = htmlAttribute(tag, 'rel')
+      const href = htmlAttribute(tag, 'href')
+      if (!rel || !href) continue
+      try {
+        const candidate = new URL(href, baseUrl).toString()
+        if (!isHttpUrl(candidate)) continue
+        if (/\b(?:shortcut\s+)?icon\b/i.test(rel)) candidates.push(candidate)
+        if (/\bmanifest\b/i.test(rel)) manifests.push(candidate)
+      } catch {
+        // Ignore malformed icon declarations from the site.
+      }
+    }
+    const manifestIcons = await Promise.all([...new Set(manifests)].map(discoverManifestIconUrls))
+    return [...candidates, ...manifestIcons.flat()]
+  } catch {
+    return []
+  }
+}
+
+async function discoverManifestIconUrls(value: string) {
+  try {
+    const response = await net.fetch(value, {
+      headers: { Accept: 'application/manifest+json,application/json;q=0.9,*/*;q=0.1' },
+      signal: AbortSignal.timeout(WEBSITE_ICON_FETCH_TIMEOUT_MS),
+    })
+    if (!response.ok) return []
+
+    const manifest = JSON.parse((await response.text()).slice(0, 256 * 1024)) as { icons?: unknown }
+    if (!Array.isArray(manifest.icons)) return []
+
+    return manifest.icons
+      .map((icon) => typeof icon === 'object' && icon !== null && 'src' in icon ? icon.src : null)
+      .filter((src): src is string => typeof src === 'string' && src.trim().length > 0)
+      .flatMap((src) => {
+        try {
+          const candidate = new URL(src, response.url || value).toString()
+          return isHttpUrl(candidate) ? [candidate] : []
+        } catch {
+          return []
+        }
+      })
+  } catch {
+    return []
+  }
+}
+
+function htmlAttribute(tag: string, name: string) {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'))
+  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null
 }
 
 function programLabel(value: string) {
