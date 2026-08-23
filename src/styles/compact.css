@@ -27150,6 +27150,66 @@ html.kapanis-focus-free .quick-access-program-picker__search:focus-within {
 }
 
 /* ==========================================================================
+   Final rail spacing + action-bar containment
+   ========================================================================== */
+
+@media (min-width: 48.0625rem) {
+  /* Keep the rail close to the window and use the exact same small breathing
+     room between the rail and page content. Because the grid column itself is
+     unchanged, dock buttons keep one stable position while switching pages. */
+  .minios-shell--with-actionbar {
+    --minios-shell-gutter: var(--space-2xs);
+  }
+
+  .minios-shell--with-actionbar > .dock-rail {
+    margin-left: 0 !important;
+  }
+
+  .minios-shell--with-actionbar > .minios-main-area {
+    margin-left: 0 !important;
+  }
+
+  /* Browser / LibreChat use the same 4px left edge and 4px rail-to-content
+     gap as every other desktop workspace. */
+  .minios-shell--browser.minios-shell--with-actionbar,
+  .minios-shell--ai.minios-shell--with-actionbar {
+    padding-left: var(--minios-shell-gutter) !important;
+    column-gap: var(--minios-shell-gutter) !important;
+  }
+
+  /* Workspace-only: extend the visual rail through the tiny right-side gap.
+     The dock column and buttons stay fixed; only its background grows 4px. */
+  .dock-rail--workspace::before {
+    right: calc(-1 * var(--minios-shell-gutter));
+  }
+}
+
+/* The workspace rail belongs only to grid row 1. Its shadow/background must
+   never paint over the persistent bottom action bar in Browser/LibreChat. */
+.minios-shell--with-actionbar > .dock-rail--workspace {
+  z-index: 40;
+}
+
+.dock-rail--workspace::before {
+  bottom: 1px;
+  box-shadow:
+    8px 0 24px rgba(0, 0, 0, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.minios-window--dark .dock-rail--workspace::before {
+  box-shadow:
+    10px 0 28px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.minios-shell__bottom-bar {
+  position: relative;
+  z-index: 60;
+  isolation: isolate;
+}
+
+/* ==========================================================================
    Home music companion · shadcn polish
    Neutral, compact hierarchy that stays intentional even without active media.
    ========================================================================== */
