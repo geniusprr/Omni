@@ -1,8 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import BookOpen from 'lucide-react/dist/esm/icons/book-open.js'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js'
-import Code2 from 'lucide-react/dist/esm/icons/code-2.js'
-import Eye from 'lucide-react/dist/esm/icons/eye.js'
 import FilePlus from 'lucide-react/dist/esm/icons/file-plus.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
@@ -14,12 +11,12 @@ import Network from 'lucide-react/dist/esm/icons/network.js'
 import PanelLeftClose from 'lucide-react/dist/esm/icons/panel-left-close.js'
 import PanelRightClose from 'lucide-react/dist/esm/icons/panel-right-close.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
-import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
 import Tag from 'lucide-react/dist/esm/icons/tag.js'
 import { desktop } from '@/lib/desktop'
 import { BacklinksPanel } from './backlinks/BacklinksPanel'
 import { CommandPaletteModal } from './commands/CommandPaletteModal'
-import { CodeMirrorEditor } from './editor/CodeMirrorEditor'
+import { CodeMirrorEditor, type CodeMirrorEditorHandle } from './editor/CodeMirrorEditor'
+import { EditorToolbar } from './editor/EditorToolbar'
 import { FileExplorer } from './explorer/FileExplorer'
 import { GraphView } from './graph/GraphView'
 import { OutlinePanel } from './outline/OutlinePanel'
@@ -64,6 +61,7 @@ export function NotesPage() {
   const [editorMode, setEditorMode] = useState<EditorMode>('live')
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
   const [stats, setStats] = useState({ wordCount: 0, charCount: 0 })
+  const editorRef = useRef<CodeMirrorEditorHandle | null>(null)
 
   // Modals
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
@@ -318,8 +316,8 @@ created: ${today}
         <div className="dashboard-widgets-area notes-dashboard-widgets-area">
           <div className="notes-workspace-glass-card">
             {/* Card Top Header & Tab Strip */}
-            <div className="notes-card-top-bar">
-              {/* Left Sub-nav Chip Selector (Explorer, Search, Tags) */}
+            <div className="notes-card-top-bar" data-window-drag>
+              {/* Compact workspace navigation. Keep the top rail about navigation only. */}
               <div className="notes-card-nav-group">
                 <button
                   type="button"
@@ -336,8 +334,7 @@ created: ${today}
                   aria-pressed={leftSidebarOpen && leftNav === 'explorer'}
                 >
                   <Folder size={13} />
-                  <span>Dosyalar</span>
-                  <span className="notes-count-badge">{totalNotesCount}</span>
+                  <span className="notes-nav-label">Dosyalar</span>
                 </button>
 
                 <button
@@ -355,7 +352,7 @@ created: ${today}
                   aria-pressed={leftSidebarOpen && leftNav === 'search'}
                 >
                   <Search size={13} />
-                  <span>Ara</span>
+                  <span className="notes-nav-label">Ara</span>
                 </button>
 
                 <button
@@ -373,7 +370,7 @@ created: ${today}
                   aria-pressed={leftSidebarOpen && leftNav === 'tags'}
                 >
                   <Tag size={13} />
-                  <span>Etiketler</span>
+                  <span className="notes-nav-label">Etiketler</span>
                 </button>
               </div>
 
@@ -382,43 +379,8 @@ created: ${today}
               {/* Note Tabs Strip */}
               <TabBar onNewNote={handleCreateNewNote} />
 
-              {/* Right View Modes & Inspector Toggle */}
+              {/* Inspector stays available without crowding this rail with editor modes. */}
               <div className="notes-card-controls-group">
-                {activeTab && activeTab.viewType !== 'graph' && (
-                  <div className="editor-mode-toggle-group">
-                    <button
-                      type="button"
-                      className={`mode-toggle-btn ${editorMode === 'live' ? 'mode-toggle-btn--active' : ''}`}
-                      onClick={() => setEditorMode('live')}
-                      title="Canlı Önizleme"
-                      aria-pressed={editorMode === 'live'}
-                    >
-                      <BookOpen size={12} />
-                      <span>Canlı</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`mode-toggle-btn ${editorMode === 'source' ? 'mode-toggle-btn--active' : ''}`}
-                      onClick={() => setEditorMode('source')}
-                      title="Kaynak Kodu"
-                      aria-pressed={editorMode === 'source'}
-                    >
-                      <Code2 size={12} />
-                      <span>Kaynak</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`mode-toggle-btn ${editorMode === 'reading' ? 'mode-toggle-btn--active' : ''}`}
-                      onClick={() => setEditorMode('reading')}
-                      title="Okuma Modu"
-                      aria-pressed={editorMode === 'reading'}
-                    >
-                      <Eye size={12} />
-                      <span>Okuma</span>
-                    </button>
-                  </div>
-                )}
-
                 <button
                   type="button"
                   className={`notes-inspector-toggle-btn ${rightSidebarOpen ? 'notes-inspector-toggle-btn--active' : ''}`}
@@ -427,7 +389,7 @@ created: ${today}
                   aria-pressed={rightSidebarOpen}
                 >
                   <Link2 size={13} />
-                  <span>Bağlantılar</span>
+                  <span className="notes-nav-label">Bağlantılar</span>
                 </button>
               </div>
             </div>
@@ -472,7 +434,6 @@ created: ${today}
                   <header className="notes-editor-context-bar">
                     <div className="notes-editor-context-copy">
                       <div className="notes-editor-context-title-row">
-                        <span className="notes-editor-context-eyebrow">Not</span>
                         <h1 className="notes-editor-context-title" title={activeTab.path}>
                           {activeNoteTitle}
                         </h1>
@@ -488,11 +449,6 @@ created: ${today}
                       </div>
                     </div>
                     <div className="notes-editor-context-actions">
-                      {activeNoteMetadata && (
-                        <span className="notes-editor-context-stat">
-                          {activeNoteMetadata.headings.length} başlık
-                        </span>
-                      )}
                       <button
                         type="button"
                         className={`notes-editor-context-action ${focusMode ? 'notes-editor-context-action--active' : ''}`}
@@ -506,11 +462,22 @@ created: ${today}
                     </div>
                   </header>
                 )}
+                {activeTab && activeTab.viewType !== 'graph' && (
+                  <EditorToolbar
+                    mode={editorMode}
+                    onModeChange={setEditorMode}
+                    onFormat={(command) => editorRef.current?.format(command)}
+                    onUndo={() => editorRef.current?.undo()}
+                    onRedo={() => editorRef.current?.redo()}
+                    onSearch={() => editorRef.current?.search()}
+                  />
+                )}
                 {activeTab ? (
                   activeTab.viewType === 'graph' ? (
                     <GraphView />
                   ) : vaultPath ? (
                     <CodeMirrorEditor
+                      ref={editorRef}
                       key={activeTab.id}
                       tab={activeTab}
                       vaultPath={vaultPath}

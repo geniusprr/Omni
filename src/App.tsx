@@ -14,7 +14,7 @@ import { requestBrowserNavigation } from '@/features/browser/browserData'
 import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
 import { LocalSendPage } from '@/features/localsend/LocalSendPage'
 import { NotesPage } from '@/features/notes/NotesPage'
-import { QuickSwitcherModal } from '@/features/notes/search/QuickSwitcherModal'
+import { AppSearchModal } from '@/components/search/AppSearchModal'
 import { PowerPage } from '@/features/power/PowerPage'
 import { RemoteControllerView } from '@/features/remote/RemoteControllerView'
 import {
@@ -25,6 +25,13 @@ import {
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { desktop, isElectronRuntime } from '@/lib/desktop'
 import { errorMessage } from '@/lib/format'
+import {
+  APP_THEME_STORAGE_KEY,
+  DEFAULT_APP_THEME,
+  isAppTheme,
+  themeColorScheme,
+  type AppTheme,
+} from '@/theme'
 import type {
   Alarm,
   AppSettings,
@@ -45,7 +52,11 @@ export default function App() {
   })
 
   const [mode, setMode] = useState<MiniOsMode>('home')
-  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light')
+  const [appTheme, setAppTheme] = useState<AppTheme>(() => {
+    if (typeof window === 'undefined') return DEFAULT_APP_THEME
+    const storedTheme = window.localStorage.getItem(APP_THEME_STORAGE_KEY)
+    return isAppTheme(storedTheme) ? storedTheme : DEFAULT_APP_THEME
+  })
   const [isDockHidden, setIsDockHidden] = useState(false)
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
   const [quickActionsOpen, setQuickActionsOpen] = useState(false)
@@ -72,6 +83,14 @@ export default function App() {
 
   const timerRef = useRef<TimerState | null>(null)
   timerRef.current = timer
+
+  const themeMode = themeColorScheme(appTheme)
+
+  useEffect(() => {
+    window.localStorage.setItem(APP_THEME_STORAGE_KEY, appTheme)
+    document.documentElement.dataset.appTheme = appTheme
+    document.documentElement.style.colorScheme = themeMode
+  }, [appTheme, themeMode])
 
   useEffect(() => {
     void getEffectiveSettings().then(setSettings).catch(() => undefined)
@@ -363,11 +382,11 @@ export default function App() {
   }
 
   return (
-    <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'}`}>
+    <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'} minios-window--theme-${appTheme}`}>
       {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
       <div className="minios-wallpaper-backdrop" />
       {/* Main Mini-OS Shell Layout */}
-      <div className={`minios-shell minios-shell--with-actionbar ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''} ${isDockHidden ? 'minios-shell--dock-hidden' : ''}`}>
+      <div className={`minios-shell minios-shell--with-actionbar ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''} ${mode === 'notes' ? 'minios-shell--notes' : ''} ${isDockHidden ? 'minios-shell--dock-hidden' : ''}`}>
         {/* Left Floating Vertical Dock */}
         <MiniOsDock
           activeMode={mode}
@@ -380,11 +399,13 @@ export default function App() {
 
         {/* Right Main Working Area */}
         <div className="minios-main-area">
-          {mode !== 'ai' && (
+          {mode !== 'ai' && mode !== 'notes' && (
             <MiniOsHeader
               activeMode={mode}
-              onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
-              onExecuteCommand={handleExecuteCommand}
+              onBrowserSearch={(query) => {
+                setMode('browser')
+                requestBrowserNavigation(query)
+              }}
             />
           )}
 
@@ -447,8 +468,8 @@ export default function App() {
                   localDevices={localDevices}
                   onSettingsChange={setSettings}
                   onRefreshControllers={refreshControllers}
-                  themeMode={themeMode}
-                  onToggleTheme={() => setThemeMode((m) => (m === 'dark' ? 'light' : 'dark'))}
+                  appTheme={appTheme}
+                  onThemeChange={setAppTheme}
                 />
               </div>
             )}
@@ -462,6 +483,7 @@ export default function App() {
                 theme={themeMode}
                 emptyTabContent={renderHomeDashboard()}
                 onEnterBrowser={() => setMode('browser')}
+                onExitBrowser={() => setMode('home')}
                 onExecuteCommand={handleExecuteCommand}
               />
             </div>
@@ -476,7 +498,7 @@ export default function App() {
             onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
             onQuickAction={() => setQuickActionsOpen(true)}
             onOpenPairing={() => setPairingModalOpen(true)}
-            onToggleTheme={() => setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'))}
+            onToggleTheme={() => setAppTheme((current) => (current === 'light' ? 'obsidian' : 'light'))}
             themeMode={themeMode}
             isDockHidden={isDockHidden}
             onToggleDock={() => setIsDockHidden((current) => !current)}
@@ -485,9 +507,11 @@ export default function App() {
       </div>
 
       {/* Global Quick Switcher Launcher (Ctrl+K) */}
-      <QuickSwitcherModal
+      <AppSearchModal
         isOpen={quickSwitcherOpen}
         onClose={() => setQuickSwitcherOpen(false)}
+        onNavigate={setMode}
+        onExecuteCommand={handleExecuteCommand}
       />
 
       {/* Global Pairing Modal (Zero-Config QR & Local PIN) */}

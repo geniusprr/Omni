@@ -1,22 +1,36 @@
-import { useEffect, useState, type FormEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import { desktop } from '@/lib/desktop'
 import type { MiniOsMode } from './MiniOsDock'
 
 interface MiniOsHeaderProps {
   activeMode?: MiniOsMode
-  onOpenQuickSwitcher?: () => void
-  onExecuteCommand?: (query: string) => void
+  onBrowserSearch?: (query: string) => void
 }
 
-export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecuteCommand }: MiniOsHeaderProps) {
+export function MiniOsHeader({ activeMode = 'home', onBrowserSearch }: MiniOsHeaderProps) {
   const [clockNow, setClockNow] = useState(() => new Date())
   const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockNow(new Date()), 1000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (activeMode !== 'home') return
+
+    function handleAddressBarShortcut(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'l') return
+      event.preventDefault()
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    }
+
+    window.addEventListener('keydown', handleAddressBarShortcut)
+    return () => window.removeEventListener('keydown', handleAddressBarShortcut)
+  }, [activeMode])
 
   function handleDoubleClick(event: MouseEvent) {
     if ((event.target as HTMLElement).closest('button, input, form')) return
@@ -27,15 +41,11 @@ export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecu
     event.preventDefault()
     const query = searchQuery.trim()
     if (!query) {
-      onOpenQuickSwitcher?.()
+      searchInputRef.current?.focus()
       return
     }
 
-    if (onExecuteCommand) {
-      onExecuteCommand(query)
-    } else {
-      onOpenQuickSwitcher?.()
-    }
+    onBrowserSearch?.(query)
     setSearchQuery('')
   }
 
@@ -66,24 +76,24 @@ export function MiniOsHeader({ activeMode = 'home', onOpenQuickSwitcher, onExecu
               </div>
               <div className="clock-date-line" data-window-drag>{dateFormatted}</div>
             </div>
-            <form className="spotlight-bar-card spotlight-bar-card--inapp" onSubmit={handleSearchSubmit}>
+            <form
+              className="spotlight-bar-card spotlight-bar-card--browser-search"
+              onSubmit={handleSearchSubmit}
+              role="search"
+            >
               <Search size={18} className="spotlight-glass-icon" aria-hidden="true" />
               <input
+                ref={searchInputRef}
                 className="spotlight-glass-input"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Web'de ara veya adres yaz; /alarm, /kapat ve /not komutlarını kullan..."
-                aria-label="Web'de ara veya komut çalıştır"
+                placeholder="Google'da ara veya adres yaz..."
+                aria-label="Google'da ara veya web adresi yaz"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
               />
-              <button
-                type="button"
-                className="spotlight-key-badge"
-                onClick={onOpenQuickSwitcher}
-                aria-label="Arama ve komut paletini aç"
-                title="Arama ve komut paleti (Ctrl+K)"
-              >
-                ⌘K
-              </button>
+              <kbd className="spotlight-key-badge" aria-label="Ctrl L ile odaklan">Ctrl L</kbd>
             </form>
           </div>
           <div className="header-compact-right" data-window-drag />

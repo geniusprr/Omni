@@ -3,6 +3,8 @@ import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js'
 import Bookmark from 'lucide-react/dist/esm/icons/bookmark.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js'
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
@@ -22,6 +24,8 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import Volume2 from 'lucide-react/dist/esm/icons/volume-2.js'
 import VolumeX from 'lucide-react/dist/esm/icons/volume-x.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   BROWSER_EVENTS,
@@ -60,7 +64,6 @@ import {
   migrateBrowserState,
   nativeRestoreTasks,
   nativeViewAction,
-  openTabState,
   prepareNewTabNavigation,
   resolveOptimisticClose,
   reorderTabState,
@@ -75,6 +78,7 @@ interface BrowserPageProps {
   theme?: 'light' | 'dark'
   emptyTabContent?: ReactNode
   onEnterBrowser?: () => void
+  onExitBrowser?: () => void
   onExecuteCommand?: (query: string) => void
 }
 
@@ -198,6 +202,7 @@ export function BrowserPage({
   theme = 'light',
   emptyTabContent,
   onEnterBrowser,
+  onExitBrowser,
   onExecuteCommand,
 }: BrowserPageProps) {
   const [state, setState] = useState(loadState)
@@ -225,11 +230,13 @@ export function BrowserPage({
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
   const [tabDropTarget, setTabDropTarget] = useState<TabDropTarget | null>(null)
   const [tabDragAnnouncement, setTabDragAnnouncement] = useState('')
+  const [tabScrollState, setTabScrollState] = useState({ canScrollLeft: false, canScrollRight: false })
 
   const chromeRef = useRef<HTMLDivElement>(null)
   const nativeSurfaceRef = useRef<HTMLDivElement>(null)
   const tabScrollRef = useRef<HTMLDivElement>(null)
   const addressInputRef = useRef<HTMLInputElement>(null)
+  const nativeSurfaceActiveIdRef = useRef<string | null>(null)
   const stateRef = useRef(state)
   const liveTabIdsRef = useRef(new Set<string>())
   const creatingNativeTabsRef = useRef(new Map<string, Promise<boolean>>())
@@ -245,6 +252,11 @@ export function BrowserPage({
   stateRef.current = state
   const active = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null
   const activeZoom = active?.id ? zoomByTabId[active.id] ?? 1 : 1
+
+  const updateNativeSurfaceActiveId = useCallback((id: string | null) => {
+    nativeSurfaceActiveIdRef.current = id
+    setNativeSurfaceActiveId(id)
+  }, [])
 
   const setActiveZoom = useCallback(
     (value: number) => {
@@ -383,7 +395,7 @@ export function BrowserPage({
       // persisted Electron session is still being read. Creating it here would
       // begin a load that session restore immediately supersedes.
       if (!sessionHydrated.current) {
-        setNativeSurfaceActiveId(null)
+        updateNativeSurfaceActiveId(null)
         await desktop.browser.deactivate()
         return
       }
@@ -396,14 +408,14 @@ export function BrowserPage({
         && tabContextMenu === null
 
       if (!canShowNativeSurface || action.type !== 'activate') {
-        setNativeSurfaceActiveId(null)
+        updateNativeSurfaceActiveId(null)
         await desktop.browser.deactivate()
         return
       }
 
       const targetTab = nextState.tabs.find((tab) => tab.id === action.tabId)
       if (!targetTab?.url) {
-        setNativeSurfaceActiveId(null)
+        updateNativeSurfaceActiveId(null)
         await desktop.browser.deactivate()
         return
       }
@@ -414,14 +426,30 @@ export function BrowserPage({
           if (!created || version !== surfaceSyncVersionRef.current) return
         }
 
-        // A native BrowserView is transparent while Chromium is still creating
-        // or loading it. Keep it detached until the authoritative projection
-        // says that a frame is ready, so the renderer loading surface remains
-        // visible instead of exposing an empty rectangle.
+        // Do not tear down the currently painted native surface while the next
+        // tab (or a navigation in the same tab) is still loading. Detaching the
+        // BrowserView here exposes the renderer wallpaper for a few frames on
+        // Windows. Keeping the last composited surface in place lets us swap to
+        // the new page atomically as soon as Chromium reports it ready.
         if (version !== surfaceSyncVersionRef.current) return
         const currentTarget = stateRef.current.tabs.find((tab) => tab.id === action.tabId)
-        if (!currentTarget || currentTarget.loading || currentTarget.error) {
-          setNativeSurfaceActiveId(null)
+        if (!currentTarget) {
+          updateNativeSurfaceActiveId(null)
+          await desktop.browser.deactivate()
+          return
+        }
+        if (currentTarget.loading && !currentTarget.error) {
+          const paintedId = nativeSurfaceActiveIdRef.current
+          if (paintedId && liveTabIdsRef.current.has(paintedId)) {
+            await syncTabBounds(paintedId).catch(() => false)
+            return
+          }
+          updateNativeSurfaceActiveId(null)
+          await desktop.browser.deactivate()
+          return
+        }
+        if (currentTarget.error) {
+          updateNativeSurfaceActiveId(null)
           await desktop.browser.deactivate()
           return
         }
@@ -429,23 +457,23 @@ export function BrowserPage({
         const measured = await syncTabBounds(action.tabId)
         if (!measured || version !== surfaceSyncVersionRef.current) {
           if (version === surfaceSyncVersionRef.current) {
-            setNativeSurfaceActiveId(null)
+            updateNativeSurfaceActiveId(null)
             await desktop.browser.deactivate()
           }
           return
         }
         await desktop.browser.activate(action.tabId, true)
-        if (version === surfaceSyncVersionRef.current) setNativeSurfaceActiveId(action.tabId)
+        if (version === surfaceSyncVersionRef.current) updateNativeSurfaceActiveId(action.tabId)
       } catch (cause) {
         if (version !== surfaceSyncVersionRef.current) return
         const message = errorMessage(cause, 'Sayfa açılamadı.')
-        setNativeSurfaceActiveId(null)
+        updateNativeSurfaceActiveId(null)
         setTabLoadState(action.tabId, false, message)
         setError(message)
         await desktop.browser.deactivate().catch(() => undefined)
       }
     },
-    [createBrowserTab, isVisible, nativeRestoreReady, panel, permissionRequest, setTabLoadState, syncTabBounds, tabContextMenu],
+    [createBrowserTab, isVisible, nativeRestoreReady, panel, permissionRequest, setTabLoadState, syncTabBounds, tabContextMenu, updateNativeSurfaceActiveId],
   )
 
   const navigateTab = useCallback(
@@ -556,9 +584,8 @@ export function BrowserPage({
     [isVisible, navigateTab, nativeRestoreReady, onEnterBrowser, setTabLoadState, synchronizeBrowserSurface],
   )
 
-  // The browser always owns at least one tab while it is open. Replacing the
-  // final tab synchronously prevents a blank tab strip/content host during
-  // native BrowserView teardown.
+  // Re-entering the browser from another workspace starts a fresh tab only
+  // when there is no restored/pending browser state to show.
   useEffect(() => {
     const wasVisible = wasBrowserSurfaceVisibleRef.current
     wasBrowserSurfaceVisibleRef.current = isVisible
@@ -591,50 +618,50 @@ export function BrowserPage({
       const previous = stateRef.current
       const next = closeTabState(previous, id)
       const closingLastTab = next.tabs.length === 0
-      const fallbackTab = closingLastTab
-        ? { ...makeTab(DEFAULT_BROWSER_HOME_URL), loading: isElectronRuntime() }
-        : null
-      const nextState = fallbackTab ? openTabState(next, fallbackTab) : next
+      const nextState = next
 
       persist(nextState)
       stateRef.current = nextState
       setState(nextState)
 
       if (closingLastTab) {
-        // Invalidate any in-flight activation for the closing native child,
-        // then keep the renderer loading card visible until the replacement
-        // child has finished loading.
+        // Closing the final tab exits the browser workspace instead of creating
+        // an uncloseable replacement tab.
         surfaceSyncVersionRef.current += 1
-        void desktop.browser.deactivate().catch(() => undefined)
+        await desktop.browser.deactivate().catch(() => undefined)
+        setNativeSurfaceActiveId(null)
+        onExitBrowser?.()
       }
 
-      if (live) {
-        try {
+      try {
+        if (live) {
           await desktop.browser.close(id)
           liveTabIdsRef.current.delete(id)
-        } catch {
-          /* ignore */
         }
+        if (tab.url && !tab.incognito) addRecentlyClosed(tab.title, tab.url, tab.favicon)
+      } catch {
+        /* Native teardown is best-effort; renderer state already owns the close. */
+      } finally {
+        closePendingRef.current = false
       }
-      if (tab.url && !tab.incognito) addRecentlyClosed(tab.title, tab.url, tab.favicon)
-      closePendingRef.current = false
 
-      if (closingLastTab) {
-        if (fallbackTab?.url && stateRef.current.tabs.some((item) => item.id === fallbackTab.id)) {
-          await navigateTab(fallbackTab.id, fallbackTab.url)
-        }
-        return
-      }
+      if (closingLastTab) return
 
       await synchronizeBrowserSurface(nextState).catch(() => undefined)
     },
-    [navigateTab, synchronizeBrowserSurface],
+    [onExitBrowser, synchronizeBrowserSurface],
   )
 
   const reorderTab = useCallback((draggedId: string, targetId: string, position: TabDropPosition) => {
     const current = stateRef.current
     const next = reorderTabState(current, draggedId, targetId, position)
     if (next === current) return false
+
+    const previousPositions = new Map<string, number>()
+    document.querySelectorAll<HTMLElement>('[data-browser-tab-id]').forEach((element) => {
+      const id = element.dataset.browserTabId
+      if (id) previousPositions.set(id, element.getBoundingClientRect().left)
+    })
 
     stateRef.current = next
     setState(next)
@@ -646,11 +673,76 @@ export function BrowserPage({
         : 'Sekme sırası güncellendi.',
     )
     window.requestAnimationFrame(() => {
-      const tabElement = document.querySelector<HTMLElement>(`[data-browser-tab-id="${draggedId}"]`)
-      tabElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      document.querySelectorAll<HTMLElement>('[data-browser-tab-id]').forEach((element) => {
+        const id = element.dataset.browserTabId
+        if (!id) return
+        const previousLeft = previousPositions.get(id)
+        if (previousLeft === undefined) return
+        const deltaX = previousLeft - element.getBoundingClientRect().left
+        if (Math.abs(deltaX) < 1) return
+        element.animate(
+          [
+            { transform: `translateX(${deltaX}px)` },
+            { transform: 'translateX(0)' },
+          ],
+          {
+            duration: 240,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          },
+        )
+      })
+      document.querySelector<HTMLElement>(`[data-browser-tab-id="${draggedId}"]`)
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
     })
     return true
   }, [])
+
+  const updateTabScrollState = useCallback(() => {
+    const scroller = tabScrollRef.current
+    if (!scroller) return
+    const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth)
+    const next = {
+      canScrollLeft: scroller.scrollLeft > 2,
+      canScrollRight: scroller.scrollLeft < maxScrollLeft - 2,
+    }
+    setTabScrollState((current) => (
+      current.canScrollLeft === next.canScrollLeft && current.canScrollRight === next.canScrollRight
+        ? current
+        : next
+    ))
+  }, [])
+
+  const scrollTabs = useCallback((direction: -1 | 1) => {
+    const scroller = tabScrollRef.current
+    if (!scroller) return
+    const distance = Math.max(180, Math.min(420, scroller.clientWidth * 0.58))
+    scroller.scrollBy({ left: direction * distance, behavior: 'smooth' })
+  }, [])
+
+  useEffect(() => {
+    const scroller = tabScrollRef.current
+    if (!scroller) return
+    const sync = () => updateTabScrollState()
+    const observer = new ResizeObserver(sync)
+    observer.observe(scroller)
+    scroller.addEventListener('scroll', sync, { passive: true })
+    const frame = window.requestAnimationFrame(sync)
+    return () => {
+      observer.disconnect()
+      scroller.removeEventListener('scroll', sync)
+      window.cancelAnimationFrame(frame)
+    }
+  }, [state.tabs.length, updateTabScrollState])
+
+  useEffect(() => {
+    if (!active?.id) return
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-browser-tab-id="${active.id}"]`)
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+      updateTabScrollState()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [active?.id, updateTabScrollState])
 
   const toggleFavorite = useCallback(() => {
     if (!active?.url) return
@@ -1281,11 +1373,10 @@ export function BrowserPage({
   useEffect(() => () => finishTabDrag(true), [finishTabDrag])
 
   function handleTabMiddleClick(event: MouseEvent, id: string) {
-    if (event.button === 1) {
-      event.preventDefault()
-      event.stopPropagation()
-      void close(id)
-    }
+    if (event.button !== 1) return
+    event.preventDefault()
+    event.stopPropagation()
+    void close(id)
   }
 
   function handleTabContextMenu(event: MouseEvent, id: string) {
@@ -1299,9 +1390,12 @@ export function BrowserPage({
   }
 
   function handleTabScrollWheel(event: React.WheelEvent) {
-    if (event.deltaY !== 0 && tabScrollRef.current) {
-      tabScrollRef.current.scrollBy({ left: event.deltaY, behavior: 'smooth' })
-    }
+    const scroller = tabScrollRef.current
+    if (!scroller) return
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    if (delta === 0) return
+    if (event.cancelable) event.preventDefault()
+    scroller.scrollBy({ left: delta, behavior: 'smooth' })
   }
 
   function toggleFavoritesBarVisibility() {
@@ -1389,12 +1483,31 @@ export function BrowserPage({
           {/* The browser tab strip stays in its original top position. */}
           <div className="edge-browser__tabs" role="tablist" aria-label="Tarayıcı sekmeleri" data-window-drag>
             <div
-              ref={tabScrollRef}
-              className="edge-browser__tab-scroll"
-              onWheel={handleTabScrollWheel}
+              className={`edge-browser__tabs-viewport ${tabScrollState.canScrollLeft ? 'edge-browser__tabs-viewport--left' : ''} ${tabScrollState.canScrollRight ? 'edge-browser__tabs-viewport--right' : ''}`}
               data-window-drag
             >
-              {state.tabs.map((tab, tabIndex) => {
+              <BrowserTooltip label="Sekmeleri sola kaydır" side="bottom">
+                <Button
+                  type="button"
+                  variant="icon"
+                  size="compact"
+                  className={`edge-browser__tab-scroll-button edge-browser__tab-scroll-button--left ${tabScrollState.canScrollLeft ? 'is-visible' : ''}`}
+                  onClick={() => scrollTabs(-1)}
+                  disabled={!tabScrollState.canScrollLeft}
+                  aria-label="Sekmeleri sola kaydır"
+                  data-tab-action
+                >
+                  <ChevronLeft size={14} />
+                </Button>
+              </BrowserTooltip>
+
+              <div
+                ref={tabScrollRef}
+                className="edge-browser__tab-scroll"
+                onWheel={handleTabScrollWheel}
+                data-window-drag
+              >
+                {state.tabs.map((tab, tabIndex) => {
                 const media = state.mediaByTabId[tab.id]
                 const isMuted = tab.muted === true
                 const isSelected = tab.id === active?.id
@@ -1421,7 +1534,6 @@ export function BrowserPage({
                       className={`edge-browser__tab ${isSelected ? 'edge-browser__tab--active' : ''} ${tab.pinned ? 'edge-browser__tab--pinned' : ''} ${isTabIncognito ? 'edge-browser__tab--incognito' : ''} ${isDragging ? 'edge-browser__tab--dragging' : ''} ${isDropBefore ? 'edge-browser__tab--drop-before' : ''} ${isDropAfter ? 'edge-browser__tab--drop-after' : ''}`}
                       onClick={() => void select(tab.id)}
                       onAuxClick={(event) => handleTabMiddleClick(event, tab.id)}
-                      onMouseDown={(event) => handleTabMiddleClick(event, tab.id)}
                       onPointerDown={(event) => handleTabPointerDown(event, tab.id)}
                       onContextMenu={(event) => handleTabContextMenu(event, tab.id)}
                       onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
@@ -1480,13 +1592,31 @@ export function BrowserPage({
                     </div>
                   </BrowserTooltip>
                 )
-              })}
+                })}
+              </div>
+
+              <BrowserTooltip label="Sekmeleri sağa kaydır" side="bottom">
+                <Button
+                  type="button"
+                  variant="icon"
+                  size="compact"
+                  className={`edge-browser__tab-scroll-button edge-browser__tab-scroll-button--right ${tabScrollState.canScrollRight ? 'is-visible' : ''}`}
+                  onClick={() => scrollTabs(1)}
+                  disabled={!tabScrollState.canScrollRight}
+                  aria-label="Sekmeleri sağa kaydır"
+                  data-tab-action
+                >
+                  <ChevronRight size={14} />
+                </Button>
+              </BrowserTooltip>
             </div>
 
             <div className="edge-browser__tabs-actions" data-window-drag>
               <BrowserTooltip label="Yeni sekme (Ctrl+T)" side="bottom">
-                <button
+                <Button
                   type="button"
+                  variant="icon"
+                  size="compact"
                   className="edge-browser__icon-button edge-browser__new-tab"
                   onClick={() => void openTab()}
                   onAuxClick={(event) => {
@@ -1498,17 +1628,19 @@ export function BrowserPage({
                   aria-label="Yeni sekme"
                 >
                   <Plus size={14} />
-                </button>
+                </Button>
               </BrowserTooltip>
               <BrowserTooltip label="Yeni gizli sekme (Ctrl+Shift+N)" side="bottom">
-                <button
+                <Button
                   type="button"
+                  variant="icon"
+                  size="compact"
                   className="edge-browser__icon-button edge-browser__new-incognito"
                   onClick={() => void openTab(undefined, true)}
                   aria-label="Yeni gizli sekme"
                 >
                   <EyeOff size={14} />
-                </button>
+                </Button>
               </BrowserTooltip>
             </div>
           </div>
@@ -1570,7 +1702,7 @@ export function BrowserPage({
               )}
             </div>
 
-            <input
+            <Input
               ref={addressInputRef}
               className="edge-browser__address-input"
               value={address}

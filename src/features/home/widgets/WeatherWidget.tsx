@@ -12,6 +12,9 @@ import Moon from 'lucide-react/dist/esm/icons/moon.js'
 import RotateCw from 'lucide-react/dist/esm/icons/rotate-cw.js'
 import Sun from 'lucide-react/dist/esm/icons/sun.js'
 import Wind from 'lucide-react/dist/esm/icons/wind.js'
+import X from 'lucide-react/dist/esm/icons/x.js'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { fetchLiveWeather, useLiveWeather } from '@/lib/weather'
 
 interface WeatherWidgetProps {
@@ -54,7 +57,7 @@ export function WeatherWidget({ onHide }: WeatherWidgetProps) {
   }
 
   return (
-    <div className="glass-widget-card card-weather widget-drag-card">
+    <Card className="glass-widget-card card-weather widget-drag-card">
       <div className="card-top-bar">
         <div className="widget-header-title-group">
           <GripHorizontal size={13} className="widget-drag-handle" />
@@ -62,77 +65,97 @@ export function WeatherWidget({ onHide }: WeatherWidgetProps) {
         </div>
 
         <div className="widget-header-actions">
-          <button
+          <Button
             type="button"
-            className={`card-pill-btn ${isRefreshing ? 'animate-spin' : ''}`}
+            variant="icon"
+            size="compact"
+            className="weather-widget-action"
             onClick={handleRefresh}
             title="Hava Durumunu Yenile"
+            aria-label="Hava durumunu yenile"
+            disabled={isRefreshing}
           >
-            <RotateCw size={11} />
-          </button>
+            <RotateCw size={13} className={isRefreshing ? 'weather-widget-refreshing' : undefined} />
+          </Button>
           {onHide && (
-            <button
+            <Button
               type="button"
-              className="widget-hide-btn"
+              variant="icon"
+              size="compact"
+              className="weather-widget-action"
               onClick={onHide}
               title="Gizle"
+              aria-label="Hava durumu widgetini gizle"
             >
-              ✕
-            </button>
+              <X size={14} />
+            </Button>
           )}
         </div>
       </div>
 
       <div className="weather-widget-body">
-        {/* Main Location & Temperature Header */}
-        <div className="weather-widget-main-row">
-          <div className="weather-widget-icon-box">
-            {getWeatherIcon(weather.weatherCode, weather.isDay, 36)}
-          </div>
-
-          <div className="weather-widget-temp-group">
-            <div className="weather-widget-temp">
-              <span className="temp-number">{weather.temperature}</span>
-              <span className="temp-unit">°C</span>
+        <div className="weather-widget-hero">
+          <div className="weather-widget-primary">
+            <div className="weather-widget-location">
+              <MapPin size={12} />
+              <span title={`${weather.city}, ${weather.country}`}>
+                {weather.city}
+                {weather.country ? <small>{weather.country}</small> : null}
+              </span>
             </div>
-            <div className="weather-widget-condition">{weather.condition}</div>
+
+            <div className="weather-widget-temp-row">
+              <div className="weather-widget-temp">
+                <span className="temp-number">{weather.temperature}</span>
+                <span className="temp-unit">°</span>
+              </div>
+
+              <div className="weather-widget-condition-group">
+                <span className="weather-widget-condition">{weather.condition}</span>
+                <span className="weather-widget-range">
+                  {weather.minTemp}° / {weather.maxTemp}°
+                </span>
+              </div>
+            </div>
           </div>
 
-          <div className="weather-widget-location-badge">
-            <MapPin size={11} className="text-sky-400" />
-            <span title={`${weather.city}, ${weather.country}`}>{weather.city}</span>
+          <div className="weather-widget-icon-box" aria-hidden="true">
+            {getWeatherIcon(weather.weatherCode, weather.isDay, 42)}
           </div>
         </div>
 
-        {/* Weather Metrics Grid */}
         <div className="weather-metrics-grid">
           <div className="weather-metric-item">
-            <span className="metric-label">Hissedilen</span>
-            <span className="metric-value">{weather.apparentTemperature}°</span>
+            <div className="weather-metric-icon">
+              <Sun size={14} />
+            </div>
+            <div className="weather-metric-copy">
+              <span className="metric-label">Hissedilen</span>
+              <span className="metric-value">{weather.apparentTemperature}°</span>
+            </div>
           </div>
 
           <div className="weather-metric-item">
-            <span className="metric-label">
-              <Droplets size={11} className="inline mr-1 text-sky-400" />
-              Nem
-            </span>
-            <span className="metric-value">%{weather.humidity}</span>
+            <div className="weather-metric-icon">
+              <Droplets size={14} />
+            </div>
+            <div className="weather-metric-copy">
+              <span className="metric-label">Nem</span>
+              <span className="metric-value">%{weather.humidity}</span>
+            </div>
           </div>
 
           <div className="weather-metric-item">
-            <span className="metric-label">
-              <Wind size={11} className="inline mr-1 text-teal-400" />
-              Rüzgar
-            </span>
-            <span className="metric-value">{weather.windSpeed} km/s</span>
-          </div>
-
-          <div className="weather-metric-item">
-            <span className="metric-label">En Düşük / Yüksek</span>
-            <span className="metric-value">{weather.minTemp}° / {weather.maxTemp}°</span>
+            <div className="weather-metric-icon">
+              <Wind size={14} />
+            </div>
+            <div className="weather-metric-copy">
+              <span className="metric-label">Rüzgar</span>
+              <span className="metric-value">{weather.windSpeed} km/s</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Card>
   )
 }

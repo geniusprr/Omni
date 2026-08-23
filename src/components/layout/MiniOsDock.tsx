@@ -1,13 +1,13 @@
 import React from 'react'
 import Bot from 'lucide-react/dist/esm/icons/bot.js'
 import Clock from 'lucide-react/dist/esm/icons/clock.js'
-import Download from 'lucide-react/dist/esm/icons/download.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
+import Share2 from 'lucide-react/dist/esm/icons/share-2.js'
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { RemoteConnectionStatus } from '@/types'
@@ -32,7 +32,10 @@ export function MiniOsDock({
   onOpenQuickSwitcher,
 }: MiniOsDockProps) {
   return (
-    <aside className="dock-rail" aria-label="Mini-OS Dock">
+    <aside
+      className={`dock-rail ${activeMode === 'home' ? 'dock-rail--home' : 'dock-rail--workspace'}`}
+      aria-label="Mini-OS Dock"
+    >
       <TooltipProvider delayDuration={300}>
         <div className="dock-pill-body">
           {/* 1. Home / Dashboard */}
@@ -148,7 +151,7 @@ export function MiniOsDock({
             <TooltipContent className="dock-tooltip" side="bottom">Defter & Vault</TooltipContent>
           </Tooltip>
 
-          {/* 5. Download / Tray / LocalSend Transfers */}
+          {/* 5. Share / LocalSend Transfers */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -158,7 +161,7 @@ export function MiniOsDock({
                 aria-label="LocalSend Paylaşım"
                 title="Dosya Paylaşımı (LocalSend)"
               >
-                <Download size={18} strokeWidth={1.8} />
+                <Share2 size={18} strokeWidth={1.8} />
               </button>
             </TooltipTrigger>
             <TooltipContent className="dock-tooltip" side="bottom">Dosya Paylaşımı (LocalSend)</TooltipContent>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import AppWindow from 'lucide-react/dist/esm/icons/app-window.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
@@ -26,6 +27,9 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import Wifi from 'lucide-react/dist/esm/icons/wifi.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   faviconForBrowserUrl,
   normalizeBrowserInput,
@@ -117,6 +121,11 @@ interface DragState {
   startY: number
   currentX: number
   currentY: number
+  grabOffsetX: number
+  grabOffsetY: number
+  width: number
+  height: number
+  themeClass: 'minios-window--light' | 'minios-window--dark'
   isDraggingActive: boolean
 }
 
@@ -463,6 +472,10 @@ export function DraggableWidgetGrid({
       return
     }
 
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const themeClass = (e.currentTarget as HTMLElement).closest('.minios-window--dark')
+      ? 'minios-window--dark'
+      : 'minios-window--light'
     e.preventDefault()
     setDragState({
       widgetId,
@@ -472,6 +485,11 @@ export function DraggableWidgetGrid({
       startY: e.clientY,
       currentX: e.clientX,
       currentY: e.clientY,
+      grabOffsetX: e.clientX - rect.left,
+      grabOffsetY: e.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+      themeClass,
       isDraggingActive: false,
     })
   }
@@ -504,11 +522,13 @@ export function DraggableWidgetGrid({
           }
         })
 
-        // Calculate item position in target column
+        // Calculate item position in target column. The floating widget is
+        // excluded so its fixed position cannot corrupt the insertion index.
         let targetIdx = 0
         const colEl = columnsRef.current[targetCol]
         if (colEl) {
-          const childWidgets = Array.from(colEl.querySelectorAll('.widget-wrapper'))
+          const childWidgets = Array.from(colEl.querySelectorAll<HTMLElement>('.widget-wrapper'))
+            .filter((element) => element.dataset.widgetId !== dragState.widgetId)
           for (let i = 0; i < childWidgets.length; i++) {
             const rect = childWidgets[i].getBoundingClientRect()
             if (e.clientY > rect.top + rect.height / 2) {
@@ -536,12 +556,21 @@ export function DraggableWidgetGrid({
           }
         }
 
-        // Insert at new pos
+        // Insert at the visible target position. Hidden widgets stay hidden and
+        // must not shift the place where the user actually dropped the card.
         if (!nextColumns[dropTargetCol]) {
           nextColumns[dropTargetCol] = []
         }
-        const safeIdx = Math.min(Math.max(0, dropTargetIndex), nextColumns[dropTargetCol].length)
-        nextColumns[dropTargetCol].splice(safeIdx, 0, dragState.widgetId)
+        const targetColumn = nextColumns[dropTargetCol]
+        const visibleTargetWidgets = targetColumn.filter((id) => !hiddenSet.has(id))
+        const visibleIndex = Math.min(Math.max(0, dropTargetIndex), visibleTargetWidgets.length)
+        let actualIndex = targetColumn.length
+        if (visibleIndex < visibleTargetWidgets.length) {
+          actualIndex = targetColumn.indexOf(visibleTargetWidgets[visibleIndex])
+        } else if (visibleTargetWidgets.length > 0) {
+          actualIndex = targetColumn.indexOf(visibleTargetWidgets[visibleTargetWidgets.length - 1]) + 1
+        }
+        targetColumn.splice(Math.max(0, actualIndex), 0, dragState.widgetId)
 
         onUpdateLayout({
           ...layout,
@@ -609,7 +638,7 @@ export function DraggableWidgetGrid({
     switch (id) {
       case 'bookmarks':
         return (
-          <div className="glass-widget-card card-bookmarks widget-drag-card">
+          <Card className="glass-widget-card card-bookmarks widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -654,12 +683,12 @@ export function DraggableWidgetGrid({
                 </button>
               ))}
             </div>
-          </div>
+          </Card>
         )
 
       case 'notes':
         return (
-          <div className="glass-widget-card card-sticky-note widget-drag-card">
+          <Card className="glass-widget-card card-sticky-note widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -702,12 +731,12 @@ export function DraggableWidgetGrid({
               </p>
               <span className="sticky-body-date">Son güncelleme</span>
             </div>
-          </div>
+          </Card>
         )
 
       case 'quickAccess':
         return (
-          <div className="glass-widget-card card-quick-access widget-drag-card">
+          <Card className="glass-widget-card card-quick-access widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -760,12 +789,12 @@ export function DraggableWidgetGrid({
                 <span className="qa-app-label">Ekle</span>
               </button>
             </div>
-          </div>
+          </Card>
         )
 
       case 'quote':
         return (
-          <div className="glass-widget-card card-quote widget-drag-card">
+          <Card className="glass-widget-card card-quote widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -789,12 +818,12 @@ export function DraggableWidgetGrid({
               {QUOTES[quoteIndex].text}
             </p>
             <span className="quote-author-name">— {QUOTES[quoteIndex].author}</span>
-          </div>
+          </Card>
         )
 
       case 'recentlyClosed':
         return (
-          <div className="glass-widget-card card-recently-closed widget-drag-card">
+          <Card className="glass-widget-card card-recently-closed widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -836,12 +865,12 @@ export function DraggableWidgetGrid({
                 </button>
               ))}
             </div>
-          </div>
+          </Card>
         )
 
       case 'todos':
         return (
-          <div className="glass-widget-card card-todo widget-drag-card">
+          <Card className="glass-widget-card card-todo widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -869,7 +898,7 @@ export function DraggableWidgetGrid({
 
             {showAddTodo && (
               <form className="todo-inline-add-form" onSubmit={handleTodoSubmit}>
-                <input
+                <Input
                   type="text"
                   className="todo-inline-add-input"
                   placeholder="Yeni görev..."
@@ -929,12 +958,12 @@ export function DraggableWidgetGrid({
                 />
               </div>
             </div>
-          </div>
+          </Card>
         )
 
       case 'powerWidget':
         return (
-          <div className="glass-widget-card home-widget-card--power widget-drag-card">
+          <Card className="glass-widget-card home-widget-card--power widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -1018,12 +1047,12 @@ export function DraggableWidgetGrid({
                 </div>
               )}
             </div>
-          </div>
+          </Card>
         )
 
       case 'devices':
         return (
-          <div className="glass-widget-card home-widget-card--devices widget-drag-card">
+          <Card className="glass-widget-card home-widget-card--devices widget-drag-card">
             <div className="card-top-bar">
               <div className="widget-header-title-group">
                 <GripHorizontal size={13} className="widget-drag-handle" />
@@ -1082,7 +1111,7 @@ export function DraggableWidgetGrid({
                 <div className="widget-controllers-section">
                   <div className="widget-controllers-header">
                     <span>Aktif Cihazlar</span>
-                    <span className="widget-controllers-count">{activeDeviceCount}</span>
+                    <Badge variant="secondary" className="widget-controllers-count">{activeDeviceCount}</Badge>
                   </div>
 
                 {activeDeviceCount > 0 ? (
@@ -1155,7 +1184,7 @@ export function DraggableWidgetGrid({
                 </button>
               </div>
             </div>
-          </div>
+          </Card>
         )
 
       case 'weather':
@@ -1170,6 +1199,11 @@ export function DraggableWidgetGrid({
     <div className="draggable-columns-grid">
       {layout.columns.map((colWidgets, colIdx) => {
         const visibleWidgets = colWidgets.filter((wId) => !hiddenSet.has(wId))
+        const isDragging = Boolean(dragState?.isDraggingActive)
+        const stationaryWidgets = isDragging
+          ? visibleWidgets.filter((wId) => wId !== dragState?.widgetId)
+          : visibleWidgets
+        const showPlaceholder = isDragging && dropTargetCol === colIdx && dropTargetIndex !== null
 
         return (
           <div
@@ -1181,35 +1215,37 @@ export function DraggableWidgetGrid({
               dropTargetCol === colIdx ? 'dashboard-column--dragover' : ''
             }`}
           >
-            {visibleWidgets.map((wId, itemIdx) => {
-              const isBeingDragged = dragState?.widgetId === wId && dragState.isDraggingActive
-              const isTargetIndicator =
-                dragState?.isDraggingActive && dropTargetCol === colIdx && dropTargetIndex === itemIdx
-
-              return (
-                <React.Fragment key={wId}>
-                  {isTargetIndicator && <div className="widget-drop-indicator" />}
+            {stationaryWidgets.map((wId, itemIdx) => (
+              <React.Fragment key={wId}>
+                {showPlaceholder && dropTargetIndex === itemIdx ? (
                   <div
-                    ref={(el) => {
-                      widgetRefs.current[wId] = el
-                    }}
-                    className={`widget-wrapper ${isBeingDragged ? 'widget-wrapper--dragging' : ''}`}
-                    onPointerDown={(e) => handlePointerDown(e, wId, colIdx, itemIdx)}
-                  >
-                    {renderWidget(wId, colIdx, itemIdx)}
-                  </div>
-                </React.Fragment>
-              )
-            })}
+                    className="widget-drop-placeholder"
+                    style={{ height: dragState?.height }}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <div
+                  ref={(el) => {
+                    widgetRefs.current[wId] = el
+                  }}
+                  data-widget-id={wId}
+                  className="widget-wrapper"
+                  onPointerDown={(e) => handlePointerDown(e, wId, colIdx, itemIdx)}
+                >
+                  {renderWidget(wId, colIdx, itemIdx)}
+                </div>
+              </React.Fragment>
+            ))}
 
-            {dragState?.isDraggingActive &&
-              dropTargetCol === colIdx &&
-              dropTargetIndex !== null &&
-              dropTargetIndex >= visibleWidgets.length && (
-                <div className="widget-drop-indicator" />
-              )}
+            {showPlaceholder && dropTargetIndex !== null && dropTargetIndex >= stationaryWidgets.length ? (
+              <div
+                className="widget-drop-placeholder"
+                style={{ height: dragState?.height }}
+                aria-hidden="true"
+              />
+            ) : null}
 
-            {visibleWidgets.length === 0 && (
+            {visibleWidgets.length === 0 && !showPlaceholder && (
               <div className="empty-column-dropzone">
                 <span>Buraya widget taşıyın</span>
               </div>
@@ -1218,18 +1254,29 @@ export function DraggableWidgetGrid({
         )
       })}
 
-      {/* Floating Drag Ghost Preview Following Cursor */}
-      {dragState && dragState.isDraggingActive && (
-        <div
-          className="widget-floating-ghost"
-          style={{
-            transform: `translate3d(${dragState.currentX - 100}px, ${dragState.currentY - 25}px, 0)`,
-          }}
-        >
-          <GripHorizontal size={14} />
-          <span>Widget Taşınıyor</span>
-        </div>
-      )}
+      {dragState?.isDraggingActive && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="home-widget-drag-portal" aria-hidden="true">
+              <div className={`home-widget-drag-theme ${dragState.themeClass}`}>
+                <div className="minios-shell--home home-widget-drag-scope">
+                <div
+                  data-widget-id={dragState.widgetId}
+                  className="widget-wrapper widget-wrapper--dragging"
+                  style={{
+                    left: dragState.currentX - dragState.grabOffsetX,
+                    top: dragState.currentY - dragState.grabOffsetY,
+                    width: dragState.width,
+                    height: dragState.height,
+                  }}
+                >
+                  {renderWidget(dragState.widgetId, dragState.fromCol, dragState.fromIndex)}
+                </div>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       <dialog
         ref={quickAccessDialogRef}

@@ -9,8 +9,9 @@ import Music2 from 'lucide-react/dist/esm/icons/music-2.js'
 import Pause from 'lucide-react/dist/esm/icons/pause.js'
 import Play from 'lucide-react/dist/esm/icons/play.js'
 import Rewind from 'lucide-react/dist/esm/icons/rewind.js'
-import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { useMusicPlayer } from '@/features/music/core/musicStore'
 import { trackDurationLabel, type MusicTrack } from '@/features/music/core/types'
 import {
@@ -247,7 +248,8 @@ export function SystemMediaStatusWidget() {
   }
 
   return (
-    <aside
+    <Card
+      role="complementary"
       className="dashboard-music-status-card"
       data-media-active={hasMedia ? 'true' : 'false'}
       data-mix-active={mixIsOpen ? 'true' : 'false'}
@@ -255,6 +257,26 @@ export function SystemMediaStatusWidget() {
       aria-busy={busy}
       aria-label="Müzik alanı"
     >
+      <div className="dashboard-music-status-card__header">
+        <div className="dashboard-music-status-card__heading">
+          <span className="dashboard-music-status-card__heading-icon" aria-hidden="true">
+            <Music2 size={15} strokeWidth={1.8} />
+          </span>
+          <span className="dashboard-music-status-card__heading-copy">
+            <strong>Müzik</strong>
+            <span>{hasMedia ? 'Şimdi çalıyor' : 'Medya denetimi'}</span>
+          </span>
+        </div>
+
+        <Badge
+          variant={hasMedia && isPlaying ? 'success' : hasMedia ? 'secondary' : 'outline'}
+          className="dashboard-music-status-card__badge"
+        >
+          <span className="dashboard-music-status-card__badge-dot" aria-hidden="true" />
+          {hasMedia ? (isPlaying ? 'Çalıyor' : 'Duraklatıldı') : available ? 'Hazır' : 'Bağlantı yok'}
+        </Badge>
+      </div>
+
       {hasMedia ? (
         <>
           <div className="dashboard-music-status-card__active-content">
@@ -339,7 +361,7 @@ export function SystemMediaStatusWidget() {
             <section className="dashboard-music-status-card__queue" aria-label="Mix kuyruğu">
               <div className="dashboard-music-status-card__queue-header">
                 <div>
-                  <span className="dashboard-music-status-card__queue-kicker"><Sparkles size={12} aria-hidden="true" /> Mix</span>
+                  <span className="dashboard-music-status-card__queue-kicker">Mix</span>
                   <h2>Sıradaki</h2>
                 </div>
                 <span className="dashboard-music-status-card__queue-count">{upcomingTracks.length} parça</span>
@@ -373,22 +395,46 @@ export function SystemMediaStatusWidget() {
           ) : null}
         </>
       ) : (
-        <div className="dashboard-music-status-card__empty">
+        <div className="dashboard-music-status-card__empty dashboard-music-status-card__empty--polished">
           <div className="dashboard-music-status-card__empty-visual" aria-hidden="true">
-            <span className="dashboard-music-status-card__empty-orbit dashboard-music-status-card__empty-orbit--one" />
-            <span className="dashboard-music-status-card__empty-orbit dashboard-music-status-card__empty-orbit--two" />
-            <div className="dashboard-music-status-card__empty-disc"><Music2 size={28} strokeWidth={1.55} /></div>
+            <div className="dashboard-music-status-card__empty-cover">
+              <span className="dashboard-music-status-card__empty-cover-disc">
+                <span />
+              </span>
+              <AudioLines size={22} strokeWidth={1.55} />
+            </div>
           </div>
           <div className="dashboard-music-status-card__empty-copy">
-            <span className="dashboard-music-status-card__empty-kicker"><ListMusic size={12} aria-hidden="true" /> SES ALANI</span>
-            <strong>{available ? 'Müzik için sakin bir alan' : 'Medya bağlantısı bekleniyor'}</strong>
+            <span className="dashboard-music-status-card__empty-kicker"><ListMusic size={12} aria-hidden="true" /> Şimdi çalıyor</span>
+            <strong>{available ? 'Henüz bir şey çalmıyor' : 'Medya bağlantısı bekleniyor'}</strong>
             <p>{available
-              ? 'Bir parça açtığında kapak, kontroller ve Mix kuyruğu burada toplanır.'
+              ? 'Tarayıcıda veya bilgisayarında bir parça başlat. Widget otomatik olarak devralır.'
               : 'Windows medya oturumuna şu anda ulaşılamıyor.'}</p>
           </div>
-          <div className="dashboard-music-status-card__empty-footer" aria-hidden="true">
-            <span><Sparkles size={12} /> sade · odaklı · senin</span>
-            <span>kuyruk açılınca görünür</span>
+
+          <div className="dashboard-music-status-card__idle-progress" aria-hidden="true">
+            <div className="dashboard-music-status-card__progress-meta">
+              <span>0:00</span>
+              <span>—:—</span>
+            </div>
+            <div className="dashboard-music-status-card__progress-track" />
+          </div>
+
+          <div className="dashboard-music-status-card__controls dashboard-music-status-card__controls--idle" aria-label="Müzik kontrolleri">
+            <Button type="button" variant="icon" className="dashboard-music-status-card__control" disabled aria-label="Önceki parça">
+              <Rewind size={16} aria-hidden="true" />
+            </Button>
+            <Button type="button" variant="icon" className="dashboard-music-status-card__control dashboard-music-status-card__control--play" disabled aria-label="Oynat">
+              <Play size={18} fill="currentColor" aria-hidden="true" />
+            </Button>
+            <Button type="button" variant="icon" className="dashboard-music-status-card__control" disabled aria-label="Sonraki parça">
+              <FastForward size={16} aria-hidden="true" />
+            </Button>
+          </div>
+
+          <div className="dashboard-music-status-card__empty-footer">
+            <span><span className="dashboard-music-status-card__auto-dot" aria-hidden="true" /> Otomatik medya algılama</span>
+            <span>Tarayıcı · Windows · YouTube Music</span>
           </div>
         </div>
       )}
@@ -399,7 +445,7 @@ export function SystemMediaStatusWidget() {
           <span>{controlError}</span>
         </p>
       ) : null}
-    </aside>
+    </Card>
   )
 }
 

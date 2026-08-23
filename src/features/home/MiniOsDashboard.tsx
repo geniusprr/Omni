@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
+import { Button } from '@/components/ui/button'
 import {
   BROWSER_DATA_EVENT,
   loadFavorites,
@@ -236,8 +237,10 @@ export function MiniOsDashboard({
             onOpenPairingModal={onOpenPairingModal}
           />
           <div className="dashboard-widgets-toolbar dashboard-widgets-toolbar--bottom">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="compact"
               className="dashboard-customize-btn"
               onClick={() => setCustomizeModalOpen(true)}
               title="Widget ekle"
@@ -245,7 +248,7 @@ export function MiniOsDashboard({
             >
               <LayoutTemplate size={13} aria-hidden="true" />
               <span>Widget ekle</span>
-            </button>
+            </Button>
           </div>
         </div>
 

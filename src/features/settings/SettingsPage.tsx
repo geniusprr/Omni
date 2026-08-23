@@ -33,6 +33,7 @@ import {
   testSupabaseConnection,
 } from '@/features/remote/client'
 import { desktop } from '@/lib/desktop'
+import type { AppTheme } from '@/theme'
 import type { AppSettings, LocalSendDevice, PairedController, RemoteConnectionStatus, RemoteDesktopStatus, RemoteTrustedDevice } from '@/types'
 
 interface SettingsPageProps {
@@ -43,9 +44,23 @@ interface SettingsPageProps {
   localDevices: LocalSendDevice[]
   onSettingsChange: (newSettings: AppSettings) => void
   onRefreshControllers: () => void
-  themeMode: 'dark' | 'light'
-  onToggleTheme: () => void
+  appTheme: AppTheme
+  onThemeChange: (theme: AppTheme) => void
 }
+
+const APPEARANCE_THEMES: Array<{
+  id: AppTheme
+  name: string
+  description: string
+  previewClass: string
+  icon: typeof Sun
+}> = [
+  { id: 'obsidian', name: 'Obsidyen', description: 'Siyah ağırlıklı, beyaz detaylı modern tema', previewClass: 'settings-theme-option__preview--obsidian', icon: Moon },
+  { id: 'rose', name: 'Pembe', description: 'Siyah zemin üzerinde zarif pembe vurgular', previewClass: 'settings-theme-option__preview--rose', icon: Palette },
+  { id: 'violet', name: 'Mor', description: 'Derin siyah ve premium mor detaylar', previewClass: 'settings-theme-option__preview--violet', icon: Palette },
+  { id: 'ocean', name: 'Okyanus', description: 'Koyu arayüz ve canlı mavi detaylar', previewClass: 'settings-theme-option__preview--ocean', icon: Palette },
+  { id: 'light', name: 'Açık', description: 'Aydınlık ve temiz gündüz görünümü', previewClass: 'settings-theme-option__preview--light', icon: Sun },
+]
 
 const SETTINGS_SECTIONS = [
   { id: 'general', label: 'Genel', description: 'Başlangıç ve cihaz görünümü', icon: Laptop },
@@ -270,8 +285,8 @@ export function SettingsPage({
   localDevices,
   onSettingsChange,
   onRefreshControllers,
-  themeMode,
-  onToggleTheme,
+  appTheme,
+  onThemeChange,
 }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
   const [url, setUrl] = useState(settings.supabaseUrl)
@@ -564,28 +579,28 @@ export function SettingsPage({
             <div className="settings-card__icon"><Palette size={17} /></div>
             <div>
               <h3>Tema ve görünüm</h3>
-              <p>Shutty arayüzünün açık veya koyu görünümünü seçin.</p>
+              <p>Arayüzün ana görünümünü ve vurgu karakterini seçin.</p>
             </div>
           </div>
           <div className="settings-theme-options" role="group" aria-label="Tema seçimi">
-            <button
-              type="button"
-              className={`settings-theme-option ${themeMode === 'light' ? 'settings-theme-option--active' : ''}`}
-              onClick={() => { if (themeMode !== 'light') onToggleTheme() }}
-              aria-pressed={themeMode === 'light'}
-            >
-              <span className="settings-theme-option__preview settings-theme-option__preview--light"><Sun size={17} /></span>
-              <span><strong>Açık tema</strong><small>Gündüz kullanımı için aydınlık arayüz</small></span>
-            </button>
-            <button
-              type="button"
-              className={`settings-theme-option ${themeMode === 'dark' ? 'settings-theme-option--active' : ''}`}
-              onClick={() => { if (themeMode !== 'dark') onToggleTheme() }}
-              aria-pressed={themeMode === 'dark'}
-            >
-              <span className="settings-theme-option__preview settings-theme-option__preview--dark"><Moon size={17} /></span>
-              <span><strong>Koyu tema</strong><small>Gece kullanımı için düşük parlaklık</small></span>
-            </button>
+            {APPEARANCE_THEMES.map((theme) => {
+              const Icon = theme.icon
+              const active = appTheme === theme.id
+              return (
+                <button
+                  key={theme.id}
+                  type="button"
+                  className={`settings-theme-option ${active ? 'settings-theme-option--active' : ''}`}
+                  data-theme={theme.id}
+                  onClick={() => onThemeChange(theme.id)}
+                  aria-pressed={active}
+                >
+                  <span className={`settings-theme-option__preview ${theme.previewClass}`}><Icon size={17} /></span>
+                  <span><strong>{theme.name}</strong><small>{theme.description}</small></span>
+                  {active ? <Check className="settings-theme-option__check" size={14} aria-hidden="true" /> : null}
+                </button>
+              )
+            })}
           </div>
         </div>
 
