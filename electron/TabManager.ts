@@ -1,7 +1,7 @@
 import {
-  BrowserView,
   BrowserWindow,
   Menu,
+  WebContentsView,
   type WebContents,
 } from 'electron'
 import type {
@@ -12,13 +12,7 @@ import { SessionManager } from './SessionManager.js'
 
 interface TabRecord {
   id: string
-  /**
-   * BrowserView is intentionally used as the Windows presentation surface.
-   * In the affected Electron runtime, a WebContentsView can load and expose
-   * accessibility content without being composited into the BrowserWindow.
-   * BrowserView has the older, well-proven native-window compositor path.
-   */
-  view: BrowserView
+  view: WebContentsView
   attached: boolean
   webContents: WebContents
   projection: BrowserTabProjection
@@ -79,7 +73,7 @@ export class TabManager {
 
     const isIncognito = options?.incognito === true
     const restored = !isIncognito ? this.sessions.getSnapshot().tabs.find((tab) => tab.id === id) : null
-    const view = new BrowserView({
+    const view = new WebContentsView({
       webPreferences: {
         session: isIncognito ? this.sessions.getIncognitoSession() : this.sessions.getBrowserSession(),
         nodeIntegration: false,
@@ -120,9 +114,9 @@ export class TabManager {
     // stronger than toggling visibility on Windows and guarantees that a page
     // cannot stay above the renderer when a new-tab or a panel is shown.
     view.setBounds(bounds)
-    // BrowserView bounds are intentionally rectangular. Keep its compositor
-    // background transparent so the native page fills the measured content
-    // host without a renderer-side corner mask.
+    // WebContentsView defaults to an opaque white backing surface. Keep it
+    // transparent so the native page fills the measured host without a white
+    // flash during attach/detach transitions.
     view.setBackgroundColor('#00000000')
     if (projection.muted) webContents.setAudioMuted(true)
     this.load(record, url)
@@ -145,12 +139,12 @@ export class TabManager {
     if (!visible) return
 
     try {
-      this.window.addBrowserView(target.view)
+      this.window.contentView.addChildView(target.view)
       target.attached = true
-      // Reapply the measured renderer viewport after attachment. This is
-      // required by the Windows native compositor when a view was detached.
+      // Reapply the measured renderer viewport after attachment, then add the
+      // same child again to move it to the top of the Views z-order.
       target.view.setBounds(target.view.getBounds())
-      this.window.setTopBrowserView(target.view)
+      this.window.contentView.addChildView(target.view)
       target.webContents.focus()
     } catch {
       // A tab can be closed while an async renderer action is in flight.
@@ -520,7 +514,7 @@ export class TabManager {
     // succeed immediately before a renderer/layout transition or an IPC
     // interruption, leaving a native view above the renderer even though the
     // flag was not updated in the same turn.
-    try { this.window.removeBrowserView(record.view) } catch { /* best effort */ }
+    try { this.window.contentView.removeChildView(record.view) } catch { /* best effort */ }
     record.attached = false
   }
 

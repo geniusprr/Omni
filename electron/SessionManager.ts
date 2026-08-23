@@ -90,7 +90,7 @@ export class SessionManager {
   getBrowserSession(): Session {
     if (!this.browserSession) {
       this.browserSession = session.fromPartition('persist:kapanis-browser')
-      this.browserSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
+      this.browserSession.setUserAgent(chromiumUserAgent())
     }
     return this.browserSession
   }
@@ -98,7 +98,7 @@ export class SessionManager {
   getIncognitoSession(): Session {
     if (!this.incognitoSession) {
       this.incognitoSession = session.fromPartition('kapanis-incognito', { cache: false })
-      this.incognitoSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
+      this.incognitoSession.setUserAgent(chromiumUserAgent())
     }
     return this.incognitoSession
   }
@@ -174,4 +174,9 @@ export class SessionManager {
       this.flush()
     }, 250)
   }
+}
+
+function chromiumUserAgent() {
+  const chromeVersion = process.versions.chrome || '131.0.0.0'
+  return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`
 }

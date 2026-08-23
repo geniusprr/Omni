@@ -1,4 +1,4 @@
-import { BrowserView, type BrowserWindow } from 'electron'
+import { WebContentsView, type BrowserWindow } from 'electron'
 import type { BrowserManager } from './BrowserManager.js'
 
 const TAB_COUNT = 3
@@ -16,8 +16,8 @@ export async function runBrowserLifecycleSmoke(browser: BrowserManager, window: 
   for (const id of ids) {
     browser.createTab(id, `${baseUrl}/page?tab=${id}`, initialBounds)
     const record = browser.tabs.get(id)
-    if (!record?.view || !(record.view instanceof BrowserView)) {
-      throw new Error(`${id}: BrowserView oluşturulmadı`)
+    if (!record?.view || !(record.view instanceof WebContentsView)) {
+      throw new Error(`${id}: WebContentsView oluşturulmadı`)
     }
     await waitUntil(
       () => !record.webContents.isLoading() && record.webContents.getURL().startsWith(baseUrl),
@@ -67,7 +67,7 @@ export async function runBrowserLifecycleSmoke(browser: BrowserManager, window: 
   }
 
   browser.saveSession({ tabs: [], activeTabId: null })
-  console.log(`[browser-smoke] ${TAB_COUNT} BrowserView: ölçüm, görünürlük, sekme geçişi, yeniden boyutlandırma ve temizleme geçti`)
+  console.log(`[browser-smoke] ${TAB_COUNT} WebContentsView: ölçüm, görünürlük, sekme geçişi, yeniden boyutlandırma ve temizleme geçti`)
   // BrowserWindow owns the native child hierarchy under test.
   void window
 }
@@ -79,19 +79,19 @@ async function assertVisibleViewIsPainted(
 ) {
   await wait(100)
   const state = browser.getDebugSnapshot().viewStates.find((view) => view.id === id)
-  if (!state?.visible) throw new Error('Aktif BrowserView pencereye bağlı değil.')
+  if (!state?.visible) throw new Error('Aktif WebContentsView pencereye bağlı değil.')
   if (
     state.bounds.x !== expectedBounds.x
     || state.bounds.y !== expectedBounds.y
     || state.bounds.width !== expectedBounds.width
     || state.bounds.height !== expectedBounds.height
   ) {
-    throw new Error(`BrowserView yanlış sınırlarla etkinleşti: ${JSON.stringify(state.bounds)}`)
+    throw new Error(`WebContentsView yanlış sınırlarla etkinleşti: ${JSON.stringify(state.bounds)}`)
   }
 
   const record = browser.tabs.get(id)
-  if (!record) throw new Error('Aktif BrowserView kaydı bulunamadı.')
-  // capturePage is not reliable for a detached/reattached BrowserView in a
+  if (!record) throw new Error('Aktif WebContentsView kaydı bulunamadı.')
+  // capturePage is not reliable for a detached/reattached WebContentsView in a
   // GPU-disabled Windows smoke process (it can throw UnknownVizError even
   // though the page has rendered). Verify the actual child renderer instead:
   // the page must be complete, laid out, and contain its known body. A smoke
@@ -119,13 +119,13 @@ async function assertVisibleViewIsPainted(
     || renderState.height < 1
     || !renderState.hasSmokeContent
   ) {
-    throw new Error(`Aktif BrowserView renderer durumu beklenenden farklı: ${JSON.stringify(renderState)}`)
+    throw new Error(`Aktif WebContentsView renderer durumu beklenenden farklı: ${JSON.stringify(renderState)}`)
   }
 }
 
 async function assertPageTheme(browser: BrowserManager, id: string, expected: 'light' | 'dark') {
   const record = browser.tabs.get(id)
-  if (!record) throw new Error('Tema kontrolü için BrowserView kaydı bulunamadı.')
+  if (!record) throw new Error('Tema kontrolü için WebContentsView kaydı bulunamadı.')
   const expectedDark = expected === 'dark'
   const expectedBackground = expectedDark ? 'rgb(22, 30, 45)' : 'rgb(25, 104, 217)'
   await waitUntilAsync(async () => {
@@ -137,7 +137,7 @@ async function assertPageTheme(browser: BrowserManager, id: string, expected: 'l
       true,
     ) as { dark: boolean; background: string }
     return state.dark === expectedDark && state.background === expectedBackground
-  }, 5_000, `BrowserView ${expected} tema sinyalini almadı.`)
+  }, 5_000, `WebContentsView ${expected} tema sinyalini almadı.`)
 }
 
 async function assertOnlyActiveViewIsVisible(browser: BrowserManager, expectedId: string | null) {

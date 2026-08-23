@@ -97,12 +97,14 @@ function inlineMarkdownToHtml(value: string) {
       const cleanTarget = target.trim()
       const fullTarget = anchor?.trim() ? `${cleanTarget}#${anchor.trim()}` : cleanTarget
       const label = alias?.trim() || cleanTarget
-      return `<a href="#" data-wikilink="${escapeAttribute(fullTarget)}" class="wysiwyg-wikilink">${escapeHtml(label)}</a>`
+      // The full line has already been HTML-escaped above. Re-escaping here
+      // would turn e.g. "R&D" into the visible text "R&amp;D".
+      return `<a href="#" data-wikilink="${fullTarget}" class="wysiwyg-wikilink">${label}</a>`
     },
   )
   text = text.replace(
     /\[([^\]]+)\]\(([^)\s]+)\)/g,
-    (_match, label: string, href: string) => `<a href="${escapeAttribute(href)}" class="wysiwyg-link">${label}</a>`,
+    (_match, label: string, href: string) => `<a href="${href}" class="wysiwyg-link">${label}</a>`,
   )
   text = text
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -248,6 +250,28 @@ function listItemToMarkdown(item: Element) {
     .trimEnd()
 }
 
+function listToMarkdown(list: HTMLElement, depth = 0): string {
+  const isOrdered = list.tagName.toLowerCase() === 'ol'
+  const isTaskList = !isOrdered && list.dataset.taskList === 'true'
+  const indent = '    '.repeat(depth)
+  const items = Array.from(list.children).filter((child) => child.tagName.toLowerCase() === 'li')
+
+  return items.map((item, index) => {
+    const prefix = isTaskList
+      ? `- [${item.getAttribute('data-checked') === 'true' ? 'x' : ' '}] `
+      : isOrdered
+        ? `${index + 1}. `
+        : '- '
+    const ownLine = `${indent}${prefix}${listItemToMarkdown(item)}`.trimEnd()
+    const nestedLists = Array.from(item.children)
+      .filter((child) => child.matches('ul, ol'))
+      .map((child) => listToMarkdown(child as HTMLElement, depth + 1))
+      .filter(Boolean)
+
+    return nestedLists.length > 0 ? `${ownLine}\n${nestedLists.join('\n')}` : ownLine
+  }).join('\n')
+}
+
 function blockNodeToMarkdown(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent || '').trim()
   if (!(node instanceof HTMLElement)) return ''
@@ -267,14 +291,10 @@ function blockNodeToMarkdown(node: Node): string {
   }
   if (tag === 'hr') return '---'
   if (tag === 'ul') {
-    const items = Array.from(node.children).filter((child) => child.tagName.toLowerCase() === 'li')
-    if (node.dataset.taskList === 'true') {
-      return items.map((item) => `- [${item.getAttribute('data-checked') === 'true' ? 'x' : ' '}] ${listItemToMarkdown(item)}`.trimEnd()).join('\n')
-    }
-    return items.map((item) => `- ${listItemToMarkdown(item)}`.trimEnd()).join('\n')
+    return listToMarkdown(node)
   }
   if (tag === 'ol') {
-    return Array.from(node.children).filter((child) => child.tagName.toLowerCase() === 'li').map((item, index) => `${index + 1}. ${listItemToMarkdown(item)}`.trimEnd()).join('\n')
+    return listToMarkdown(node)
   }
   return Array.from(node.childNodes).map(inlineNodeToMarkdown).join('').trimEnd()
 }

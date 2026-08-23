@@ -72,6 +72,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   const [content, setContent] = useState<string>('')
   const [initialLoading, setInitialLoading] = useState(true)
   const saveTimeoutRef = useRef<number | null>(null)
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve())
   const lastSavedContentRef = useRef<string>('')
   const pendingContentRef = useRef<string | null>(null)
   const vaultPathRef = useRef(vaultPath)
@@ -85,14 +86,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     }
     const pending = pendingContentRef.current
     if (!pending || pending === lastSavedContentRef.current) return
-
-    const finalVaultPath = vaultPathRef.current
-    const finalTabPath = tabPathRef.current
-    void desktop.vault.writeFile(finalVaultPath, finalTabPath, pending).then(() => {
-      void vaultStore.handleFileContentChange(finalTabPath, pending)
-    }).catch(() => {
-      // The tab remains marked dirty if the final flush cannot be written.
-    })
+    enqueueSave(pending, false)
   }, [])
 
   useImperativeHandle(ref, () => ({
@@ -285,6 +279,32 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     onStatsChange?.({ wordCount: words, charCount: chars })
   }
 
+  function enqueueSave(newDoc: string, reportStatus = true) {
+    saveChainRef.current = saveChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        // A newer edit can supersede a queued (but not yet started) write.
+        if (pendingContentRef.current !== newDoc) return
+
+        const targetVaultPath = vaultPathRef.current
+        const targetTabPath = tabPathRef.current
+        await desktop.vault.writeFile(targetVaultPath, targetTabPath, newDoc)
+        lastSavedContentRef.current = newDoc
+        await vaultStore.handleFileContentChange(targetTabPath, newDoc)
+
+        // Never announce an older write as "saved" while newer content is
+        // still waiting. The queued saves are serial, so the newest write wins.
+        if (pendingContentRef.current === newDoc) {
+          pendingContentRef.current = null
+          tabStore.setTabDirty(tab.id, false)
+          if (reportStatus) onSaveStatusChange?.('saved')
+        }
+      })
+      .catch(() => {
+        // Keep the pending content and dirty state so the next edit retries.
+      })
+  }
+
   function handleContentChange(newDoc: string) {
     setContent(newDoc)
     pendingContentRef.current = newDoc
@@ -298,18 +318,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
     saveTimeoutRef.current = window.setTimeout(() => {
       if (newDoc !== lastSavedContentRef.current) {
-        void (async () => {
-          try {
-            await desktop.vault.writeFile(vaultPath, tab.path, newDoc)
-            lastSavedContentRef.current = newDoc
-            if (pendingContentRef.current === newDoc) pendingContentRef.current = null
-            tabStore.setTabDirty(tab.id, false)
-            await vaultStore.handleFileContentChange(tab.path, newDoc)
-            onSaveStatusChange?.('saved')
-          } catch {
-            // Keep the tab dirty when a write fails. A later edit retries it.
-          }
-        })()
+        enqueueSave(newDoc)
       } else {
         if (pendingContentRef.current === newDoc) pendingContentRef.current = null
         tabStore.setTabDirty(tab.id, false)

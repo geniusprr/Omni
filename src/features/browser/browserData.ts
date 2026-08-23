@@ -121,7 +121,7 @@ export function consumeBrowserNavigation() {
   return pending
 }
 
-export function normalizeBrowserInput(input: string) {
+export function normalizeBrowserInput(input: string, searchEngine: 'google' | 'duckduckgo' | 'brave' | 'bing' = 'google') {
   const value = input.trim()
   if (!value) return 'about:blank'
   if (/^https?:\/\//i.test(value)) return value
@@ -129,7 +129,13 @@ export function normalizeBrowserInput(input: string) {
   if (/^[\w-]+(?:\.[\w-]+)+(?:[/?#].*)?$/i.test(value) && !value.includes(' ')) {
     return `https://${value}`
   }
-  return `https://www.google.com/search?q=${encodeURIComponent(value)}`
+  const searchUrls = {
+    google: 'https://www.google.com/search?q=',
+    duckduckgo: 'https://duckduckgo.com/?q=',
+    brave: 'https://search.brave.com/search?q=',
+    bing: 'https://www.bing.com/search?q=',
+  } as const
+  return `${searchUrls[searchEngine]}${encodeURIComponent(value)}`
 }
 
 export function hostnameFromUrl(url: string) {

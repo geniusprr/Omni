@@ -8,16 +8,20 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import Download from 'lucide-react/dist/esm/icons/download.js'
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js'
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
+import FolderOpen from 'lucide-react/dist/esm/icons/folder-open.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import History from 'lucide-react/dist/esm/icons/history.js'
 import LoaderCircle from 'lucide-react/dist/esm/icons/loader-circle.js'
 import Lock from 'lucide-react/dist/esm/icons/lock.js'
 import Pin from 'lucide-react/dist/esm/icons/pin.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
+import Puzzle from 'lucide-react/dist/esm/icons/puzzle.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
 import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js'
+import Settings2 from 'lucide-react/dist/esm/icons/settings-2.js'
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js'
 import Star from 'lucide-react/dist/esm/icons/star.js'
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
@@ -34,7 +38,9 @@ import {
   type BrowserBounds,
   type BrowserDownloadItem,
   type BrowserHistoryItem,
+  type BrowserFeatureState,
   type BrowserMediaProjection,
+  type BrowserPermissionRecord,
   type BrowserPermissionRequest,
   type BrowserTabProjection,
 } from '@/lib/desktop'
@@ -82,7 +88,30 @@ interface BrowserPageProps {
   onExecuteCommand?: (query: string) => void
 }
 
-type BrowserPanel = 'history' | 'downloads' | null
+type BrowserPanel = 'history' | 'downloads' | 'settings' | 'permissions' | 'extensions' | null
+
+const BROWSER_INTERNAL_URLS: Record<Exclude<BrowserPanel, null>, string> = {
+  settings: 'omni://settings',
+  history: 'omni://history',
+  downloads: 'omni://downloads',
+  permissions: 'omni://permissions',
+  extensions: 'omni://extensions',
+}
+
+function browserPanelFromUrl(value: string): Exclude<BrowserPanel, null> | null {
+  const normalized = value.trim().replace(/\/+$/, '').toLowerCase()
+  const match = (Object.entries(BROWSER_INTERNAL_URLS) as Array<[Exclude<BrowserPanel, null>, string]>)
+    .find(([, url]) => url === normalized)
+  return match?.[0] ?? null
+}
+
+type BrowserSearchEngine = 'google' | 'duckduckgo' | 'brave' | 'bing'
+
+interface BrowserPreferences {
+  searchEngine: BrowserSearchEngine
+  homePage: string
+  defaultZoom: number
+}
 
 interface TabContextMenuState {
   tabId: string
@@ -103,6 +132,9 @@ interface TabDragSession {
   started: boolean
   dropTarget: TabDropTarget | null
   origin: HTMLElement
+  ghost: HTMLElement | null
+  pointerOffsetX: number
+  pointerOffsetY: number
   moveHandler: (event: globalThis.PointerEvent) => void
   upHandler: (event: globalThis.PointerEvent) => void
   cancelHandler: (event: globalThis.PointerEvent) => void
@@ -117,6 +149,35 @@ interface BrowserTooltipProps {
 const TABS_KEY = 'minios_browser_tabs_v2'
 const ACTIVE_KEY = 'minios_browser_active_tab_v2'
 const SHOW_FAVORITES_BAR_KEY = 'minios_browser_show_favorites_bar_v1'
+const BROWSER_PREFERENCES_KEY = 'minios_browser_preferences_v1'
+
+const DEFAULT_BROWSER_PREFERENCES: BrowserPreferences = {
+  searchEngine: 'google',
+  homePage: DEFAULT_BROWSER_HOME_URL,
+  defaultZoom: 1,
+}
+
+function loadBrowserPreferences(): BrowserPreferences {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(BROWSER_PREFERENCES_KEY) || '{}') as Partial<BrowserPreferences>
+    const searchEngine: BrowserSearchEngine = ['google', 'duckduckgo', 'brave', 'bing'].includes(parsed.searchEngine || '')
+      ? parsed.searchEngine as BrowserSearchEngine
+      : DEFAULT_BROWSER_PREFERENCES.searchEngine
+    const homePage = typeof parsed.homePage === 'string' && /^https?:\/\//i.test(parsed.homePage)
+      ? parsed.homePage
+      : DEFAULT_BROWSER_PREFERENCES.homePage
+    const defaultZoom = typeof parsed.defaultZoom === 'number' && parsed.defaultZoom >= 0.5 && parsed.defaultZoom <= 2
+      ? parsed.defaultZoom
+      : DEFAULT_BROWSER_PREFERENCES.defaultZoom
+    return { searchEngine, homePage, defaultZoom }
+  } catch {
+    return DEFAULT_BROWSER_PREFERENCES
+  }
+}
+
+function persistBrowserPreferences(preferences: BrowserPreferences) {
+  localStorage.setItem(BROWSER_PREFERENCES_KEY, JSON.stringify(preferences))
+}
 
 function BrowserTooltip({ label, children, side = 'bottom' }: BrowserTooltipProps) {
   return (
@@ -127,12 +188,12 @@ function BrowserTooltip({ label, children, side = 'bottom' }: BrowserTooltipProp
   )
 }
 
-function loadState(): BrowserState {
+function loadState(homePage = DEFAULT_BROWSER_HOME_URL): BrowserState {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(TABS_KEY) || '[]')
     const migrated = migrateBrowserState(parsed, localStorage.getItem(ACTIVE_KEY))
     if (migrated.tabs.length === 0) {
-      const initialTab = makeTab()
+      const initialTab = makeTab(homePage)
       return {
         tabs: [initialTab],
         activeTabId: initialTab.id,
@@ -141,7 +202,7 @@ function loadState(): BrowserState {
     }
     return migrated
   } catch {
-    const initialTab = makeTab()
+    const initialTab = makeTab(homePage)
     return { tabs: [initialTab], activeTabId: initialTab.id, mediaByTabId: {} }
   }
 }
@@ -205,7 +266,8 @@ export function BrowserPage({
   onExitBrowser,
   onExecuteCommand,
 }: BrowserPageProps) {
-  const [state, setState] = useState(loadState)
+  const [browserPreferences, setBrowserPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
+  const [state, setState] = useState(() => loadState(browserPreferences.homePage))
   const [address, setAddress] = useState('')
   const [favorites, setFavorites] = useState<BrowserFavorite[]>(loadFavorites)
   const [showFavoritesBar, setShowFavoritesBar] = useState(() => {
@@ -221,9 +283,14 @@ export function BrowserPage({
   const [historySearch, setHistorySearch] = useState('')
   const [clearingHistory, setClearingHistory] = useState(false)
   const [downloads, setDownloads] = useState<BrowserDownloadItem[]>([])
+  const [browserFeatures, setBrowserFeatures] = useState<BrowserFeatureState | null>(null)
+  const [permissionRecords, setPermissionRecords] = useState<BrowserPermissionRecord[]>([])
+  const [extensionStoreInput, setExtensionStoreInput] = useState('')
+  const [browserAdminBusy, setBrowserAdminBusy] = useState<string | null>(null)
   const [permissionRequest, setPermissionRequest] = useState<BrowserPermissionRequest | null>(null)
   const [copiedUrl, setCopiedUrl] = useState(false)
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
+  const [nativeSurfaceSuppressed, setNativeSurfaceSuppressed] = useState(false)
   const [nativeRestoreReady, setNativeRestoreReady] = useState(!isElectronRuntime())
   const [nativeSurfaceActiveId, setNativeSurfaceActiveId] = useState<string | null>(null)
   const [zoomByTabId, setZoomByTabId] = useState<Record<string, number>>({})
@@ -251,12 +318,27 @@ export function BrowserPage({
 
   stateRef.current = state
   const active = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null
-  const activeZoom = active?.id ? zoomByTabId[active.id] ?? 1 : 1
+  const activeZoom = active?.id ? zoomByTabId[active.id] ?? browserPreferences.defaultZoom : browserPreferences.defaultZoom
 
   const updateNativeSurfaceActiveId = useCallback((id: string | null) => {
     nativeSurfaceActiveIdRef.current = id
     setNativeSurfaceActiveId(id)
   }, [])
+
+  /**
+   * BrowserView is a native child surface and therefore always composites above
+   * React. Any renderer-owned browser UI (settings, extensions, history,
+   * downloads, permission prompts and tab menus) must detach that native surface
+   * before it is shown. Keeping this as an explicit mode also prevents a
+   * deliberate detach from being mistaken for a page that is still loading.
+   */
+  const prepareRendererBrowserUi = useCallback(async () => {
+    setNativeSurfaceSuppressed(true)
+    surfaceSyncVersionRef.current += 1
+    if (!isElectronRuntime()) return
+    await desktop.browser.deactivate().catch(() => undefined)
+    updateNativeSurfaceActiveId(null)
+  }, [updateNativeSurfaceActiveId])
 
   const setActiveZoom = useCallback(
     (value: number) => {
@@ -403,6 +485,7 @@ export function BrowserPage({
       const canShowNativeSurface = isVisible
         && nativeRestoreReady
         && !closePendingRef.current
+        && !nativeSurfaceSuppressed
         && panel === null
         && permissionRequest === null
         && tabContextMenu === null
@@ -473,12 +556,13 @@ export function BrowserPage({
         await desktop.browser.deactivate().catch(() => undefined)
       }
     },
-    [createBrowserTab, isVisible, nativeRestoreReady, panel, permissionRequest, setTabLoadState, syncTabBounds, tabContextMenu, updateNativeSurfaceActiveId],
+    [createBrowserTab, isVisible, nativeRestoreReady, nativeSurfaceSuppressed, panel, permissionRequest, setTabLoadState, syncTabBounds, tabContextMenu, updateNativeSurfaceActiveId],
   )
 
   const navigateTab = useCallback(
     async (id: string, input: string) => {
-      const url = normalizeBrowserInput(input)
+      setPanel(null)
+      const url = normalizeBrowserInput(input, browserPreferences.searchEngine)
       const tab = stateRef.current.tabs.find((item) => item.id === id)
       if (!tab) {
         setError('Sekme bulunamadı.')
@@ -534,12 +618,13 @@ export function BrowserPage({
         return false
       }
     },
-    [createBrowserTab, onEnterBrowser, project, setTabLoadState, syncTabBounds],
+    [browserPreferences.searchEngine, createBrowserTab, onEnterBrowser, project, setTabLoadState, syncTabBounds],
   )
 
   const openTab = useCallback(
     async (url?: string, incognito = false) => {
-      const normalizedUrl = normalizeBrowserInput(url ?? DEFAULT_BROWSER_HOME_URL)
+      setPanel(null)
+      const normalizedUrl = normalizeBrowserInput(url ?? browserPreferences.homePage, browserPreferences.searchEngine)
       // Shortcuts can be triggered from the app home while the browser surface
       // is still hidden. Keep the requested URL until its measured viewport is
       // available, rather than creating a blank tab that needs a second click.
@@ -581,7 +666,7 @@ export function BrowserPage({
         if (normalizedUrl) openingUrlsRef.current.delete(normalizedUrl)
       }
     },
-    [isVisible, navigateTab, nativeRestoreReady, onEnterBrowser, setTabLoadState, synchronizeBrowserSurface],
+    [browserPreferences.homePage, browserPreferences.searchEngine, isVisible, navigateTab, nativeRestoreReady, onEnterBrowser, setTabLoadState, synchronizeBrowserSurface],
   )
 
   // Re-entering the browser from another workspace starts a fresh tab only
@@ -597,6 +682,7 @@ export function BrowserPage({
 
   const select = useCallback(
     async (id: string) => {
+      setPanel(null)
       const next = selectTabState(stateRef.current, id)
       if (next === stateRef.current) return
       stateRef.current = next
@@ -764,6 +850,28 @@ export function BrowserPage({
     setFavorites(next)
   }, [active?.favicon, active?.title, active?.url, favorites])
 
+  const refreshBrowserAdministration = useCallback(async () => {
+    const [features, permissions] = await Promise.all([
+      desktop.browser.getFeatures().catch(() => null),
+      desktop.browser.listPermissions().catch(() => []),
+    ])
+    if (features) setBrowserFeatures(features)
+    setPermissionRecords(permissions)
+    return features
+  }, [])
+
+  const refreshInternalPanelData = useCallback(async (target: Exclude<BrowserPanel, null>) => {
+    if (target === 'history') {
+      setHistory(await desktop.browser.listHistory().catch(() => []))
+      return
+    }
+    if (target === 'downloads') {
+      setDownloads(await desktop.browser.listDownloads().catch(() => []))
+      return
+    }
+    await refreshBrowserAdministration()
+  }, [refreshBrowserAdministration])
+
   const togglePanel = useCallback(
     async (next: Exclude<BrowserPanel, null>) => {
       onEnterBrowser?.()
@@ -771,11 +879,11 @@ export function BrowserPage({
         setPanel(null)
         return
       }
+      await prepareRendererBrowserUi()
       setPanel(next)
-      if (next === 'history') setHistory(await desktop.browser.listHistory().catch(() => []))
-      else if (next === 'downloads') setDownloads(await desktop.browser.listDownloads().catch(() => []))
+      await refreshInternalPanelData(next)
     },
-    [onEnterBrowser, panel],
+    [onEnterBrowser, panel, prepareRendererBrowserUi, refreshInternalPanelData],
   )
 
   const togglePin = useCallback(
@@ -938,6 +1046,10 @@ export function BrowserPage({
       // Ctrl+R / F5: Reload active tab
       if ((isCtrlOrCmd && e.key.toLowerCase() === 'r') || e.key === 'F5') {
         e.preventDefault()
+        if (panel) {
+          void refreshInternalPanelData(panel)
+          return
+        }
         if (activeTab?.id) {
           if (isElectronRuntime()) void desktop.browser.reload(activeTab.id)
           else if (activeTab.url) void navigateTab(activeTab.id, activeTab.url)
@@ -956,6 +1068,10 @@ export function BrowserPage({
       // Alt+Left / Alt+ArrowLeft: Back
       if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'Left')) {
         e.preventDefault()
+        if (panel) {
+          setPanel(null)
+          return
+        }
         if (activeTab?.canGoBack) void desktop.browser.back(activeTab.id)
         return
       }
@@ -1032,7 +1148,7 @@ export function BrowserPage({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [close, isVisible, navigateTab, openTab, reopenLastClosed, select, toggleFavorite, toggleMute, togglePanel])
+  }, [close, isVisible, navigateTab, openTab, panel, refreshInternalPanelData, reopenLastClosed, select, toggleFavorite, toggleMute, togglePanel])
 
   // Native Session Restore
   useEffect(() => {
@@ -1091,7 +1207,9 @@ export function BrowserPage({
     if (isElectronRuntime()) void desktop.browser.saveSession(sessionSnapshot(state)).catch(() => undefined)
   }, [state])
 
-  useEffect(() => setAddress(active?.url ?? ''), [active?.id, active?.url])
+  useEffect(() => {
+    setAddress(panel ? BROWSER_INTERNAL_URLS[panel] : active?.url ?? '')
+  }, [active?.id, active?.url, panel])
 
   useEffect(() => {
     const created = (projection: BrowserTabProjection) => {
@@ -1126,7 +1244,9 @@ export function BrowserPage({
         setError(payload.reason || payload.projection.error || 'Sekme işlemi sonlandı.')
       }
     }
-    const permission = (request: BrowserPermissionRequest) => setPermissionRequest(request)
+    const permission = (request: BrowserPermissionRequest) => {
+      void prepareRendererBrowserUi().then(() => setPermissionRequest(request))
+    }
     const download = (item: BrowserDownloadItem) =>
       setDownloads((current) => [item, ...current.filter((entry) => entry.id !== item.id)])
     const historyUpdate = (item: BrowserHistoryItem | null) => {
@@ -1152,7 +1272,7 @@ export function BrowserPage({
       desktop.browser.on<BrowserHistoryItem | null>(BROWSER_EVENTS.historyUpdated, historyUpdate),
     ]
     return () => stops.forEach((stop) => stop())
-  }, [isVisible, openTab, project, syncTabBounds])
+  }, [isVisible, openTab, prepareRendererBrowserUi, project, syncTabBounds])
 
   useEffect(() => {
     const sync = () => setFavorites(loadFavorites())
@@ -1202,6 +1322,23 @@ export function BrowserPage({
     return () => window.clearInterval(timer)
   }, [])
 
+  useEffect(() => {
+    if (!isVisible || browserFeatures) return
+    void refreshBrowserAdministration()
+  }, [browserFeatures, isVisible, refreshBrowserAdministration])
+
+  // Keep native Chromium detached for the entire lifetime of renderer-owned
+  // browser UI. Restore it one animation frame after the last overlay closes so
+  // the closing panel is painted out before the native child is composited back.
+  useEffect(() => {
+    if (panel !== null || permissionRequest !== null || tabContextMenu !== null) {
+      setNativeSurfaceSuppressed(true)
+      return
+    }
+    const frame = window.requestAnimationFrame(() => setNativeSurfaceSuppressed(false))
+    return () => window.cancelAnimationFrame(frame)
+  }, [panel, permissionRequest, tabContextMenu])
+
   // Close custom context menu on outside click
   useEffect(() => {
     if (!tabContextMenu) return
@@ -1214,6 +1351,12 @@ export function BrowserPage({
     event.preventDefault()
     const query = address.trim()
     if (!query) return
+    const internalPanel = browserPanelFromUrl(query)
+    if (internalPanel) {
+      if (panel === internalPanel) void refreshInternalPanelData(internalPanel)
+      else void togglePanel(internalPanel)
+      return
+    }
     const lower = query.toLocaleLowerCase('tr-TR')
     const isCommand =
       lower.startsWith('/') ||
@@ -1227,13 +1370,15 @@ export function BrowserPage({
       onExecuteCommand(query)
       return
     }
+    setPanel(null)
     if (active) void navigateTab(active.id, query)
     else void openTab(query)
   }
 
   function handleCopyUrl() {
-    if (!active?.url) return
-    void navigator.clipboard.writeText(active.url)
+    const value = panel ? BROWSER_INTERNAL_URLS[panel] : active?.url
+    if (!value) return
+    void navigator.clipboard.writeText(value)
     setCopiedUrl(true)
     setTimeout(() => setCopiedUrl(false), 1500)
   }
@@ -1250,6 +1395,8 @@ export function BrowserPage({
     } catch {
       /* the originating tab may have been closed during the drag */
     }
+
+    session.ghost?.remove()
 
     tabDragRef.current = null
     document.body.classList.remove('is-browser-tab-dragging')
@@ -1269,10 +1416,44 @@ export function BrowserPage({
     if (!session.started) {
       if (Math.hypot(event.clientX - session.startX, event.clientY - session.startY) < 6) return
       session.started = true
+      const rect = session.origin.getBoundingClientRect()
+      const ghost = session.origin.cloneNode(true) as HTMLElement
+      ghost.removeAttribute('role')
+      ghost.removeAttribute('tabindex')
+      ghost.removeAttribute('aria-selected')
+      ghost.removeAttribute('aria-posinset')
+      ghost.removeAttribute('aria-setsize')
+      ghost.removeAttribute('aria-grabbed')
+      ghost.removeAttribute('data-browser-tab-id')
+      ghost.setAttribute('aria-hidden', 'true')
+      ghost.classList.remove('edge-browser__tab--dragging', 'edge-browser__tab--drop-before', 'edge-browser__tab--drop-after')
+      ghost.classList.add('edge-browser__tab-drag-preview')
+      ghost.style.width = `${rect.width}px`
+      ghost.style.height = `${rect.height}px`
+      session.pointerOffsetX = session.startX - rect.left
+      session.pointerOffsetY = session.startY - rect.top
+      session.ghost = ghost
+      document.body.appendChild(ghost)
       setDraggingTabId(session.tabId)
       document.body.classList.add('is-browser-tab-dragging')
     }
     if (event.cancelable) event.preventDefault()
+
+    if (session.ghost) {
+      session.ghost.style.left = `${event.clientX - session.pointerOffsetX}px`
+      session.ghost.style.top = `${event.clientY - session.pointerOffsetY}px`
+    }
+
+    const scroller = tabScrollRef.current
+    if (scroller) {
+      const scrollRect = scroller.getBoundingClientRect()
+      const edgeSize = Math.min(54, Math.max(32, scrollRect.width * 0.08))
+      if (event.clientX < scrollRect.left + edgeSize) {
+        scroller.scrollLeft -= 18
+      } else if (event.clientX > scrollRect.right - edgeSize) {
+        scroller.scrollLeft += 18
+      }
+    }
 
     const elementAtPoint = document.elementFromPoint(event.clientX, event.clientY)
     const tabElement = elementAtPoint instanceof Element
@@ -1326,6 +1507,9 @@ export function BrowserPage({
       started: false,
       dropTarget: null,
       origin,
+      ghost: null,
+      pointerOffsetX: 0,
+      pointerOffsetY: 0,
       moveHandler,
       upHandler,
       cancelHandler,
@@ -1382,11 +1566,12 @@ export function BrowserPage({
   function handleTabContextMenu(event: MouseEvent, id: string) {
     event.preventDefault()
     event.stopPropagation()
-    setTabContextMenu({
+    const nextMenu = {
       tabId: id,
       x: Math.min(event.clientX, window.innerWidth - 220),
       y: Math.min(event.clientY, window.innerHeight - 300),
-    })
+    }
+    void prepareRendererBrowserUi().then(() => setTabContextMenu(nextMenu))
   }
 
   function handleTabScrollWheel(event: React.WheelEvent) {
@@ -1422,6 +1607,125 @@ export function BrowserPage({
     }
   }
 
+  function updateBrowserPreferences(patch: Partial<BrowserPreferences>) {
+    const next = { ...browserPreferences, ...patch }
+    setBrowserPreferences(next)
+    persistBrowserPreferences(next)
+  }
+
+  async function toggleAdBlock() {
+    if (browserAdminBusy) return
+    setBrowserAdminBusy('adblock')
+    try {
+      const current = browserFeatures ?? await desktop.browser.getFeatures()
+      const next = await desktop.browser.setAdBlock(!current.adBlockEnabled)
+      setBrowserFeatures(next)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Reklam engelleme ayarı değiştirilemedi.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
+  async function installStoreExtension() {
+    const value = extensionStoreInput.trim()
+    if (!value || browserAdminBusy) return
+    setBrowserAdminBusy('extension-store')
+    try {
+      await desktop.browser.installExtensionFromStore(value)
+      setExtensionStoreInput('')
+      await refreshBrowserAdministration()
+      setError(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Chrome eklentisi yüklenemedi.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
+  async function installUnpackedExtension() {
+    if (browserAdminBusy) return
+    setBrowserAdminBusy('extension-unpacked')
+    try {
+      await desktop.browser.installUnpackedExtension()
+      await refreshBrowserAdministration()
+      setError(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Paketlenmemiş eklenti yüklenemedi.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
+  async function setManagedExtensionEnabled(id: string, enabled: boolean) {
+    if (browserAdminBusy) return
+    setBrowserAdminBusy(`extension-${id}`)
+    try {
+      setBrowserFeatures(await desktop.browser.setExtensionEnabled(id, enabled))
+      setError(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Eklenti durumu değiştirilemedi.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
+  async function removeManagedExtension(id: string) {
+    if (browserAdminBusy) return
+    setBrowserAdminBusy(`extension-${id}`)
+    try {
+      setBrowserFeatures(await desktop.browser.removeExtension(id))
+      setError(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Eklenti kaldırılamadı.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
+  async function clearBrowserStorage(scope: 'cache' | 'cookies' | 'all') {
+    if (browserAdminBusy) return
+    setBrowserAdminBusy(`clear-${scope}`)
+    try {
+      await desktop.browser.clearBrowsingData(scope)
+      setError(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Tarama verileri temizlenemedi.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
+  async function clearAllPermissions() {
+    if (browserAdminBusy) return
+    setBrowserAdminBusy('permissions')
+    try {
+      await desktop.browser.clearPermission()
+      setPermissionRecords([])
+      setError(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Site izinleri temizlenemedi.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
+  async function clearPermissionRecord(record: BrowserPermissionRecord) {
+    if (browserAdminBusy) return
+    setBrowserAdminBusy(`permission-${record.origin}-${record.permission}`)
+    try {
+      await desktop.browser.clearPermission(record.origin, record.permission)
+      setPermissionRecords((current) => current.filter((item) =>
+        item.origin !== record.origin || item.permission !== record.permission,
+      ))
+      setError(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Site izni sıfırlanamadı.'))
+    } finally {
+      setBrowserAdminBusy(null)
+    }
+  }
+
   async function decidePermission(decision: 'allow' | 'deny') {
     if (!permissionRequest) return
     await desktop.browser
@@ -1447,11 +1751,25 @@ export function BrowserPage({
           h.url.toLowerCase().includes(historySearch.toLowerCase()),
       )
     : history
+  const panelTitle = panel === 'history'
+    ? 'Tarama Geçmişi'
+    : panel === 'downloads'
+      ? 'İndirmeler'
+      : panel === 'extensions'
+        ? 'Eklentiler'
+        : panel === 'permissions'
+          ? 'Site İzinleri'
+        : 'Tarayıcı Ayarları'
 
   const isBlankActiveTab = !active?.url
+  const rendererBrowserUiActive = nativeSurfaceSuppressed
+    || panel !== null
+    || permissionRequest !== null
+    || tabContextMenu !== null
   const nativeSurfaceLoading = Boolean(
     isElectronRuntime()
       && isVisible
+      && !rendererBrowserUiActive
       && active
       && active.url
       && (
@@ -1464,6 +1782,7 @@ export function BrowserPage({
   const nativeSurfaceError = Boolean(
     isElectronRuntime()
       && isVisible
+      && !rendererBrowserUiActive
       && active?.url
       && active.error
       && !active.loading,
@@ -1472,7 +1791,7 @@ export function BrowserPage({
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={150}>
       <section
-        className={`edge-browser ${browserThemeClass}`}
+        className={`edge-browser ${browserThemeClass} ${showFavoritesBar && favorites.length > 0 ? 'edge-browser--favorites-visible' : ''}`}
         style={{ colorScheme: theme }}
         aria-label="Gömülü tarayıcı"
       >
@@ -1515,17 +1834,29 @@ export function BrowserPage({
                 const isDragging = draggingTabId === tab.id
                 const isDropBefore = tabDropTarget?.tabId === tab.id && tabDropTarget.position === 'before'
                 const isDropAfter = tabDropTarget?.tabId === tab.id && tabDropTarget.position === 'after'
+                const displayedTabTitle = isSelected && panel ? panelTitle : tab.title
+                const internalTabIcon = isSelected && panel
+                  ? panel === 'history'
+                    ? <History size={13} />
+                    : panel === 'downloads'
+                      ? <Download size={13} />
+                      : panel === 'permissions'
+                        ? <ShieldCheck size={13} />
+                        : panel === 'extensions'
+                          ? <Puzzle size={13} />
+                          : <Settings2 size={13} />
+                  : null
 
                 return (
                   <BrowserTooltip
                     key={tab.id}
-                    label={`${tab.title}${isTabIncognito ? ' (Gizli Sekme)' : ''}`}
+                    label={`${displayedTabTitle}${isTabIncognito ? ' (Gizli Sekme)' : ''}`}
                     side="bottom"
                   >
                     <div
                       role="tab"
                       tabIndex={0}
-                      aria-label={`${tab.title}${isTabIncognito ? ' (Gizli Sekme)' : ''}`}
+                      aria-label={`${displayedTabTitle}${isTabIncognito ? ' (Gizli Sekme)' : ''}`}
                       aria-selected={isSelected}
                       aria-posinset={tabIndex + 1}
                       aria-setsize={state.tabs.length}
@@ -1539,16 +1870,16 @@ export function BrowserPage({
                       onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
                     >
                       <div className="edge-browser__tab-icon">
-                        {isTabIncognito ? (
+                        {internalTabIcon ?? (isTabIncognito ? (
                           <EyeOff size={13} className="edge-browser__tab-incognito-icon" aria-label="Gizli Sekme" />
                         ) : tab.favicon ? (
                           <img src={tab.favicon} alt="" onError={(event) => { (event.target as HTMLElement).style.display = 'none' }} />
                         ) : (
                           <Globe2 size={13} />
-                        )}
+                        ))}
                       </div>
 
-                      {!tab.pinned && <span className="edge-browser__tab-title">{tab.title}</span>}
+                      {!tab.pinned && <span className="edge-browser__tab-title">{displayedTabTitle}</span>}
                       {tab.pinned && <Pin size={11} className="edge-browser__tab-pin-badge" aria-label="Sabitlenmiş" />}
 
                       {media?.playing && (
@@ -1653,8 +1984,14 @@ export function BrowserPage({
             <button
               type="button"
               className="edge-browser__tool-btn"
-              disabled={!active?.canGoBack}
-              onClick={() => active && void desktop.browser.back(active.id)}
+              disabled={!panel && !active?.canGoBack}
+              onClick={() => {
+                if (panel) {
+                  setPanel(null)
+                  return
+                }
+                if (active) void desktop.browser.back(active.id)
+              }}
               title="Geri (Alt+←)"
               aria-label="Geri"
             >
@@ -1673,8 +2010,12 @@ export function BrowserPage({
             <button
               type="button"
               className="edge-browser__tool-btn"
-              disabled={!active?.id || !active?.url}
+              disabled={!panel && (!active?.id || !active?.url)}
               onClick={() => {
+                if (panel) {
+                  void refreshInternalPanelData(panel)
+                  return
+                }
                 if (!active) return
                 if (isElectronRuntime()) void desktop.browser.reload(active.id)
                 else if (active.url) void navigateTab(active.id, active.url)
@@ -1682,15 +2023,17 @@ export function BrowserPage({
               title="Yenile (Ctrl+R / F5)"
               aria-label="Yenile"
             >
-              {active?.loading ? <LoaderCircle className="edge-browser__spinner" size={14} /> : <RefreshCw size={14} />}
+              {!panel && active?.loading ? <LoaderCircle className="edge-browser__spinner" size={14} /> : <RefreshCw size={14} />}
             </button>
           </div>
 
           {/* Omnibox / Search & Address Input */}
           <form className="edge-browser__address-bar" onSubmit={submit}>
             {/* Security / Privacy Indicator */}
-            <div className="edge-browser__security-badge" title={isIncognito ? 'Gizli Tarama Modu' : isHttps ? 'Bağlantı güvenli (HTTPS)' : 'Web Adresi veya Arama'}>
-              {isIncognito ? (
+            <div className="edge-browser__security-badge" title={panel ? 'Omni dahili sayfası' : isIncognito ? 'Gizli Tarama Modu' : isHttps ? 'Bağlantı güvenli (HTTPS)' : 'Web Adresi veya Arama'}>
+              {panel ? (
+                <Settings2 size={13} />
+              ) : isIncognito ? (
                 <span className="edge-browser__incognito-badge">
                   <EyeOff size={12} />
                   <small>Gizli</small>
@@ -1730,7 +2073,7 @@ export function BrowserPage({
                 </button>
               ) : null}
 
-              {active?.url ? (
+              {panel || active?.url ? (
                 <button
                   type="button"
                   className="edge-browser__address-action-btn"
@@ -1742,7 +2085,7 @@ export function BrowserPage({
                 </button>
               ) : null}
 
-              {active?.url ? (
+              {!panel && active?.url ? (
                 <button
                   type="button"
                   className={`edge-browser__address-action-btn ${isFavorite ? 'edge-browser__favorite--active' : ''}`}
@@ -1793,6 +2136,39 @@ export function BrowserPage({
                 <span className="edge-browser__download-badge" />
               )}
             </button>
+
+            <button
+              type="button"
+              className={`edge-browser__tool-btn ${browserFeatures?.adBlockEnabled ? 'edge-browser__tool-btn--protected' : ''} ${panel === 'settings' ? 'edge-browser__tool-btn--active' : ''}`}
+              onClick={() => void togglePanel('settings')}
+              title={browserFeatures?.adBlockEnabled ? 'Reklam engelleme açık · Gizlilik ayarları' : 'Gizlilik ve reklam engelleme ayarları'}
+              aria-label="Gizlilik ve reklam engelleme"
+            >
+              <ShieldCheck size={14} />
+            </button>
+
+            <button
+              type="button"
+              className={`edge-browser__tool-btn edge-browser__extensions-button ${panel === 'extensions' ? 'edge-browser__tool-btn--active' : ''}`}
+              onClick={() => void togglePanel('extensions')}
+              title="Eklentiler"
+              aria-label="Eklentiler"
+            >
+              <Puzzle size={14} />
+              {(browserFeatures?.extensionCount ?? 0) > 0 && (
+                <span className="edge-browser__extension-count">{browserFeatures?.extensionCount}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={`edge-browser__tool-btn ${panel === 'settings' ? 'edge-browser__tool-btn--active' : ''}`}
+              onClick={() => void togglePanel('settings')}
+              title="Tarayıcı ayarları"
+              aria-label="Tarayıcı ayarları"
+            >
+              <Settings2 size={14} />
+            </button>
           </div>
         </div>
 
@@ -1826,6 +2202,8 @@ export function BrowserPage({
           </div>
         )}
 
+        </div>
+
       {(error || active?.error) && (
         <div className="edge-browser__error" role="alert">
           <span>{error || active?.error}</span>
@@ -1854,16 +2232,72 @@ export function BrowserPage({
         </div>
       )}
 
-      {/* Floating Acrylic History / Downloads Panels */}
+      {/* Browser-owned internal surfaces. These replace the old floating
+          panels and behave like chrome:// pages inside the browser viewport. */}
       {panel && (
         <div
-          className="edge-browser__browser-panel"
-          role="dialog"
-          aria-label={panel === 'history' ? 'Tarama Geçmişi' : 'İndirmeler'}
+          className="edge-browser__browser-panel edge-browser__internal-surface"
+          role="document"
+          aria-label={panelTitle}
+          data-internal-url={BROWSER_INTERNAL_URLS[panel]}
         >
+          <aside className="edge-browser__internal-sidebar" aria-label="Tarayıcı dahili sayfaları">
+            <div className="edge-browser__internal-sidebar-heading">
+              <Globe2 size={17} />
+              <span>
+                <strong>Omni</strong>
+                <small>Dahili sayfalar</small>
+              </span>
+            </div>
+            <nav className="edge-browser__internal-nav">
+              <button
+                type="button"
+                className={panel === 'settings' ? 'is-active' : ''}
+                onClick={() => { if (panel !== 'settings') void togglePanel('settings') }}
+              >
+                <Settings2 size={15} />
+                <span>Ayarlar</span>
+              </button>
+              <button
+                type="button"
+                className={panel === 'history' ? 'is-active' : ''}
+                onClick={() => { if (panel !== 'history') void togglePanel('history') }}
+              >
+                <History size={15} />
+                <span>Geçmiş</span>
+              </button>
+              <button
+                type="button"
+                className={panel === 'downloads' ? 'is-active' : ''}
+                onClick={() => { if (panel !== 'downloads') void togglePanel('downloads') }}
+              >
+                <Download size={15} />
+                <span>İndirmeler</span>
+              </button>
+              <button
+                type="button"
+                className={panel === 'permissions' ? 'is-active' : ''}
+                onClick={() => { if (panel !== 'permissions') void togglePanel('permissions') }}
+              >
+                <ShieldCheck size={15} />
+                <span>Site izinleri</span>
+              </button>
+              <button
+                type="button"
+                className={panel === 'extensions' ? 'is-active' : ''}
+                onClick={() => { if (panel !== 'extensions') void togglePanel('extensions') }}
+              >
+                <Puzzle size={15} />
+                <span>Eklentiler</span>
+                {(browserFeatures?.extensionCount ?? 0) > 0 && <small>{browserFeatures?.extensionCount}</small>}
+              </button>
+            </nav>
+          </aside>
+
+          <main className="edge-browser__internal-page">
           <div className="edge-browser__section-title">
             <div className="edge-browser__panel-header-left">
-              <h2>{panel === 'history' ? 'Tarama Geçmişi' : 'İndirmeler'}</h2>
+              <h2>{panelTitle}</h2>
               {panel === 'history' && history.length > 0 && (
                 <span className="edge-browser__panel-count">{filteredHistory.length} kayıt</span>
               )}
@@ -1884,7 +2318,7 @@ export function BrowserPage({
                   <span>{clearingHistory ? 'Temizleniyor…' : 'Temizle'}</span>
                 </button>
               )}
-              <button type="button" onClick={() => setPanel(null)} aria-label="Paneli kapat">
+              <button type="button" onClick={() => setPanel(null)} aria-label="Dahili sayfayı kapat">
                 <X size={14} />
               </button>
             </div>
@@ -1985,6 +2419,286 @@ export function BrowserPage({
               )}
             </div>
           )}
+
+          {panel === 'settings' && (
+            <div className="edge-browser__settings-panel">
+              <section className="edge-browser__settings-card edge-browser__settings-card--featured">
+                <div className="edge-browser__settings-card-icon">
+                  <ShieldCheck size={18} />
+                </div>
+                <div className="edge-browser__settings-card-copy">
+                  <strong>Reklam ve izleyici engelleme</strong>
+                  <small>
+                    {browserFeatures?.adBlockEngine || 'Ghostery · uBlock/EasyList uyumlu'}
+                    {browserFeatures?.adBlockEnabled && !browserFeatures?.adBlockReady ? ' · filtreler hazırlanıyor' : ''}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  className={`edge-browser__switch ${browserFeatures?.adBlockEnabled ? 'is-on' : ''}`}
+                  onClick={() => void toggleAdBlock()}
+                  disabled={browserAdminBusy === 'adblock'}
+                  role="switch"
+                  aria-checked={browserFeatures?.adBlockEnabled === true}
+                  aria-label="Reklam engellemeyi aç veya kapat"
+                >
+                  <span />
+                </button>
+              </section>
+
+              <section className="edge-browser__settings-group">
+                <div className="edge-browser__settings-group-heading">
+                  <strong>Başlangıç ve arama</strong>
+                  <small>Adres çubuğu ve yeni sekme davranışı</small>
+                </div>
+                <label className="edge-browser__settings-field">
+                  <span>Varsayılan arama motoru</span>
+                  <select
+                    value={browserPreferences.searchEngine}
+                    onChange={(event) => updateBrowserPreferences({ searchEngine: event.target.value as BrowserSearchEngine })}
+                  >
+                    <option value="google">Google</option>
+                    <option value="duckduckgo">DuckDuckGo</option>
+                    <option value="brave">Brave Search</option>
+                    <option value="bing">Bing</option>
+                  </select>
+                </label>
+                <label className="edge-browser__settings-field">
+                  <span>Ana sayfa</span>
+                  <input
+                    type="url"
+                    defaultValue={browserPreferences.homePage}
+                    placeholder="https://www.google.com/"
+                    onBlur={(event) => {
+                      const normalized = normalizeBrowserInput(event.currentTarget.value || DEFAULT_BROWSER_HOME_URL, browserPreferences.searchEngine)
+                      updateBrowserPreferences({ homePage: normalized })
+                      event.currentTarget.value = normalized
+                    }}
+                  />
+                </label>
+                <label className="edge-browser__settings-field">
+                  <span>Varsayılan yakınlaştırma</span>
+                  <select
+                    value={browserPreferences.defaultZoom}
+                    onChange={(event) => {
+                      const next = Number(event.target.value)
+                      updateBrowserPreferences({ defaultZoom: next })
+                      setActiveZoom(next)
+                    }}
+                  >
+                    <option value={0.75}>%75</option>
+                    <option value={0.9}>%90</option>
+                    <option value={1}>%100</option>
+                    <option value={1.1}>%110</option>
+                    <option value={1.25}>%125</option>
+                    <option value={1.5}>%150</option>
+                  </select>
+                </label>
+              </section>
+
+              <section className="edge-browser__settings-group">
+                <div className="edge-browser__settings-group-heading">
+                  <strong>Gizlilik ve site verileri</strong>
+                  <small>{permissionRecords.length} kayıtlı site izni</small>
+                </div>
+                <div className="edge-browser__settings-actions-grid">
+                  <button type="button" onClick={() => void clearBrowserStorage('cache')} disabled={browserAdminBusy !== null}>
+                    Önbelleği temizle
+                  </button>
+                  <button type="button" onClick={() => void clearBrowserStorage('cookies')} disabled={browserAdminBusy !== null}>
+                    Çerezleri temizle
+                  </button>
+                  <button type="button" onClick={() => void clearBrowserStorage('all')} disabled={browserAdminBusy !== null}>
+                    Tüm site verileri
+                  </button>
+                  <button type="button" onClick={() => void clearAllPermissions()} disabled={browserAdminBusy !== null || permissionRecords.length === 0}>
+                    Site izinlerini sıfırla
+                  </button>
+                </div>
+              </section>
+
+              <button
+                type="button"
+                className="edge-browser__settings-link-row"
+                onClick={() => void togglePanel('extensions')}
+              >
+                <Puzzle size={16} />
+                <span>
+                  <strong>Eklentileri yönet</strong>
+                  <small>{browserFeatures?.extensionCount ?? 0} etkin Chrome eklentisi</small>
+                </span>
+                <ChevronRight size={15} />
+              </button>
+
+              <button
+                type="button"
+                className="edge-browser__settings-link-row"
+                onClick={() => void togglePanel('permissions')}
+              >
+                <ShieldCheck size={16} />
+                <span>
+                  <strong>Site izinlerini yönet</strong>
+                  <small>{permissionRecords.length} kayıtlı karar</small>
+                </span>
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          )}
+
+          {panel === 'permissions' && (
+            <div className="edge-browser__permissions-panel">
+              <section className="edge-browser__settings-group edge-browser__permissions-summary">
+                <div className="edge-browser__settings-group-heading">
+                  <strong>Site izinleri</strong>
+                  <small>Kamera, mikrofon, bildirim, konum ve diğer site izinleri burada yönetilir.</small>
+                </div>
+                <button
+                  type="button"
+                  className="edge-browser__permissions-clear-all"
+                  onClick={() => void clearAllPermissions()}
+                  disabled={browserAdminBusy !== null || permissionRecords.length === 0}
+                >
+                  <Trash2 size={14} />
+                  Tüm kararları sıfırla
+                </button>
+              </section>
+
+              <div className="edge-browser__permissions-list">
+                {permissionRecords.length > 0 ? permissionRecords.map((record) => (
+                  <article key={`${record.origin}:${record.permission}`} className="edge-browser__permission-row">
+                    <div className="edge-browser__permission-row-icon">
+                      <ShieldCheck size={16} />
+                    </div>
+                    <div className="edge-browser__permission-row-copy">
+                      <strong>{hostnameFromUrl(record.origin)}</strong>
+                      <small>{record.origin}</small>
+                      <span>{record.permission}</span>
+                    </div>
+                    <span className={`edge-browser__permission-decision edge-browser__permission-decision--${record.decision}`}>
+                      {record.decision === 'allow' ? 'İzin verildi' : 'Engellendi'}
+                    </span>
+                    <button
+                      type="button"
+                      className="edge-browser__permission-reset"
+                      onClick={() => void clearPermissionRecord(record)}
+                      disabled={browserAdminBusy !== null}
+                    >
+                      Sıfırla
+                    </button>
+                  </article>
+                )) : (
+                  <div className="edge-browser__extension-empty">
+                    <ShieldCheck size={20} />
+                    <strong>Kayıtlı site izni yok</strong>
+                    <span>Bir site izin istediğinde verdiğiniz kararlar burada görünecek.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {panel === 'extensions' && (
+            <div className="edge-browser__extensions-panel">
+              <section className="edge-browser__extension-install-card">
+                <div className="edge-browser__settings-group-heading">
+                  <strong>Chrome Web Mağazası'ndan yükle</strong>
+                  <small>Mağaza bağlantısını veya 32 karakterli eklenti kimliğini yapıştırın.</small>
+                </div>
+                <div className="edge-browser__extension-install-row">
+                  <input
+                    value={extensionStoreInput}
+                    onChange={(event) => setExtensionStoreInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void installStoreExtension()
+                    }}
+                    placeholder="chromewebstore.google.com/... veya eklenti kimliği"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void installStoreExtension()}
+                    disabled={!extensionStoreInput.trim() || browserAdminBusy !== null}
+                  >
+                    Yükle
+                  </button>
+                </div>
+                <div className="edge-browser__extension-secondary-actions">
+                  <button type="button" onClick={() => void installUnpackedExtension()} disabled={browserAdminBusy !== null}>
+                    <FolderOpen size={14} />
+                    Paketlenmemiş eklenti
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPanel(null)
+                      void openTab('https://chromewebstore.google.com/')
+                    }}
+                  >
+                    <ExternalLink size={14} />
+                    Chrome Web Mağazası
+                  </button>
+                </div>
+                <p className="edge-browser__extension-note">
+                  Omni Chromium tabanlıdır. Electron yalnızca Chrome Extension API'lerinin desteklediği bölümünü sağlar; bazı eklentiler Chrome'daki tüm özellikleriyle çalışmayabilir.
+                </p>
+              </section>
+
+              <div className="edge-browser__extensions-list">
+                {(browserFeatures?.extensions.length ?? 0) > 0 ? browserFeatures?.extensions.map((extension) => (
+                  <article key={extension.id} className="edge-browser__extension-row">
+                    <div className="edge-browser__extension-icon">
+                      <Puzzle size={16} />
+                    </div>
+                    <div className="edge-browser__extension-copy">
+                      <strong>{extension.name}</strong>
+                      <small>
+                        v{extension.version || '—'} · {extension.source === 'store' ? 'Chrome Web Mağazası' : 'Yerel'}
+                      </small>
+                      {extension.description ? <p>{extension.description}</p> : null}
+                    </div>
+                    <div className="edge-browser__extension-actions">
+                      {extension.hasOptions && extension.enabled && (
+                        <button
+                          type="button"
+                          onClick={() => void desktop.browser.openExtensionOptions(extension.id).catch((cause) => setError(errorMessage(cause, 'Eklenti ayarları açılamadı.')))}
+                        >
+                          Ayarlar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={`edge-browser__switch edge-browser__switch--compact ${extension.enabled ? 'is-on' : ''}`}
+                        role="switch"
+                        aria-checked={extension.enabled}
+                        aria-label={`${extension.name} eklentisini ${extension.enabled ? 'kapat' : 'aç'}`}
+                        onClick={() => void setManagedExtensionEnabled(extension.id, !extension.enabled)}
+                        disabled={browserAdminBusy !== null}
+                      >
+                        <span />
+                      </button>
+                      <button
+                        type="button"
+                        className="edge-browser__extension-remove"
+                        onClick={() => void removeManagedExtension(extension.id)}
+                        disabled={browserAdminBusy !== null}
+                        aria-label={`${extension.name} eklentisini kaldır`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </article>
+                )) : (
+                  <div className="edge-browser__extension-empty">
+                    <Puzzle size={20} />
+                    <strong>Henüz eklenti yok</strong>
+                    <span>Chrome Web Mağazası bağlantısıyla veya yerel bir eklenti klasörüyle başlayabilirsiniz.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          </main>
         </div>
       )}
 
@@ -2158,8 +2872,6 @@ export function BrowserPage({
           </button>
         </div>
       )}
-
-        </div>
 
       {/* The measured native surface keeps the original full-width layout. */}
       <div ref={nativeSurfaceRef} className="edge-browser__content" data-browser-native-surface>

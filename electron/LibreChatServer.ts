@@ -141,7 +141,7 @@ export class LibreChatServer {
     this.generations.clear()
     this.modelCatalogRefresh = null
     if (!server) return
-    // BrowserView/fetch keeps an HTTP keep-alive socket around even after the
+    // WebContentsView/fetch keeps an HTTP keep-alive socket around even after the
     // page is detached. Destroy those sockets before waiting for `close`, so
     // quitting the desktop app never waits on a renderer connection forever.
     server.closeIdleConnections?.()

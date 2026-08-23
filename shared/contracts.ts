@@ -193,6 +193,24 @@ export interface BrowserPermissionRecord {
   updatedAt: number
 }
 
+export interface BrowserExtensionInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  enabled: boolean
+  source: 'store' | 'unpacked'
+  hasOptions: boolean
+}
+
+export interface BrowserFeatureState {
+  adBlockEnabled: boolean
+  adBlockReady: boolean
+  adBlockEngine: string
+  extensionCount: number
+  extensions: BrowserExtensionInfo[]
+}
+
 export interface PermissionSetInput {
   origin: string
   permission: BrowserPermission
@@ -378,6 +396,14 @@ export type IpcChannel =
   | 'browser:list-permissions'
   | 'browser:set-permission'
   | 'browser:clear-permission'
+  | 'browser:get-features'
+  | 'browser:set-adblock'
+  | 'browser:install-extension-store'
+  | 'browser:install-extension-unpacked'
+  | 'browser:set-extension-enabled'
+  | 'browser:remove-extension'
+  | 'browser:open-extension-options'
+  | 'browser:clear-browsing-data'
   | 'youtube-music:control'
   | 'youtube-music:set-volume'
   | 'youtube-music:sync-state'

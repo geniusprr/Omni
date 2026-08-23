@@ -15,6 +15,7 @@ import {
   type PermissionSetInput,
 } from '../shared/contracts.js'
 import { DownloadManager } from './DownloadManager.js'
+import { BrowserFeatureManager } from './BrowserFeatureManager.js'
 import { MediaManager } from './MediaManager.js'
 import { PermissionManager } from './PermissionManager.js'
 import { SessionManager } from './SessionManager.js'
@@ -28,6 +29,7 @@ export class BrowserManager {
   readonly sessions: SessionManager
   readonly permissions: PermissionManager
   readonly downloads: DownloadManager
+  readonly features: BrowserFeatureManager
   readonly media: MediaManager
   readonly tabs: TabManager
   private readonly windows: WindowManager
@@ -36,7 +38,7 @@ export class BrowserManager {
 
   constructor(windows: WindowManager, mainWindow: BrowserWindow) {
     this.windows = windows
-    // A BrowserView takes Chromium's color preference from nativeTheme, not
+    // A WebContentsView takes Chromium's color preference from nativeTheme, not
     // from the renderer's CSS. Set the default before any tab can load so an
     // OS-level dark preference cannot make the in-app browser start dark while
     // the application itself starts in light mode.
@@ -72,9 +74,14 @@ export class BrowserManager {
       },
     })
     const browserSession = this.sessions.getBrowserSession()
+    const incognitoSession = this.sessions.getIncognitoSession()
+    this.features = new BrowserFeatureManager(browserSession, incognitoSession, mainWindow, this.sessions.dataDir)
     this.permissions.attach(browserSession, (request) => this.send(BROWSER_EVENTS.permissionRequest, request))
     this.downloads.attach(browserSession, (webContents) => this.tabIdFor(webContents), (item) => this.send(BROWSER_EVENTS.downloadUpdated, item))
+    this.downloads.attach(incognitoSession, (webContents) => this.tabIdFor(webContents), (item) => this.send(BROWSER_EVENTS.downloadUpdated, item))
   }
+
+  initializeFeatures() { return this.features.initialize() }
 
   createTab(id: string, url: string, bounds: BrowserBounds, options?: { incognito?: boolean }) {
     const projection = this.tabs.create(id, url, bounds, options)
@@ -176,6 +183,15 @@ export class BrowserManager {
   listPermissions() { return this.permissions.list() }
   setPermission(input: PermissionSetInput) { this.permissions.setDecision(input) }
   clearPermission(origin?: string, permission?: string) { this.permissions.clear(origin, permission) }
+
+  getFeatures() { return this.features.getState() }
+  setAdBlockEnabled(enabled: boolean) { return this.features.setAdBlockEnabled(enabled) }
+  installExtensionFromStore(value: string) { return this.features.installFromStore(value) }
+  installUnpackedExtension() { return this.features.installUnpacked() }
+  setExtensionEnabled(id: string, enabled: boolean) { return this.features.setExtensionEnabled(id, enabled) }
+  removeExtension(id: string) { return this.features.removeExtension(id) }
+  openExtensionOptions(id: string) { return this.features.openExtensionOptions(id) }
+  clearBrowsingData(scope: 'cache' | 'cookies' | 'all') { return this.features.clearBrowsingData(scope) }
 
   currentMedia() { return this.media.toSystemSession() }
 

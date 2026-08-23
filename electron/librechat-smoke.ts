@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { BrowserWindow } from 'electron'
+import { WebContentsView, type BrowserWindow } from 'electron'
 import { AiStore } from './AiStore.js'
 import type { LibreChatServer } from './LibreChatServer.js'
 import type { LibreChatView } from './LibreChatView.js'
@@ -74,8 +74,10 @@ export async function runLibreChatLifecycleSmoke(
 
   const bounds = { x: 72, y: 12, width: 940, height: 600 }
   await view.activate(url, bounds)
-  const nativeView = window.getBrowserViews().find((candidate) => candidate.webContents.getURL().startsWith(url))
-  if (!nativeView) throw new Error('LibreChat BrowserView pencereye bağlanmadı.')
+  const nativeView = window.contentView.children.find((candidate): candidate is WebContentsView =>
+    candidate instanceof WebContentsView && candidate.webContents.getURL().startsWith(url),
+  )
+  if (!nativeView) throw new Error('LibreChat WebContentsView pencereye bağlanmadı.')
 
   await waitUntilAsync(async () => {
     if (nativeView.webContents.isDestroyed() || nativeView.webContents.isLoading()) return false
@@ -215,11 +217,11 @@ export async function runLibreChatLifecycleSmoke(
 
   const actualBounds = nativeView.getBounds()
   if (actualBounds.x < 50 || actualBounds.y > 24 || actualBounds.width < 800 || actualBounds.height < 500) {
-    throw new Error(`LibreChat BrowserView üst başlık hizasından uzak veya çok küçük: ${JSON.stringify(actualBounds)}`)
+    throw new Error(`LibreChat WebContentsView üst başlık hizasından uzak veya çok küçük: ${JSON.stringify(actualBounds)}`)
   }
   view.deactivate()
   await providerProbe.close()
-  if (window.getBrowserViews().some((candidate) => candidate === nativeView)) {
+  if (window.contentView.children.some((candidate) => candidate === nativeView)) {
     throw new Error('LibreChat devre dışı bırakıldıktan sonra native görünüm bağlı kaldı.')
   }
   console.log(`[librechat-smoke] ${models.openrouter.length} OpenRouter modeli + ${models['openrouter-free'].length} ücretsiz model, ajan tool döngüsü/widgetı, SQLite canlı commit/stream ve hizalı pencere başlığı geçti`)

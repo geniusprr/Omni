@@ -71,6 +71,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     windows.configureTray(() => windows.quit())
 
     browser = new BrowserManager(windows, mainWindow)
+    await browser.initializeFeatures()
     system = new SystemManager(browser.sessions.dataDir)
     content = new ContentManager(browser.sessions.dataDir, windows)
     alarms = new AlarmManager(browser.sessions.dataDir, windows, send)
@@ -287,6 +288,21 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('browser:clear-permission', (payload) => {
       const item = readObject(payload)
       return browser.clearPermission(item.origin as string | undefined, item.permission as string | undefined)
+    })
+    handle('browser:get-features', () => browser.getFeatures())
+    handle('browser:set-adblock', (payload) => browser.setAdBlockEnabled(Boolean(readObject(payload).enabled)))
+    handle('browser:install-extension-store', (payload) => browser.installExtensionFromStore(readString(payload, 'value')))
+    handle('browser:install-extension-unpacked', () => browser.installUnpackedExtension())
+    handle('browser:set-extension-enabled', (payload) => {
+      const item = readObject(payload)
+      return browser.setExtensionEnabled(readString(item, 'id'), Boolean(item.enabled))
+    })
+    handle('browser:remove-extension', (payload) => browser.removeExtension(readString(payload, 'id')))
+    handle('browser:open-extension-options', (payload) => browser.openExtensionOptions(readString(payload, 'id')))
+    handle('browser:clear-browsing-data', (payload) => {
+      const scope = readString(payload, 'scope')
+      if (scope !== 'cache' && scope !== 'cookies' && scope !== 'all') throw new Error('Geçersiz tarama verisi kapsamı.')
+      return browser.clearBrowsingData(scope)
     })
 
     handle('youtube-music:control', (payload) => browser.youtubeControl(readString(payload, 'action') as 'toggle-play' | 'next' | 'previous' | 'toggle-mute'))

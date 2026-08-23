@@ -16,6 +16,8 @@ const allowedChannels: ReadonlySet<string> = new Set([
   'browser:show-tab-menu', 'browser:list-history', 'browser:clear-history', 'browser:list-downloads',
   'browser:open-download', 'browser:show-download', 'browser:cancel-download', 'browser:remove-download',
   'browser:list-permissions', 'browser:set-permission', 'browser:clear-permission',
+  'browser:get-features', 'browser:set-adblock', 'browser:install-extension-store', 'browser:install-extension-unpacked',
+  'browser:set-extension-enabled', 'browser:remove-extension', 'browser:open-extension-options', 'browser:clear-browsing-data',
   'youtube-music:control', 'youtube-music:set-volume', 'youtube-music:sync-state',
   'notes:list', 'notes:save', 'notes:delete', 'notes:toggle-pin',
   'transfers:list', 'transfers:open', 'transfers:show-in-folder', 'transfers:delete', 'transfers:clear',

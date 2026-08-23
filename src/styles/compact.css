@@ -17294,6 +17294,414 @@ body {
 }
 
 /* ==========================================================================
+   Browser · native-feeling tab drag + settings/extensions surface
+   ========================================================================== */
+
+/* Browser workspaces meet the square application edge. The dashboard keeps
+   its softer geometry; only the browser's upper-left chrome is forced square. */
+.minios-shell--browser .edge-browser,
+.minios-shell--browser .edge-browser__chrome,
+.minios-shell--browser .edge-browser__tabs {
+  border-top-left-radius: 0 !important;
+}
+
+/* The source tab becomes a lightweight placeholder while a fixed preview
+   follows the exact pointer grab point. This mirrors the dashboard widget drag
+   language instead of making a tab jump only after drop. */
+.edge-browser__tab--dragging,
+.edge-browser__tab--dragging:hover,
+.edge-browser__tab--dragging.edge-browser__tab--active {
+  opacity: 0.24 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.edge-browser__tab-drag-preview {
+  position: fixed !important;
+  z-index: 2147483000 !important;
+  display: flex !important;
+  flex: none !important;
+  margin: 0 !important;
+  pointer-events: none !important;
+  opacity: 0.98 !important;
+  transform: translateZ(0) scale(1.025) !important;
+  transform-origin: 50% 50% !important;
+  border-color: var(--browser-tab-border-active) !important;
+  background: var(--browser-tab-active) !important;
+  color: var(--browser-text) !important;
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.28),
+    0 4px 12px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 color-mix(in oklch, var(--k-ink) 8%, transparent) !important;
+  animation: none !important;
+  transition: none !important;
+  -webkit-app-region: no-drag;
+}
+
+.edge-browser--dark .edge-browser__tab-drag-preview {
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.54),
+    0 4px 14px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.edge-browser__tab-drag-preview::before,
+.edge-browser__tab-drag-preview::after {
+  display: none !important;
+}
+
+.edge-browser__tool-btn--protected {
+  color: color-mix(in oklch, var(--k-accent) 74%, var(--browser-text)) !important;
+}
+
+.edge-browser__extensions-button {
+  position: relative;
+}
+
+.edge-browser__extension-count {
+  position: absolute;
+  top: 0.05rem;
+  right: 0.03rem;
+  display: grid;
+  min-width: 0.78rem;
+  height: 0.78rem;
+  place-items: center;
+  border: 1px solid var(--browser-chrome);
+  border-radius: 999px;
+  background: var(--k-accent);
+  color: var(--k-accent-foreground, #fff);
+  font-size: 0.48rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.edge-browser__browser-panel--wide {
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: min(42rem, calc(100vh - 7.5rem));
+  overflow: hidden;
+}
+
+.edge-browser__settings-panel,
+.edge-browser__extensions-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.65rem;
+  overflow-y: auto;
+  padding: 0.72rem;
+  scrollbar-width: thin;
+}
+
+.edge-browser__settings-card,
+.edge-browser__settings-group,
+.edge-browser__extension-install-card,
+.edge-browser__extension-row,
+.edge-browser__settings-link-row {
+  border: 1px solid var(--browser-tab-border);
+  background: color-mix(in oklch, var(--browser-chrome-raised) 78%, transparent);
+}
+
+.edge-browser__settings-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  border-radius: 0.8rem;
+  padding: 0.7rem 0.75rem;
+}
+
+.edge-browser__settings-card--featured {
+  background: color-mix(in oklch, var(--k-accent) 6%, var(--browser-chrome-raised));
+}
+
+.edge-browser__settings-card-icon,
+.edge-browser__extension-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.58rem;
+  background: var(--browser-control-hover);
+  color: var(--browser-text);
+}
+
+.edge-browser__settings-card-copy,
+.edge-browser__settings-group-heading,
+.edge-browser__extension-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.edge-browser__settings-card-copy strong,
+.edge-browser__settings-group-heading strong,
+.edge-browser__extension-copy strong,
+.edge-browser__settings-link-row strong,
+.edge-browser__extension-empty strong {
+  color: var(--browser-text);
+  font-size: 0.74rem;
+  font-weight: 680;
+}
+
+.edge-browser__settings-card-copy small,
+.edge-browser__settings-group-heading small,
+.edge-browser__extension-copy small,
+.edge-browser__settings-link-row small,
+.edge-browser__extension-note,
+.edge-browser__extension-empty span {
+  color: var(--browser-subtle);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.edge-browser__switch {
+  position: relative;
+  width: 2.3rem;
+  min-width: 2.3rem;
+  height: 1.3rem;
+  border: 1px solid var(--browser-tab-border-active);
+  border-radius: 999px;
+  background: var(--browser-control-hover);
+  padding: 0.12rem;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.edge-browser__switch > span {
+  display: block;
+  width: 0.94rem;
+  height: 0.94rem;
+  border-radius: 999px;
+  background: var(--browser-muted);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  transform: translateX(0);
+  transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1), background-color 140ms ease;
+}
+
+.edge-browser__switch.is-on {
+  border-color: color-mix(in oklch, var(--k-accent) 60%, transparent);
+  background: color-mix(in oklch, var(--k-accent) 74%, transparent);
+}
+
+.edge-browser__switch.is-on > span {
+  background: #fff;
+  transform: translateX(0.95rem);
+}
+
+.edge-browser__switch:disabled {
+  opacity: 0.5;
+}
+
+.edge-browser__switch--compact {
+  width: 2rem;
+  min-width: 2rem;
+  height: 1.16rem;
+}
+
+.edge-browser__switch--compact > span {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.edge-browser__switch--compact.is-on > span {
+  transform: translateX(0.8rem);
+}
+
+.edge-browser__settings-group,
+.edge-browser__extension-install-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.62rem;
+  border-radius: 0.8rem;
+  padding: 0.75rem;
+}
+
+.edge-browser__settings-field {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.72fr) minmax(0, 1.28fr);
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--browser-text-soft);
+  font-size: 0.66rem;
+}
+
+.edge-browser__settings-field :is(input, select),
+.edge-browser__extension-install-row input {
+  min-width: 0;
+  height: 2rem;
+  border: 1px solid var(--browser-tab-border);
+  border-radius: 0.56rem;
+  outline: 0;
+  background: var(--browser-omnibox);
+  padding: 0 0.58rem;
+  color: var(--browser-text);
+  font: inherit;
+}
+
+.edge-browser__settings-field :is(input, select):focus,
+.edge-browser__extension-install-row input:focus {
+  border-color: color-mix(in oklch, var(--k-accent) 50%, var(--browser-tab-border-active));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--k-accent) 10%, transparent);
+}
+
+.edge-browser__settings-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.edge-browser__settings-actions-grid button,
+.edge-browser__extension-install-row button,
+.edge-browser__extension-secondary-actions button,
+.edge-browser__extension-actions > button:not(.edge-browser__switch) {
+  min-height: 1.9rem;
+  border: 1px solid var(--browser-tab-border);
+  border-radius: 0.54rem;
+  background: var(--browser-control-hover);
+  padding: 0.35rem 0.55rem;
+  color: var(--browser-text-soft);
+  font-size: 0.62rem;
+  font-weight: 620;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.edge-browser__settings-actions-grid button:hover:not(:disabled),
+.edge-browser__extension-install-row button:hover:not(:disabled),
+.edge-browser__extension-secondary-actions button:hover:not(:disabled),
+.edge-browser__extension-actions > button:not(.edge-browser__switch):hover:not(:disabled) {
+  border-color: var(--browser-tab-border-active);
+  background: color-mix(in oklch, var(--browser-control-hover) 72%, var(--browser-chrome-raised));
+  color: var(--browser-text);
+}
+
+.edge-browser__settings-actions-grid button:disabled,
+.edge-browser__extension-install-row button:disabled,
+.edge-browser__extension-secondary-actions button:disabled,
+.edge-browser__extension-actions button:disabled {
+  opacity: 0.45;
+}
+
+.edge-browser__settings-link-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.62rem;
+  width: 100%;
+  border-radius: 0.8rem;
+  padding: 0.72rem 0.75rem;
+  color: var(--browser-muted);
+  text-align: left;
+}
+
+.edge-browser__settings-link-row > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.edge-browser__settings-link-row:hover {
+  border-color: var(--browser-tab-border-active);
+  background: var(--browser-control-hover);
+  color: var(--browser-text);
+}
+
+.edge-browser__extension-install-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+}
+
+.edge-browser__extension-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.edge-browser__extension-secondary-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.edge-browser__extension-note {
+  margin: 0;
+}
+
+.edge-browser__extensions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.edge-browser__extension-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.58rem;
+  border-radius: 0.72rem;
+  padding: 0.6rem;
+}
+
+.edge-browser__extension-copy p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0.13rem 0 0;
+  color: var(--browser-muted);
+  font-size: 0.59rem;
+  line-height: 1.38;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.edge-browser__extension-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.34rem;
+}
+
+.edge-browser__extension-remove {
+  display: grid;
+  width: 1.9rem;
+  min-width: 1.9rem;
+  padding: 0 !important;
+  place-items: center;
+}
+
+.edge-browser__extension-empty {
+  display: flex;
+  min-height: 8rem;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.32rem;
+  border: 1px dashed var(--browser-tab-border-active);
+  border-radius: 0.8rem;
+  color: var(--browser-subtle);
+  text-align: center;
+}
+
+@media (max-width: 44rem) {
+  .edge-browser__settings-field {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .edge-browser__settings-actions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .edge-browser__extension-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .edge-browser__extension-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
+/* ==========================================================================
    GLOBAL APP SEARCH · SHADCN-STYLE COMMAND SURFACE
    ========================================================================== */
 
@@ -18227,6 +18635,10 @@ body {
 
 .edge-browser:not(.edge-browser--chrome-external) .edge-browser__browser-panel {
   top: calc(var(--browser-tabs-height) + var(--browser-toolbar-height) + var(--space-sm));
+}
+
+.edge-browser.edge-browser--favorites-visible:not(.edge-browser--chrome-external) .edge-browser__browser-panel {
+  top: calc(var(--browser-tabs-height) + var(--browser-toolbar-height) + 1.875rem + var(--space-sm));
 }
 
 .edge-browser__browser-panel .edge-browser__section-title {
@@ -28520,4 +28932,357 @@ html.kapanis-focus-free .quick-access-program-picker__search:focus-within {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+/* Final browser geometry overrides: keep these after every legacy browser
+   refinement so the workspace edge and the wider settings surface cannot be
+   re-rounded or narrowed by an older cascade block. */
+.minios-shell--browser .edge-browser,
+.minios-shell--browser .edge-browser__chrome,
+.minios-shell--browser .edge-browser__tabs {
+  border-top-left-radius: 0 !important;
+}
+
+.edge-browser__internal-surface {
+  position: absolute !important;
+  inset: calc(var(--browser-tabs-height) + var(--browser-toolbar-height) + var(--space-xs)) 0 0 !important;
+  z-index: 80 !important;
+  display: grid !important;
+  grid-template-columns: 13.5rem minmax(0, 1fr);
+  width: auto !important;
+  max-height: none !important;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid var(--acrylic-line) !important;
+  border-radius: var(--radius-lg, 0.85rem) !important;
+  background: color-mix(in oklch, var(--acrylic-surface-strong) 98%, transparent) !important;
+  box-shadow: 0 8px 32px var(--acrylic-shadow) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.edge-browser:has(.edge-browser__favorites-bar) .edge-browser__internal-surface {
+  inset-block-start: calc(var(--browser-tabs-height) + var(--browser-toolbar-height) + 1.875rem + var(--space-xs)) !important;
+}
+
+.edge-browser__internal-sidebar {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: 1.2rem 0.85rem;
+  overflow-y: auto;
+  border-right: 1px solid var(--acrylic-line);
+  background: color-mix(in oklch, var(--acrylic-surface) 72%, var(--acrylic-surface-strong));
+}
+
+.edge-browser__internal-sidebar-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2.5rem;
+  padding: 0 0.55rem;
+  color: var(--acrylic-text);
+}
+
+.edge-browser__internal-sidebar-heading > svg {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
+.edge-browser__internal-sidebar-heading > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.edge-browser__internal-sidebar-heading strong {
+  font-size: 0.8rem;
+}
+
+.edge-browser__internal-sidebar-heading small {
+  color: var(--acrylic-text-soft);
+  font-size: 0.62rem;
+}
+
+.edge-browser__internal-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.edge-browser__internal-nav button {
+  display: grid;
+  grid-template-columns: 1.2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 2.35rem;
+  padding: 0 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 0.62rem;
+  background: transparent;
+  color: var(--acrylic-text-soft);
+  text-align: left;
+  font: inherit;
+  font-size: 0.73rem;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.edge-browser__internal-nav button:hover {
+  background: var(--acrylic-surface-hover);
+  color: var(--acrylic-text);
+}
+
+.edge-browser__internal-nav button.is-active {
+  border-color: color-mix(in oklch, var(--color-accent) 28%, var(--acrylic-line));
+  background: color-mix(in oklch, var(--color-accent) 11%, var(--acrylic-surface));
+  color: var(--acrylic-text);
+}
+
+.edge-browser__internal-nav button.is-active > svg {
+  color: var(--color-accent);
+}
+
+.edge-browser__internal-nav button > small {
+  display: grid;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--acrylic-surface-hover);
+  color: var(--acrylic-text-soft);
+  font-size: 0.58rem;
+}
+
+.edge-browser__internal-page {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 88% 0%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 28rem),
+    var(--acrylic-surface-strong);
+}
+
+.edge-browser__internal-page > .edge-browser__section-title {
+  flex: 0 0 auto;
+  min-height: 3.45rem;
+  margin: 0 !important;
+  padding: 0.75rem clamp(1rem, 2.6vw, 2rem) !important;
+  border-bottom: 1px solid var(--acrylic-line);
+  background: color-mix(in oklch, var(--acrylic-surface-strong) 94%, transparent) !important;
+}
+
+.edge-browser__internal-page > .edge-browser__section-title h2 {
+  font-size: 1rem !important;
+  font-weight: 650;
+}
+
+.edge-browser__internal-page > .edge-browser__history-container,
+.edge-browser__internal-page > .edge-browser__downloads-list,
+.edge-browser__internal-page > .edge-browser__settings-panel,
+.edge-browser__internal-page > .edge-browser__extensions-panel,
+.edge-browser__internal-page > .edge-browser__permissions-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(1rem, 2.6vw, 2rem);
+}
+
+.edge-browser__internal-page > .edge-browser__history-container,
+.edge-browser__internal-page > .edge-browser__downloads-list,
+.edge-browser__internal-page > .edge-browser__settings-panel,
+.edge-browser__internal-page > .edge-browser__extensions-panel,
+.edge-browser__internal-page > .edge-browser__permissions-panel {
+  width: min(100%, 68rem);
+  margin: 0 auto;
+}
+
+.edge-browser__permissions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.edge-browser__permissions-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.edge-browser__permissions-clear-all,
+.edge-browser__permission-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  min-height: 2rem;
+  padding: 0 0.72rem;
+  border: 1px solid var(--acrylic-line);
+  border-radius: 0.55rem;
+  background: var(--acrylic-surface);
+  color: var(--acrylic-text);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.edge-browser__permissions-clear-all:hover:not(:disabled),
+.edge-browser__permission-reset:hover:not(:disabled) {
+  background: var(--acrylic-surface-hover);
+}
+
+.edge-browser__permissions-clear-all:disabled,
+.edge-browser__permission-reset:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.edge-browser__permissions-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--acrylic-line);
+  border-radius: 0.8rem;
+  background: color-mix(in oklch, var(--acrylic-surface) 75%, transparent);
+}
+
+.edge-browser__permission-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 4.2rem;
+  padding: 0.65rem 0.8rem;
+  border-bottom: 1px solid var(--acrylic-line);
+}
+
+.edge-browser__permission-row:last-child {
+  border-bottom: 0;
+}
+
+.edge-browser__permission-row-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.58rem;
+  background: var(--browser-control-hover);
+  color: var(--color-accent);
+}
+
+.edge-browser__permission-row-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.edge-browser__permission-row-copy strong {
+  overflow: hidden;
+  color: var(--acrylic-text);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edge-browser__permission-row-copy small {
+  overflow: hidden;
+  color: var(--acrylic-text-soft);
+  font-size: 0.61rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edge-browser__permission-row-copy span {
+  color: var(--acrylic-text-soft);
+  font-size: 0.64rem;
+}
+
+.edge-browser__permission-decision {
+  display: inline-flex;
+  min-height: 1.55rem;
+  align-items: center;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.edge-browser__permission-decision--allow {
+  background: color-mix(in oklch, #22c55e 13%, transparent);
+  color: color-mix(in oklch, #22c55e 68%, var(--acrylic-text));
+}
+
+.edge-browser__permission-decision--deny {
+  background: color-mix(in oklch, #ef4444 12%, transparent);
+  color: color-mix(in oklch, #ef4444 70%, var(--acrylic-text));
+}
+
+@media (max-width: 48rem) {
+  .edge-browser__internal-surface {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+  }
+
+  .edge-browser__internal-sidebar {
+    padding-inline: 0.45rem;
+  }
+
+  .edge-browser__internal-sidebar-heading {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .edge-browser__internal-sidebar-heading > span,
+  .edge-browser__internal-nav button > span,
+  .edge-browser__internal-nav button > small {
+    display: none;
+  }
+
+  .edge-browser__internal-nav button {
+    display: grid;
+    grid-template-columns: 1fr;
+    place-items: center;
+    padding: 0;
+  }
+
+  .edge-browser__permission-row {
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+  }
+
+  .edge-browser__permission-decision {
+    display: none;
+  }
+}
+
+/* Site permission prompts stay browser-chrome UI rather than becoming a page.
+   Keep them above internal surfaces and anchored just below the omnibox. */
+.edge-browser > .edge-browser__permission {
+  position: absolute !important;
+  inset-block-start: calc(var(--browser-tabs-height) + var(--browser-toolbar-height) + 0.45rem) !important;
+  inset-inline-start: 50% !important;
+  z-index: 140 !important;
+  width: min(38rem, calc(100% - 2rem));
+  margin: 0 !important;
+  transform: translateX(-50%);
+  border-radius: 0.72rem !important;
+  background: color-mix(in oklch, var(--acrylic-surface-strong) 98%, transparent) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26), inset 0 1px 0 var(--color-glass-highlight);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+.edge-browser:has(.edge-browser__favorites-bar) > .edge-browser__permission {
+  inset-block-start: calc(var(--browser-tabs-height) + var(--browser-toolbar-height) + 1.875rem + 0.45rem) !important;
 }

@@ -1,4 +1,4 @@
-import { BrowserView, session, type BrowserWindow } from 'electron'
+import { WebContentsView, session, type BrowserWindow } from 'electron'
 import type { BrowserBounds } from '../shared/contracts.js'
 import { buildLibreChatChromeScript, buildLibreChatSyncScript } from './LibreChatChrome.js'
 import type { AgentToolActivity, OmniTheme } from './OmniAgent.js'
@@ -9,7 +9,7 @@ const LIBRECHAT_CORNER_RADIUS = 16
 /** Native presentation surface for the official LibreChat client. */
 export class LibreChatView {
   private readonly window: BrowserWindow
-  private view: BrowserView | null = null
+  private view: WebContentsView | null = null
   private attached = false
   private bounds: BrowserBounds = ZERO_BOUNDS
   private sessionReady: Promise<void> | null = null
@@ -27,7 +27,7 @@ export class LibreChatView {
     await this.prepareSession()
     if (!this.view) {
       const libreChatSession = session.fromPartition('persist:kapanis-librechat')
-      this.view = new BrowserView({
+      this.view = new WebContentsView({
         webPreferences: {
           session: libreChatSession,
           nodeIntegration: false,
@@ -37,7 +37,7 @@ export class LibreChatView {
           spellcheck: true,
         },
       })
-      // BrowserView is rectangular. Keep its backing surface transparent so
+      // WebContentsView is rectangular. Keep its backing surface transparent so
       // the clipped LibreChat document reveals the rounded host underneath.
       this.view.setBackgroundColor('#00000000')
       this.view.webContents.on('did-finish-load', () => { void this.installChrome() })
@@ -45,9 +45,9 @@ export class LibreChatView {
     }
     this.view.setBounds(this.bounds)
     if (!this.attached) {
-      this.window.addBrowserView(this.view)
+      this.window.contentView.addChildView(this.view)
       this.attached = true
-      this.window.setTopBrowserView(this.view)
+      this.window.contentView.addChildView(this.view)
     }
     const currentUrl = this.view.webContents.getURL()
     // The root route renders the left navigation but leaves the conversation
@@ -60,7 +60,7 @@ export class LibreChatView {
       await this.syncOmniChrome()
     }
     this.view.setBounds(this.bounds)
-    this.window.setTopBrowserView(this.view)
+    this.window.contentView.addChildView(this.view)
   }
 
   setBounds(bounds: BrowserBounds) {
@@ -80,7 +80,7 @@ export class LibreChatView {
 
   deactivate() {
     if (!this.view || !this.attached) return
-    try { this.window.removeBrowserView(this.view) } catch { /* best effort */ }
+    try { this.window.contentView.removeChildView(this.view) } catch { /* best effort */ }
     this.attached = false
   }
 
@@ -88,7 +88,7 @@ export class LibreChatView {
     const view = this.view
     this.view = null
     if (!view) return
-    try { this.window.removeBrowserView(view) } catch { /* best effort */ }
+    try { this.window.contentView.removeChildView(view) } catch { /* best effort */ }
     try { view.webContents.close({ waitForBeforeUnload: false }) } catch { /* best effort */ }
     this.attached = false
   }

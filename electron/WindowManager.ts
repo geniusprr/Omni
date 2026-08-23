@@ -90,7 +90,7 @@ export class WindowManager {
     const window = new BrowserWindow(options)
     this.mainWindow = window
     // Normal launches open maximized. The smoke runner intentionally keeps a
-    // deterministic restored window so its fixed BrowserView bounds remain
+    // deterministic restored window so its fixed WebContentsView bounds remain
     // meaningful and independent of the developer display.
     if (process.env.KAPANIS_SMOKE_TEST !== '1' && !window.isMaximized()) window.maximize()
     window.webContents.on('before-input-event', (event, input) => {

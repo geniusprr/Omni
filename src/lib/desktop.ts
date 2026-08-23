@@ -15,12 +15,12 @@ import type {
   TimerState,
   TransferItem,
 } from '@/types'
-import { APP_EVENTS, BROWSER_EVENTS, type AgentAppAction, type AiConversation, type AiMessage, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type AiSendResult, type AiSnapshot, type AiUpdate, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type ProgramCandidate, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
+import { APP_EVENTS, BROWSER_EVENTS, type AgentAppAction, type AiConversation, type AiMessage, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type AiSendResult, type AiSnapshot, type AiUpdate, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserExtensionInfo, type BrowserFeatureState, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type ProgramCandidate, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
 import type { VaultFileEntry } from '@/features/notes/types'
 import type { AppTheme } from '@/theme'
 
 export { APP_EVENTS, BROWSER_EVENTS }
-export type { AgentAppAction, AiConversation, AiMessage, AiProviderConfigInput, AiProviderId, AiSendInput, AiSendResult, AiSnapshot, AiUpdate, BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, ProgramCandidate, SystemMediaSession, YouTubeMusicState }
+export type { AgentAppAction, AiConversation, AiMessage, AiProviderConfigInput, AiProviderId, AiSendInput, AiSendResult, AiSnapshot, AiUpdate, BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserExtensionInfo, BrowserFeatureState, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, ProgramCandidate, SystemMediaSession, YouTubeMusicState }
 
 type Unsubscribe = () => void
 
@@ -116,6 +116,38 @@ export const desktop = {
     listPermissions: () => optionalInvoke<BrowserPermissionRecord[]>('browser:list-permissions', []),
     setPermission: (input: PermissionSetInput) => optionalInvoke<void>('browser:set-permission', undefined, input),
     clearPermission: (origin?: string, permission?: string) => optionalInvoke<void>('browser:clear-permission', undefined, { origin, permission }),
+    getFeatures: () => optionalInvoke<BrowserFeatureState>('browser:get-features', {
+      adBlockEnabled: true,
+      adBlockReady: false,
+      adBlockEngine: 'Ghostery · uBlock/EasyList uyumlu',
+      extensionCount: 0,
+      extensions: [],
+    }),
+    setAdBlock: (enabled: boolean) => optionalInvoke<BrowserFeatureState>('browser:set-adblock', {
+      adBlockEnabled: enabled,
+      adBlockReady: false,
+      adBlockEngine: 'Ghostery · uBlock/EasyList uyumlu',
+      extensionCount: 0,
+      extensions: [],
+    }, { enabled }),
+    installExtensionFromStore: (value: string) => invoke<BrowserExtensionInfo>('browser:install-extension-store', { value }),
+    installUnpackedExtension: () => optionalInvoke<BrowserExtensionInfo | null>('browser:install-extension-unpacked', null),
+    setExtensionEnabled: (id: string, enabled: boolean) => optionalInvoke<BrowserFeatureState>('browser:set-extension-enabled', {
+      adBlockEnabled: true,
+      adBlockReady: false,
+      adBlockEngine: 'Ghostery · uBlock/EasyList uyumlu',
+      extensionCount: 0,
+      extensions: [],
+    }, { id, enabled }),
+    removeExtension: (id: string) => optionalInvoke<BrowserFeatureState>('browser:remove-extension', {
+      adBlockEnabled: true,
+      adBlockReady: false,
+      adBlockEngine: 'Ghostery · uBlock/EasyList uyumlu',
+      extensionCount: 0,
+      extensions: [],
+    }, { id }),
+    openExtensionOptions: (id: string) => optionalInvoke<void>('browser:open-extension-options', undefined, { id }),
+    clearBrowsingData: (scope: 'cache' | 'cookies' | 'all') => optionalInvoke<void>('browser:clear-browsing-data', undefined, { scope }),
     on: <T>(event: (typeof BROWSER_EVENTS)[keyof typeof BROWSER_EVENTS], callback: (payload: T) => void) => listen<T>(event, callback),
   },
   media: {
