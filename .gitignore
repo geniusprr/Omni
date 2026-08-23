@@ -15,11 +15,12 @@ supabase/.temp
 vendor/.cache
 vendor/.runtime-*
 
-# LibreChat is bundled as a local, prebuilt static distribution for the
-# Electron package. It is regenerated/staged locally and is not application
-# source; keeping it ignored prevents its hundreds of hashed assets and
-# compressed copies from flooding the working tree.
-vendor/
+# LibreChat is bundled as a prebuilt static distribution. Keep transient
+# vendor staging ignored, but version the exact client shipped in releases so
+# GitHub Actions can reproduce the same complete installer as local builds.
+vendor/*
+!vendor/librechat-client/
+!vendor/librechat-client/**
 
 # Installer/package outputs are local release artifacts, not source files.
 *.exe

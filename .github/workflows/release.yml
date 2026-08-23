@@ -19,6 +19,12 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Verify bundled LibreChat client
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'vendor/librechat-client/index.html')) {
+            throw 'Bundled LibreChat client is missing from the release source.'
+          }
       - name: Build NSIS installer
         run: npm run dist
         env:

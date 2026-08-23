@@ -1,0 +1,26 @@
+node_modules
+dist
+dist-electron
+release
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.supabase
+supabase/.temp
+
+# Generated vendor build cache/staging.
+vendor/.cache
+vendor/.runtime-*
+
+# IDE & OS
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
