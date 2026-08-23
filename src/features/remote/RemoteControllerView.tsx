@@ -133,7 +133,7 @@ export function RemoteControllerView() {
       setBrowserPermission(perm)
       if (perm === 'granted') {
         try {
-          new Notification('kapanış. Remote', { body: 'PC bildirim aynalama başarıyla aktifleştirildi!' })
+          new Notification('Omni Remote', { body: 'PC bildirim aynalama başarıyla aktifleştirildi!' })
         } catch {}
       }
     })
@@ -373,8 +373,8 @@ export function RemoteControllerView() {
         <div className="remote-card">
           <header className="remote-card__header" style={{ position: 'relative' }}>
             <div className="remote-card__brand">
-              <div className="remote-card__logo">k.</div>
-              <h2>kapanış. <span style={{ fontWeight: 400, fontSize: '0.9rem', color: '#94a3b8' }}>Kumanda</span></h2>
+              <div className="remote-card__logo">O</div>
+              <h2>Omni <span style={{ fontWeight: 400, fontSize: '0.9rem', color: '#94a3b8' }}>Kumanda</span></h2>
             </div>
             <Button size="compact" variant="ghost" title="Tema Değiştir" onClick={toggleTheme}>
               {themeMode === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
@@ -387,7 +387,7 @@ export function RemoteControllerView() {
             </div>
             <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '6px' }}>Bilgisayarınızı Eşleştirin</h3>
             <p style={{ fontSize: '0.85rem', color: '#94a3b8', lineHeight: 1.4, marginBottom: '20px' }}>
-              Bilgisayarınızdaki <strong>kapanış.</strong> uygulamasının Ayarlar sekmesindeki QR kodu okutun veya bağlantı linkini yapıştırın.
+              Bilgisayarınızdaki <strong>Omni</strong> uygulamasının Ayarlar sekmesindeki QR kodu okutun veya bağlantı linkini yapıştırın.
             </p>
 
             <form onSubmit={handleAddPcSubmit}>
@@ -579,7 +579,7 @@ export function RemoteControllerView() {
               </div>
 
               <p style={{ fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.35, marginBottom: 14 }}>
-                Yeni bilgisayarınızdaki kapanış uygulamasından <strong>Eşleştirme Linkini</strong> veya <strong>QR Verisini</strong> yapıştırın.
+                Yeni bilgisayarınızdaki Omni uygulamasından <strong>Eşleştirme Linkini</strong> veya <strong>QR Verisini</strong> yapıştırın.
               </p>
 
               <form onSubmit={handleAddPcSubmit}>
@@ -892,7 +892,7 @@ export function RemoteControllerView() {
         ) : null}
 
         <footer className="remote-footer">
-          <small>kapanış. Windows Güç Yöneticisi</small>
+          <small>Omni Windows Güç Yöneticisi</small>
         </footer>
       </div>
     </div>

@@ -422,7 +422,7 @@ class MobileTransferServer(
             manager.createNotificationChannel(
                 NotificationChannel(
                     TRANSFER_CHANNEL_ID,
-                    "kapanış. Dosya Aktarımları",
+                    "Omni Dosya Aktarımları",
                     NotificationManager.IMPORTANCE_DEFAULT
                 )
             )

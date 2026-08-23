@@ -1,4 +1,4 @@
-# Proguard rules for kapanış mobil
+# Proguard rules for Omni mobil
 -keepattributes *Annotation*
 -keepclassmembers class * {
     @org.jetbrains.annotations.* <fields>;

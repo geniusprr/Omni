@@ -103,7 +103,7 @@ async function assertVisibleViewIsPainted(
       visibilityState: document.visibilityState,
       width: document.documentElement.clientWidth,
       height: document.documentElement.clientHeight,
-      hasSmokeContent: document.body?.innerText.includes('kapanış browser lifecycle smoke test') === true,
+      hasSmokeContent: document.body?.innerText.includes('Omni browser lifecycle smoke test') === true,
     })`,
     true,
   ) as {

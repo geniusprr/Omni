@@ -23,12 +23,12 @@ class VaultRepository(private val context: Context) {
         val welcomeFile = File(root, "Hoşgeldiniz.md")
         welcomeFile.writeText(
             """---
-title: kapanış. Defter'e Hoş Geldiniz
+title: Omni Defter'e Hoş Geldiniz
 tags: baslangic, rehber, mobil
 created: 2026-08-20
 ---
 
-# kapanış. Defter (Obsidian Notebook)
+# Omni Defter (Obsidian Notebook)
 
 Bu defter, **Obsidian** mantığıyla çalışan, tamamen yerel dosya tabanlı bir kişisel bilgi ve not yönetim sistemidir.
 
@@ -50,14 +50,14 @@ Bu defter, **Obsidian** mantığıyla çalışan, tamamen yerel dosya tabanlı b
         )
 
         val projelerDir = File(root, "Projeler").apply { mkdirs() }
-        val projeNote = File(projelerDir, "kapanış.md")
+        val projeNote = File(projelerDir, "Omni.md")
         projeNote.writeText(
             """---
-title: kapanış. Projesi
+title: Omni Projesi
 tags: yazilim, kapanis, pc
 ---
 
-# kapanış. Masaüstü & Mobil Ekosistemi
+# Omni Masaüstü & Mobil Ekosistemi
 
 Sakin, hafif ve modern Windows kapatma, alarm ve defter yönetim uygulaması.
 
@@ -78,7 +78,7 @@ tags: fikirler, inovasyon
 
 # Gelecek Fikirleri ve İlhamlar
 
-- [ ] [[kapanış]] için sesli komut sistemi ekle
+- [ ] [[Omni]] için sesli komut sistemi ekle
 - [ ] Markdown çizim (Mermaid) desteğini genişlet
 - [ ] Offline yapay zeka özetleyicisi araştır
 

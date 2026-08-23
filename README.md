@@ -1,77 +1,214 @@
-# kapanış.
+<div align="center">
+  <img src="app-icon.png" width="96" alt="Omni uygulama simgesi" />
 
-Windows için küçük, yerel ve düşük kaynak tüketimli bir kapatma sayacı + alarm uygulaması. Electron, React ve Chromium tabanlı gerçek bir tarayıcı sekme sistemi ile çalışır.
+  <h1>Omni</h1>
 
-## Özellikler
+  <p><strong>Windows için kişisel çalışma alanın.</strong></p>
+  <p>Tarayıcı, yapay zekâ, notlar, dosya paylaşımı, uzaktan erişim, medya, alarm ve güç yönetimi — tek, sakin ve modern masaüstünde.</p>
 
-- Bilgisayarı kapatma veya yeniden başlatma sayacı
-- Aktif Windows planını tek tuşla iptal etme
-- Tek seferlik, belirli aralıklarla veya ileri bir saatte başlayan alarmlar
-- İptale kadar ya da 3/5/10 kez tekrarlama
-- Üç Windows sistem sesi profili ve 5 dakika erteleme
-- Alarm ve planların `%APPDATA%\kapanis` altında yerel saklanması
-- Windows ile otomatik açılma, arka planda başlama ve sistem tepsisi
-- Electron splash penceresi, sistem tepsisi ve frameless Windows kabuğu
-- Her web sekmesi için merkezi `WebContentsView` lifecycle yönetimi
-- Sekme başına favicon, geçmiş, indirme, izin, popup, fullscreen ve medya durumu
-- Kalıcı browser session restore; kapatılan sekmelerin renderer ve medya süreçleri temizlenir
-- Gelecekte telefondan komut vermek için RLS korumalı Supabase migration + isteğe bağlı Realtime köprüsü
+  <p>
+    <img alt="Windows 10 ve 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white" />
+    <img alt="Electron 43" src="https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white" />
+    <img alt="React 18" src="https://img.shields.io/badge/React-18-149ECA?logo=react&logoColor=white" />
+    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white" />
+    <img alt="MIT License" src="https://img.shields.io/badge/License-MIT-white" />
+  </p>
+
+  <p>
+    <a href="https://github.com/geniusprr/Shutty/releases/latest"><strong>İndir</strong></a>
+    · <a href="#uygulama-turu">Uygulama turu</a>
+    · <a href="#teknoloji-ve-mimari">Mimari</a>
+    · <a href="#geliştirme">Geliştirme</a>
+  </p>
+</div>
+
+<p align="center">
+  <img src="docs/images/omni-home.jpg" width="100%" alt="Omni ana sayfa" />
+</p>
+
+## Omni nedir?
+
+Omni, Windows üzerinde günlük kullandığın araçları ayrı ayrı pencerelere dağıtmak yerine tek bir masaüstü kabuğunda birleştiren yerel bir çalışma alanıdır. Gerçek Chromium tabanlı tarayıcı sekmeleri, gömülü LibreChat, Markdown/Vault not sistemi, LocalSend uyumlu dosya aktarımı, mobil kumanda, güç zamanlayıcıları, alarmlar ve medya kontrolleri aynı arayüz diliyle birlikte çalışır.
+
+Omni bir web sayfasını masaüstü uygulaması gibi gösteren basit bir wrapper değildir. Electron ana süreci tarayıcı yaşam döngüsünü, Windows entegrasyonlarını, yerel sunucuları, bildirimleri, dosya aktarımını ve sistem işlemlerini yönetirken React arayüzü bütün bu yetenekleri tek bir deneyimde toplar.
+
+| Çalışma alanı | Ne sunuyor? | Öne çıkanlar |
+| --- | --- | --- |
+| **Ana Sayfa** | Günlük kontrol merkezi | Widget düzeni, hızlı erişim, görevler, hava, müzik, notlar, cihazlar |
+| **Tarayıcı** | Yerleşik Chromium deneyimi | Gerçek sekmeler, geçmiş, indirmeler, izinler, medya ve oturum geri yükleme |
+| **AI · LibreChat** | Yerel AI çalışma alanı | OpenRouter, OpenAI, Anthropic, Gemini, Mistral, Groq, Ollama ve custom endpoint |
+| **Defter** | Yerel bilgi sistemi | Markdown, WYSIWYG, wikilink, backlink, graph, hızlı arama ve dosya ağacı |
+| **Paylaşım** | Cihazlar arası aktarım | LocalSend/LAN, metin ve dosya gönderimi, eşleştirilmiş cihaz kuyruğu |
+| **Mobil Kumanda** | PC'ye uzaktan erişim | Eşleştirme, ekran görüntüleme, mouse/klavye ve güç komutları |
+| **Güç & Alarm** | Windows zamanlama araçları | Kapatma, yeniden başlatma, tek seferlik ve tekrarlayan alarmlar |
+| **Ayarlar** | Tek merkezden yapılandırma | Temalar, bildirimler, cihazlar, bağlantılar ve başlangıç davranışı |
+
+---
+
+## Uygulama turu
+
+### 1. Ana Sayfa — her şeyin başladığı yer
+
+<p align="center"><img src="docs/images/omni-home.jpg" width="100%" alt="Omni Ana Sayfa dashboard" /></p>
+
+Ana sayfa, Omni'nin kontrol merkezi. Üç kolonlu sürüklenebilir widget düzeni; yer imlerini, hızlı erişim kısayollarını, görevleri, son notu, bağlı cihazları, güç sayacını, hava durumunu ve çalan medyayı aynı bakışta gösterir. Widget'lar kişiselleştirilebilir; sık kullanılan programlar ve web siteleri doğrudan buradan açılabilir.
+
+- Google/adres araması için ana ekranda gerçek tarayıcı arama çubuğu ve `Ctrl + L` desteği.
+- Program ve web sitesi kısayolları için özelleştirilebilir Hızlı Erişim alanı.
+- Görev, not, cihaz, hava durumu, müzik ve güç widget'ları.
+- Obsidyen, Pembe, Mor, Okyanus ve Açık tema seçenekleri.
+
+### 2. Tarayıcı — uygulamanın içinde gerçek web
+
+<p align="center"><img src="docs/images/omni-browser.jpg" width="100%" alt="Omni yerleşik tarayıcı" /></p>
+
+Omni'nin tarayıcısı Electron'un native Chromium yüzeyini kullanır. Web içeriği React içinde taklit edilmez; her sekme gerçek bir tarayıcı yaşam döngüsüne sahiptir ve uygulama kabuğuyla senkron çalışır.
+
+- Çoklu sekme, sabitleme, çoğaltma, sessize alma ve sekme oturumu geri yükleme.
+- Geri/ileri, yenile, omnibox, favicon, popup ve fullscreen yönetimi.
+- Geçmiş, indirmeler ve site izinleri için kalıcı yerel durum.
+- Aktif medya algılama ve ana sayfadaki Müzik widget'ıyla senkron kontrol.
+- Son sekme kapandığında Omni ana sayfasına doğal geri dönüş.
+
+### 3. AI · LibreChat — model bağımsız çalışma alanı
+
+<p align="center"><img src="docs/images/omni-librechat.jpg" width="100%" alt="Omni LibreChat AI çalışma alanı" /></p>
+
+Omni, resmi LibreChat istemcisini kendi yerel AI katmanıyla birlikte çalıştırır. Ayrı Docker kurulumu veya dışarıda açık bırakılması gereken bir LibreChat sunucusu gerekmeden uygulamanın içinde ayrı bir native çalışma alanı olarak açılır.
+
+Desteklenen sağlayıcılar: **OpenRouter, OpenAI, Anthropic, Google Gemini, Mistral, Groq, Ollama** ve OpenAI uyumlu **custom endpoint**. Konuşmalar ve model yapılandırması yerel uygulama katmanı üzerinden yönetilir.
+
+### 4. Güç & Zamanlayıcı — Windows planlarını sadeleştir
+
+<p align="center"><img src="docs/images/omni-power.jpg" width="100%" alt="Omni güç zamanlayıcısı" /></p>
+
+Kapatma ve yeniden başlatma planlarını Windows'a doğrudan uygular. 15 dakika, 30 dakika, 1 saat ve 2 saat hazır süreleri kullanabilir veya saat/dakika/saniyeyi kendin belirleyebilirsin. Plan aktifken kalan süre görünür ve tek tıkla iptal edilebilir; pencere kapansa bile sistem planı devam eder.
+
+### 5. Alarmlar — tek seferlik veya tekrarlayan
+
+<p align="center"><img src="docs/images/omni-alarms.jpg" width="100%" alt="Omni alarm ekranı" /></p>
+
+Alarm sistemi yalnızca basit bir saat seçiciden ibaret değildir. Belirli bir tarihte tek seferlik alarm kurabilir, dakikalık/saatlik/günlük aralıklarla tekrar ettirebilir, 3/5/10 tekrar veya iptale kadar çalışma seçebilir ve Windows sistem sesleri arasında geçiş yapabilirsin. Alarm çalarken 5 dakika erteleme de desteklenir.
+
+### 6. Defter & Vault — yerel, bağlantılı not sistemi
+
+<p align="center"><img src="docs/images/omni-notes.jpg" width="100%" alt="Omni Defter ve Vault" /></p>
+
+Defter bölümü yerel dosya tabanlı bir kişisel bilgi alanıdır. Markdown dosyaların normal dosya olarak kalır; Omni bunun üzerine modern düzenleme, canlı biçimlendirme ve bağlantılı not araçlarını ekler.
+
+- WYSIWYG odaklı Markdown düzenleme ve okuma modu.
+- `[[wikilink]]`, backlink ve ilişki grafiği.
+- Klasör/dosya ağacı, sekmeler, hızlı değiştirici ve içerik araması.
+- Kod blokları, listeler, görevler, tablolar ve zengin metin araçları.
+- Vault klasörünü Windows Explorer'da kullanmaya devam edebilme.
+
+### 7. Dosya Paylaşımı — LocalSend mantığı, Omni deneyimi
+
+<p align="center"><img src="docs/images/omni-localsend.jpg" width="100%" alt="Omni LocalSend dosya paylaşımı" /></p>
+
+Aynı Wi‑Fi ağındaki cihazları keşfet, hedefi seç ve metin ya da dosya gönder. Yerel cihazlar düşük gecikmeli LAN aktarımını kullanırken eşleştirilmiş cihazlar gerektiğinde bulut kuyruğu üzerinden de hedeflenebilir.
+
+- Yerel ağ taraması ve manuel IP ile cihaz ekleme.
+- Metin, bağlantı, fotoğraf, video, PDF ve diğer dosyaları gönderme.
+- Sürükle-bırak dosya seçimi ve alınanlar geçmişi.
+- Otomatik kabul seçeneği ve indirilenler klasörüne hızlı erişim.
+- Yerel ve eşleştirilmiş cihazların tek cihaz listesinde görünmesi.
+
+### 8. Uzak Bağlantı — telefonunu Omni kumandasına çevir
+
+<p align="center"><img src="docs/images/omni-remote.jpg" width="100%" alt="Omni mobil kumanda ve uzak bağlantı" /></p>
+
+Telefon veya başka bir cihaz QR/eşleştirme bağlantısıyla Omni'ye bağlanabilir. Yerel ağda PC ekranını görüntüleme, mouse hareketleri ve klavye girdisi gibi masaüstü kontrolleri; uzaktan güç komutları ve bildirim aktarımıyla aynı cihaz altyapısını paylaşır. Güvenilen cihazlar Ayarlar'dan ayrı ayrı iptal edilebilir.
+
+### 9. Ayarlar — görünümden bağlantıya tek merkez
+
+<p align="center"><img src="docs/images/omni-settings.jpg" width="100%" alt="Omni ayarlar ve temalar" /></p>
+
+Ayarlar ekranı beş net bölüme ayrılır: **Genel, Görünüm, Bildirimler, Cihazlar ve Bağlantı**. Windows ile otomatik başlatma, tema seçimi, PC bildirim aynalama, cihaz eşleştirme, mobil ekran kontrolü ve opsiyonel Supabase bağlantısı aynı alandan yönetilir.
+
+### 10. Global Arama — `Ctrl + K` ile her yere ulaş
+
+<p align="center"><img src="docs/images/omni-search.jpg" width="100%" alt="Omni global arama ve hızlı geçiş" /></p>
+
+Omni'nin hızlı değiştiricisi uygulama modlarını, ayarları, komutları ve Vault notlarını tek aramada bulur. Sonuç yoksa aynı alan web aramasına dönüşür. Klavyeden `↑` / `↓`, `Enter` ve `Esc` ile tamamen mouse kullanmadan gezilebilir.
+
+---
+
+## Yerel öncelikli tasarım
+
+Omni'nin temel işlevleri bilgisayarın üzerinde çalışır. Tarayıcı oturumu, notlar, alarm ve uygulama durumu yerel çalışma alanında tutulur; yerel dosya paylaşımı ve mobil ekran bağlantısı LAN üzerinden çalışabilir. Supabase tabanlı uzaktan eşleştirme/senkronizasyon ise **isteğe bağlıdır** ve yalnızca kullanıcı yapılandırdığında devreye girer.
+
+Uyumluluğu korumak için bazı dahili kimlikler ve veri yolları hâlâ `kapanis` adını taşır. Bu, eski kurulumların yerel verilerini, derin bağlantılarını ve eşleştirmelerini kırmadan görünen ürün adının **Omni** olarak değişmesini sağlar.
+
+## Teknoloji ve mimari
+
+| Katman | Teknoloji / yaklaşım |
+| --- | --- |
+| Masaüstü kabuğu | Electron 43, native Windows pencere ve tray entegrasyonu |
+| Arayüz | React 18, TypeScript 5.7, Vite 6, Radix/shadcn tabanlı bileşenler |
+| Tarayıcı | Chromium `BrowserView` / native `webContents`, ayrı sekme yaşam döngüsü |
+| AI | Bundled LibreChat istemcisi + yerel `AiStore` + çoklu sağlayıcı desteği |
+| Notlar | Yerel Vault, CodeMirror 6, Markdown parser, wikilink/backlink/graph |
+| Dosya aktarımı | LAN discovery + LocalSend akışı + eşleştirilmiş cihaz transfer kuyruğu |
+| Mobil / Remote | Yerel HTTP/WebSocket katmanı, güvenilen cihaz sistemi, Android companion |
+| Opsiyonel bulut | Supabase Realtime ve eşleştirme altyapısı |
+| Test | TypeScript build, birim testleri, Electron browser lifecycle smoke testleri |
+
+## Kurulum
+
+Windows kurulum paketleri GitHub Releases üzerinden yayınlanır:
+
+**[→ En güncel Omni sürümünü indir](https://github.com/geniusprr/Shutty/releases/latest)**
+
+> Windows installer şu anda kod imzalı değilse SmartScreen “bilinmeyen yayıncı” uyarısı gösterebilir. Kaynaktan derlemeyi tercih ediyorsan aşağıdaki geliştirme adımlarını kullanabilirsin.
+
+### Gereksinimler
+
+- Windows 10 veya Windows 11
+- Kaynaktan geliştirme için Node.js 22+
+- Android companion derlemek istersen Android Studio / uygun Android SDK
 
 ## Geliştirme
 
-Gerekenler: Node.js 22+ ve Windows için Electron build araçları. Electron kendi Chromium altyapısını paketler; ayrıca Chromium fork'u veya sistem WebView2 kurulumu gerekmez.
-
 ```powershell
-npm install
+npm ci
 npm run dev
 ```
 
-`npm run dev:ui` yalnızca React renderer'ını sunar. `npm run dev`, Vite renderer'ını ve Electron main process'i birlikte başlatır.
-
-## Windows installer
+Yararlı komutlar:
 
 ```powershell
-npm run dist
+npm run build          # TypeScript + Vite + Electron build
+npm test               # Birim testleri
+npm run test:browser   # Gerçek Electron/Chromium lifecycle smoke testi
+npm run dist           # Windows NSIS installer
 ```
 
-NSIS installer: `release/`
+`npm run dev:ui` yalnızca React renderer'ını açar. Gerçek tarayıcı yüzeyi, Windows entegrasyonu, LibreChat ve sistem özellikleri için `npm run dev` kullan.
 
-`v*` etiketi GitHub'a gönderildiğinde `.github/workflows/release.yml` Windows installer'ını derler ve taslak GitHub Release'e ekler. Kod imzalama yapılandırılmadığı sürece Windows ilk açılışta bilinmeyen yayıncı uyarısı gösterebilir.
+## Android companion
 
-## Yapı
+`mobil/` klasörü Omni'nin Android companion uygulamasını içerir. Mobil istemci eşleştirilmiş bilgisayarlara bağlanmak, güç komutları göndermek, bildirim almak, dosya paylaşmak ve izin verildiğinde PC ekranını kontrol etmek için masaüstü uygulamasıyla birlikte çalışır.
+
+## Proje yapısı
 
 ```text
-src/
-  components/          shadcn tabanlı kontroller ve native pencere kabuğu
-  features/power/      kapatma / yeniden başlatma sayacı
-  features/alarms/     alarm formu, tekrar seçenekleri ve bekleyenler
-  features/remote/     yapılandırılırsa dinamik yüklenen Supabase köprüsü
-  lib/desktop.ts       typed Electron preload IPC sınırı
-  styles/compact.css   yalnızca iki üretim ekranının kullandığı stiller
-electron/
-  main.ts              güvenli IPC kayıtları ve uygulama yaşam döngüsü
-  WindowManager.ts     pencere, splash ve sistem tepsisi
-  BrowserManager.ts    merkezi browser orchestration
-  TabManager.ts        sekme başına WebContentsView lifecycle
-  SessionManager.ts    kalıcı browser profili, session ve history
-  DownloadManager.ts   indirme yaşam döngüsü
-  PermissionManager.ts site izinleri
-  MediaManager.ts     medya metadata ve playback kontrolü
-  preload.cts          allowlist'li contextBridge API
-supabase/              RLS migration ve telefon kontrolü hazırlığı
-tokens.css             OKLCH tasarım tokenları
+src/                 React arayüzü, özellikler ve tasarım sistemi
+electron/            Windows/Electron ana süreç servisleri
+shared/              Renderer ↔ Electron ortak sözleşmeleri
+mobil/               Android companion uygulaması
+supabase/             Opsiyonel remote/realtime migration'ları
+vendor/librechat-*    Omni ile paketlenen LibreChat istemcisi
+docs/images/          Bu README'de kullanılan gerçek Omni ekran görüntüleri
 ```
 
-## Supabase hazırlığı
+## Lisans
 
-Telefon kontrolü varsayılan olarak kapalıdır ve ana uygulamaya ağ yükü getirmez. Kurulum adımları [supabase/README.md](supabase/README.md) içindedir. İstemcilerde yalnızca publishable key kullanılmalıdır; `service_role` anahtarı masaüstü veya telefon uygulamasına eklenmez.
+MIT — ayrıntılar için [`LICENSE`](LICENSE) dosyasına bakın.
 
-## Güvenlik
+---
 
-Kapatma ve yeniden başlatma komutları Electron main process'inde doğrulanıp doğrudan Windows `shutdown.exe` aracına iletilir. Remote web içerikleri `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true` ile açılır; renderer'a yalnızca allowlist'li typed preload API'si verilir. Supabase komutları cihaz ve kullanıcı sahipliğini Row Level Security ile sınırlar; süresi dolan uzak komutlar çalıştırılmaz.
-
-Android uygulamasındaki **CMD** sekmesi yalnızca eşleştirilmiş cihazdan, aynı özel yerel ağdayken çalışır. Her komut telefonda ayrıca onaylanır, 30 saniye ile sınırlandırılır ve sonucu telefona döner. Komutların yönetici olması için masaüstü uygulamasını Windows'ta **Yönetici olarak çalıştır** ile başlatın; uygulama UAC'yi atlamaya çalışmaz. Eşleştirme PIN'i keşif yanıtlarında paylaşılmaz ve ardışık hatalı PIN denemeleri geçici olarak sınırlandırılır. Yerel portu internete açmayın.
-
-Değişiklikleri yayınlamadan önce `npm test`, `npm run build` ve `npm run dist` çalıştırın.
-
-MIT lisanslıdır.
+<div align="center">
+  <strong>Omni</strong><br />
+  <sub>Bir sürü küçük araç yerine, tek bir kişisel çalışma alanı.</sub>
+</div>

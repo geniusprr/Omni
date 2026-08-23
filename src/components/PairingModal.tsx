@@ -139,7 +139,7 @@ export function PairingModal({
   async function handleSendTestNotification() {
     setTestNotifSent(true)
     await desktop.notifications.test(
-      'kapanış. Eşleştirme Testi',
+      'Omni Eşleştirme Testi',
       'Bilgisayarınız ile telefonunuz başarıyla bağlandı!'
     )
     setTimeout(() => setTestNotifSent(false), 2500)
@@ -224,7 +224,7 @@ export function PairingModal({
                   </div>
 
                   <p className="pairing-guide-text">
-                    📷 Telefonunuzun kamera uygulamasını veya kapanış. mobil uygulamasını açıp yukarıdaki QR kodu okutun.
+                    📷 Telefonunuzun kamera uygulamasını veya Omni mobil uygulamasını açıp yukarıdaki QR kodu okutun.
                     Supabase ayarları ve anahtarlar telefona otomatik yüklenir.
                   </p>
 

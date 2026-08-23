@@ -73,7 +73,7 @@ const SETTINGS_SECTIONS = [
 type SettingsSection = typeof SETTINGS_SECTIONS[number]['id']
 
 const SUPABASE_SCHEMA_SQL = `-- ============================================================================
--- kapanış. Supabase Database Schema: Temiz Kurulum & Sıfırlama
+-- Omni Supabase Database Schema: Temiz Kurulum & Sıfırlama
 -- ============================================================================
 
 -- 1. Eski Çakışan Tablo ve Tipleri Güvenle Temizleme
@@ -421,7 +421,7 @@ export function SettingsPage({
   }
 
   async function handleSendTestNotification() {
-    await desktop.notifications.test('kapanış. Test Bildirimi', 'Bilgisayarınızdan telefonunuza başarıyla iletildi!')
+    await desktop.notifications.test('Omni Test Bildirimi', 'Bilgisayarınızdan telefonunuza başarıyla iletildi!')
     setTestNotifSent(true)
     setTimeout(() => setTestNotifSent(false), 2500)
   }
@@ -492,7 +492,7 @@ export function SettingsPage({
     <section className="utility-screen settings-screen" aria-labelledby="settings-title">
       <header className="screen-heading settings-page-heading">
         <div>
-          <span className="settings-page-heading__eyebrow">KAPANIŞ. / SYSTEM</span>
+          <span className="settings-page-heading__eyebrow">OMNI / SYSTEM</span>
           <h1 id="settings-title">Ayarlar</h1>
           <p>Uygulamanın görünümünü, bağlantılarını ve cihaz erişimini yönetin.</p>
         </div>
@@ -539,7 +539,7 @@ export function SettingsPage({
           </nav>
           <div className="settings-navigation__footer">
             <span className="settings-navigation__footer-dot" />
-            <span>kapanış. masaüstü</span>
+            <span>Omni masaüstü</span>
           </div>
         </aside>
 
@@ -555,7 +555,7 @@ export function SettingsPage({
             <div className="settings-card__icon"><Laptop size={17} /></div>
             <div>
               <h3>Windows ile Başlatma</h3>
-              <p>Bilgisayar açıldığında kapanış. arka planda otomatik çalışsın.</p>
+              <p>Bilgisayar açıldığında Omni arka planda otomatik çalışsın.</p>
             </div>
           </div>
           <div className="settings-card__body settings-row">

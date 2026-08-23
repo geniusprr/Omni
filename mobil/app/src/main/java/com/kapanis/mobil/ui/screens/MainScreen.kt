@@ -434,7 +434,7 @@ fun MainScreen(
         if (msg.isEmpty() || isSendingNotif) return
         isSendingNotif = true
         Toast.makeText(context, "Bildirim PC ekranında gösterildi ✓", Toast.LENGTH_SHORT).show()
-        val titleToSend = notifTitle.trim().ifEmpty { "kapanış. Mobil Bildirim" }
+        val titleToSend = notifTitle.trim().ifEmpty { "Omni Mobil Bildirim" }
         notifTitle = ""
         notifMessage = ""
         showNotifDialog = false
@@ -605,7 +605,7 @@ fun MainScreen(
 
                                                 val targetDate = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(activeTimer!!.targetAt))
                                                 Text(
-                                                    text = "Hedef Kapanış Saati: $targetDate",
+                                                    text = "Hedef Omni Saati: $targetDate",
                                                     fontSize = 12.sp,
                                                     color = colors.textMuted
                                                 )
@@ -1025,7 +1025,7 @@ fun MainScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Özel Kapanış Süresi",
+                                text = "Özel Omni Süresi",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.textPrimary

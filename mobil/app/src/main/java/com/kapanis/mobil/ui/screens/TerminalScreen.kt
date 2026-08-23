@@ -227,7 +227,7 @@ fun TerminalScreen(
                             text = when {
                                 mode != ConnectionMode.LOCAL -> "Üst çubuktan Yerel moda geçin ve aynı Wi-Fi ağındaki PC'yi seçin."
                                 authToken.isBlank() -> "Cihazlar ekranında PC'nin PIN koduyla eşleştirmeyi tamamlayın."
-                                terminalStatus?.available == true -> "Bilgisayarda kapanış. uygulamasını kapatıp “Yönetici olarak çalıştır” ile yeniden açın, sonra buradan yenileyin."
+                                terminalStatus?.available == true -> "Bilgisayarda Omni uygulamasını kapatıp “Yönetici olarak çalıştır” ile yeniden açın, sonra buradan yenileyin."
                                 else -> "Masaüstü uygulamasını bu güncelleme ile açın ve telefonun PC ile aynı Wi-Fi ağında olduğundan emin olun."
                             },
                             color = colors.textMuted,

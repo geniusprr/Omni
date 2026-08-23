@@ -188,7 +188,7 @@ fun NotifyScreen(
             val result = apiClient.sendNotification(
                 host = target.host,
                 port = target.port,
-                title = notifTitle.trim().ifEmpty { "kapanış. Mobil Bildirim" },
+                title = notifTitle.trim().ifEmpty { "Omni Mobil Bildirim" },
                 message = msg,
                 urgent = isUrgent
             )

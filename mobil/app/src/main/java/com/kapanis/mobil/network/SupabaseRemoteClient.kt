@@ -65,7 +65,7 @@ class SupabaseRemoteClient {
                 val body = response.body?.string().orEmpty()
                 val array = JSONArray(body)
                 if (array.length() == 0) {
-                    return@withContext Result.failure(Exception("Eşleştirme koduna ait bilgisayar bulunamadı ($cleanCode). Bilgisayarda kapanış uygulamasının açık ve Ayarlar sekmesinde Supabase'in bağlı olduğundan emin olun."))
+                    return@withContext Result.failure(Exception("Eşleştirme koduna ait bilgisayar bulunamadı ($cleanCode). Bilgisayarda Omni uygulamasının açık ve Ayarlar sekmesinde Supabase'in bağlı olduğundan emin olun."))
                 }
 
                 val devObj = array.getJSONObject(0)

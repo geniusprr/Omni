@@ -255,7 +255,7 @@ fun OnlinePowerScreen(
         // Power Planning Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Text(
-                text = "Kapanış veya Yeniden Başlatma Planla",
+                text = "Omni veya Yeniden Başlatma Planla",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.textPrimary

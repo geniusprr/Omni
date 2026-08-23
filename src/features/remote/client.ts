@@ -456,7 +456,7 @@ export async function pairWithDeviceByCode(
     .maybeSingle()
 
   if (error) return { success: false, message: `Sorgu hatası: ${error.message}` }
-  if (!device) return { success: false, message: 'Bu eşleştirme koduna ait bilgisayar bulunamadı. Lütfen bilgisayarınızdaki kapanış uygulamasının açık ve Ayarlar sekmesinde Supabase bağlantısının yeşil (çevrim içi) olduğundan emin olun.' }
+  if (!device) return { success: false, message: 'Bu eşleştirme koduna ait bilgisayar bulunamadı. Lütfen bilgisayarınızdaki Omni uygulamasının açık ve Ayarlar sekmesinde Supabase bağlantısının yeşil (çevrim içi) olduğundan emin olun.' }
 
   let controllerId = localStorage.getItem('kapanis_controller_id')
   if (!controllerId) {

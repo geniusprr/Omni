@@ -58,7 +58,7 @@ export class WindowManager {
       height: 900,
       minWidth: 720,
       minHeight: 520,
-      title: 'kapanış.',
+      title: 'Omni',
       show: false,
       // Use the operating system's real caption buttons. The titlebar is
       // hidden into the client area so the wallpaper remains visible behind
@@ -116,7 +116,7 @@ export class WindowManager {
     this.splashWindow = new BrowserWindow({
       width: 380,
       height: 240,
-      title: 'kapanış.',
+      title: 'Omni',
       show: false,
       frame: false,
       transparent: false,
@@ -361,7 +361,7 @@ export class WindowManager {
     const iconPath = path.join(app.getAppPath(), 'app-icon.png')
     const icon = nativeImage.createFromPath(iconPath)
     this.tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-    this.tray.setToolTip('kapanış.')
+    this.tray.setToolTip('Omni')
     const menu = Menu.buildFromTemplate([
       { label: 'Aç', click: () => this.showMain() },
       { type: 'separator' },

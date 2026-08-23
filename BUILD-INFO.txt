@@ -1,4 +1,4 @@
-kapanış. 1.1.0 — Electron Windows x64 release
+Omni 1.1.0 — Electron Windows x64 release
 Build date: 2026-08-21
 
 Installer

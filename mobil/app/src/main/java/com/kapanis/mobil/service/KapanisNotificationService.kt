@@ -119,7 +119,7 @@ class KapanisNotificationService : Service() {
                 // 1. Silent Service Channel
                 val serviceChannel = NotificationChannel(
                     CHANNEL_SERVICE_ID,
-                    "kapanış. Arka Plan Servisi",
+                    "Omni Arka Plan Servisi",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = "PC bildirim aynalama ve arka plan bağlantı servisi"
@@ -157,7 +157,7 @@ class KapanisNotificationService : Service() {
             )
 
             val notification = NotificationCompat.Builder(this, CHANNEL_SERVICE_ID)
-                .setContentTitle("kapanış. Bildirim Aynalama")
+                .setContentTitle("Omni Bildirim Aynalama")
                 .setContentText("Yerel dosya alımı ve bulut bağlantısı aktif")
                 .setSmallIcon(android.R.drawable.ic_popup_sync)
                 .setContentIntent(pendingIntent)

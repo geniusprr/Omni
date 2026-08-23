@@ -1,5 +1,5 @@
 -- ============================================================================
--- kapanış. Supabase Database Schema: Cihaz Eşleştirme, Kalp Atışı & Uzaktan Kontrol
+-- Omni Supabase Database Schema: Cihaz Eşleştirme, Kalp Atışı & Uzaktan Kontrol
 -- ============================================================================
 
 -- 1. Eski Çakışan Tablo ve Tipleri Güvenle Temizleme

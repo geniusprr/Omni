@@ -527,7 +527,7 @@ fun PairingDetailsModal(
                     color = colors.accent
                 )
                 Text(
-                    text = "Bilgisayarınızdaki kapanış. programındaki IP adresini girin.",
+                    text = "Bilgisayarınızdaki Omni programındaki IP adresini girin.",
                     fontSize = 11.sp,
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)

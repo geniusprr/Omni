@@ -3,8 +3,8 @@
   "version": "1.1.0",
   "private": true,
   "main": "dist-electron/electron/main.js",
-  "description": "Sakin ve düşük kaynak tüketimli Windows kapatma ve alarm zamanlayıcısı.",
-  "author": "kapanış. contributors",
+  "description": "Omni — Windows için tarayıcı, LibreChat, notlar, dosya paylaşımı, uzaktan erişim, medya, alarm ve güç yönetimini tek masaüstünde birleştiren kişisel çalışma alanı.",
+  "author": "Omni contributors",
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -76,7 +76,7 @@
   },
   "build": {
     "appId": "com.kapanis.desktop",
-    "productName": "kapanış.",
+    "productName": "Omni",
     "directories": {
       "output": "release"
     },
@@ -110,7 +110,7 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "kapanış."
+      "shortcutName": "Omni"
     }
   }
 }

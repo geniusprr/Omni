@@ -132,7 +132,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       mainWindow.webContents.once('did-finish-load', startSmoke)
     }
   }).catch((error) => {
-    console.error('[startup] kapanış. could not start', error)
+    console.error('[startup] Omni could not start', error)
     app.quit()
   })
 
@@ -315,7 +315,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('notifications:get-status', () => notifications?.getStatus() || { running: false, accessGranted: false, historyCount: 0 })
     handle('notifications:test', (payload) => {
       const obj = payload && typeof payload === 'object' ? payload as any : {}
-      const title = typeof obj.title === 'string' && obj.title ? obj.title : 'kapanış. Test Bildirimi'
+      const title = typeof obj.title === 'string' && obj.title ? obj.title : 'Omni Test Bildirimi'
       const body = typeof obj.body === 'string' && obj.body ? obj.body : 'Bilgisayarınızdan telefonunuza iletildi!'
       return notifications?.sendTestNotification(title, body)
     })

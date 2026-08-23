@@ -13,14 +13,14 @@ function Splash() {
   return (
     <main className="splash-window" data-window-drag role="status" aria-live="polite">
       <div className="splash-topline" data-window-drag>
-        <span className="splash-kicker">KAPANIŞ. / DESKTOP</span>
+        <span className="splash-kicker">OMNI / DESKTOP</span>
         <span className="splash-status"><i aria-hidden="true" /> başlatılıyor</span>
       </div>
 
       <div className="splash-content" data-window-drag>
-        <div className="splash-mark" aria-hidden="true"><span>k</span></div>
+        <div className="splash-mark" aria-hidden="true"><span>O</span></div>
         <div className="splash-lockup">
-          <h1>kapanış<span>.</span></h1>
+          <h1>Omni</h1>
           <p>Sakin bir çalışma alanı hazırlanıyor.</p>
         </div>
       </div>

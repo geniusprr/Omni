@@ -270,7 +270,7 @@ fun ConnectScreen(
         try {
             val options = ScanOptions().apply {
                 setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                setPrompt("kapanış. Eşleştirme QR Kodunu Hizalayın")
+                setPrompt("Omni Eşleştirme QR Kodunu Hizalayın")
                 setCameraId(0)
                 setBeepEnabled(true)
                 setBarcodeImageEnabled(false)

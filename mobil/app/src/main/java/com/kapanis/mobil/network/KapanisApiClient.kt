@@ -110,7 +110,7 @@ class KapanisApiClient {
                     val json = JSONObject(body)
                     val status = ServerStatus(
                         status = "ok",
-                        deviceName = json.optString("alias", "kapanış. PC"),
+                        deviceName = json.optString("alias", "Omni PC"),
                         deviceId = json.optString("fingerprint", ""),
                         version = json.optString("version", "2.0"),
                         port = json.optInt("port", port)

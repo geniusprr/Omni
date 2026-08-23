@@ -250,7 +250,7 @@ export function GlobalContextMenu() {
       className="kapanis-context-menu"
       style={{ left: position.x, top: position.y }}
       role="menu"
-      aria-label="Kapanış menüsü"
+      aria-label="Omni menüsü"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => event.stopPropagation()}
     >
