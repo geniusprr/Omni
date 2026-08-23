@@ -14,7 +14,7 @@ import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import type { ProgramCandidate } from '../shared/contracts.js'
+import { APP_EVENTS, type AppUpdateStatus, type ProgramCandidate } from '../shared/contracts.js'
 
 const execFileAsync = promisify(execFile)
 const PROGRAM_EXTENSIONS = new Set(['.exe', '.com', '.lnk'])
@@ -37,8 +37,10 @@ export class WindowManager {
   private mainWindow: BrowserWindow | null = null
   private splashWindow: BrowserWindow | null = null
   private splashTimer: NodeJS.Timeout | null = null
+  private splashStatus: AppUpdateStatus | null = null
   private tray: Tray | null = null
   private allowClose = false
+  private browserFocusMode = false
   private rendererUrl: string | null = null
   private programIndex: { createdAt: number; items: ProgramCandidate[] } | null = null
   private programIconCache = new Map<string, string | null>()
@@ -91,11 +93,24 @@ export class WindowManager {
     // deterministic restored window so its fixed BrowserView bounds remain
     // meaningful and independent of the developer display.
     if (process.env.KAPANIS_SMOKE_TEST !== '1' && !window.isMaximized()) window.maximize()
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || input.key !== 'F11' || input.control || input.alt || input.meta || input.shift) return
+      // Electron's default application menu also owns F11 on Windows. Consume
+      // it before the menu can toggle native fullscreen on non-browser pages,
+      // then let the renderer decide whether the browser workspace is active.
+      event.preventDefault()
+      if (!window.webContents.isDestroyed()) window.webContents.send(APP_EVENTS.browserFocusShortcut)
+    })
     window.on('closed', () => {
+      this.browserFocusMode = false
       this.mainWindow = null
     })
+    window.on('leave-full-screen', () => {
+      if (!this.browserFocusMode) return
+      this.browserFocusMode = false
+      this.broadcastBrowserFocusMode()
+    })
     window.webContents.on('did-finish-load', () => {
-      if (this.splashWindow) this.finishSplash()
       if (!this.splashWindow && !app.commandLine.hasSwitch('background')) window.showInactive()
     })
     window.webContents.on('did-fail-load', (_event, errorCode, description, validatedURL, isMainFrame) => {
@@ -114,8 +129,8 @@ export class WindowManager {
     if (app.commandLine.hasSwitch('background')) return
     if (this.splashTimer) clearTimeout(this.splashTimer)
     this.splashWindow = new BrowserWindow({
-      width: 380,
-      height: 240,
+      width: 430,
+      height: 238,
       title: 'Omni',
       show: false,
       frame: false,
@@ -140,7 +155,10 @@ export class WindowManager {
       if (!splash.isDestroyed() && !splash.isVisible()) splash.show()
     }
     splash.once('ready-to-show', showSplash)
-    splash.webContents.once('did-finish-load', showSplash)
+    splash.webContents.once('did-finish-load', () => {
+      showSplash()
+      this.flushSplashStatus()
+    })
     splash.on('closed', () => {
       if (this.splashWindow === splash) this.splashWindow = null
     })
@@ -152,7 +170,7 @@ export class WindowManager {
     } else {
       void splash.loadFile(splashTarget).catch(() => undefined)
     }
-    this.splashTimer = setTimeout(() => this.finishSplash(), 5_000)
+    this.splashTimer = setTimeout(() => this.finishSplash(), 8_000)
     this.splashTimer.unref?.()
   }
 
@@ -172,6 +190,17 @@ export class WindowManager {
       // native close-to-tray handler and guarantees the window cannot linger.
       try { splash.destroy() } catch { /* best effort */ }
     }
+  }
+
+  setSplashStatus(status: AppUpdateStatus) {
+    this.splashStatus = status
+    this.flushSplashStatus()
+  }
+
+  private flushSplashStatus() {
+    const splash = this.splashWindow
+    if (!splash || splash.isDestroyed() || splash.webContents.isDestroyed() || !this.splashStatus) return
+    splash.webContents.send(APP_EVENTS.updateStatus, this.splashStatus)
   }
 
   getMainWindow() {
@@ -234,11 +263,36 @@ export class WindowManager {
   }
 
   setFullscreen(fullscreen: boolean) {
-    this.getMainWindow()?.setFullScreen(fullscreen)
+    const window = this.getMainWindow()
+    if (!window) return
+    window.setFullScreen(fullscreen || this.browserFocusMode)
   }
 
   isFullscreen() {
     return this.getMainWindow()?.isFullScreen() ?? false
+  }
+
+  setBrowserFocusMode(enabled: boolean) {
+    const window = this.getMainWindow()
+    if (!window) return false
+    this.browserFocusMode = enabled
+    if (window.isFullScreen() !== enabled) window.setFullScreen(enabled)
+    this.broadcastBrowserFocusMode()
+    return this.browserFocusMode
+  }
+
+  toggleBrowserFocusMode() {
+    return this.setBrowserFocusMode(!this.browserFocusMode)
+  }
+
+  isBrowserFocusMode() {
+    return this.browserFocusMode
+  }
+
+  private broadcastBrowserFocusMode() {
+    const window = this.getMainWindow()
+    if (!window || window.webContents.isDestroyed()) return
+    window.webContents.send(APP_EVENTS.browserFocusChanged, { enabled: this.browserFocusMode })
   }
 
   async openExternal(value: string) {

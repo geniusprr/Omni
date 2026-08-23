@@ -43,6 +43,7 @@ export interface AppSettings {
   ntfyTopic?: string
   ntfyServer?: string
   remoteDesktopEnabled?: boolean
+  language?: string
 }
 
 export interface MirroredNotification {

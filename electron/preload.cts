@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopEventName, ElectronDesktopBridge, IpcChannel } from '../shared/contracts.js'
 
 const allowedChannels: ReadonlySet<string> = new Set([
-  'window:minimize', 'window:toggle-maximize', 'window:is-maximized', 'window:close', 'window:show',
+  'window:minimize', 'window:toggle-maximize', 'window:is-maximized', 'window:set-browser-focus', 'window:is-browser-focus', 'window:close', 'window:show',
   'open-external', 'launch-program', 'programs:list', 'programs:icon', 'programs:pick', 'website-icons:get',
   'system:get-timer-status', 'system:schedule-shutdown', 'system:cancel-shutdown', 'system:get-info',
   'system:get-autostart', 'system:set-autostart', 'settings:get', 'settings:save',
@@ -32,7 +32,7 @@ const allowedChannels: ReadonlySet<string> = new Set([
   'notifications:get-history', 'notifications:test', 'notifications:get-status', 'notifications:clear-history',
   'ai:get-state', 'ai:get-messages', 'ai:create-conversation', 'ai:delete-conversation',
   'ai:set-provider', 'ai:send-message', 'ai:clear-cache',
-  'librechat:activate', 'librechat:set-bounds', 'librechat:deactivate',
+  'librechat:activate', 'librechat:set-bounds', 'librechat:set-theme', 'librechat:deactivate',
 ])
 
 // Keep the allowlist literal in the isolated preload so a remote page can never
@@ -43,8 +43,11 @@ const allowedEvents: ReadonlySet<string> = new Set([
   'browser:download-updated', 'browser:history-updated', 'alarm:triggered', 'alarm:created', 'alarm:cancelled',
   'remote:command', 'mobile:note', 'mobile:file', 'mobile:notification', 'notification:mirrored', 'localsend:device-discovered',
   'localsend:file-received', 'vault:fs-change', 'youtube-music-state',
-  'ai:updated',
+  'ai:updated', 'app:agent-action',
   'remote-desktop:state',
+  'window:browser-focus-changed',
+  'window:browser-focus-shortcut',
+  'app:update-status',
 ])
 
 const bridge: ElectronDesktopBridge = {

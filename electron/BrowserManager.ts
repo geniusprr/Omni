@@ -60,6 +60,7 @@ export class BrowserManager {
         else this.windows.setFullscreen(false)
         this.send(BROWSER_EVENTS.fullscreenChanged, { tabId, fullscreen })
       },
+      onBrowserFocusToggle: () => this.windows.toggleBrowserFocusMode(),
       onContextMenu: (tabId, params) => this.showPageContextMenu(tabId, params),
       onBeforeClose: async (tabId, webContents) => {
         try { webContents.setAudioMuted(true) } catch { /* best effort */ }

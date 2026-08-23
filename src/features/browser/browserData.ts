@@ -1,3 +1,5 @@
+import { getLocaleTag } from '@/i18n'
+
 export type BrowserShortcutKind = 'website' | 'program'
 
 export interface BrowserFavorite {
@@ -154,9 +156,10 @@ function isValidFaviconSource(value: unknown): value is string {
 export function relativeTime(timestamp: number) {
   const elapsed = Math.max(0, Date.now() - timestamp)
   const minutes = Math.floor(elapsed / 60_000)
-  if (minutes < 1) return 'şimdi'
-  if (minutes < 60) return `${minutes} dk önce`
+  const formatter = new Intl.RelativeTimeFormat(getLocaleTag(), { numeric: 'auto' })
+  if (minutes < 1) return formatter.format(0, 'minute')
+  if (minutes < 60) return formatter.format(-minutes, 'minute')
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} sa önce`
-  return new Date(timestamp).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
+  if (hours < 24) return formatter.format(-hours, 'hour')
+  return new Date(timestamp).toLocaleDateString(getLocaleTag(), { day: 'numeric', month: 'short' })
 }

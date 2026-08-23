@@ -8,6 +8,7 @@ import ListTree from 'lucide-react/dist/esm/icons/list-tree.js'
 import Maximize2 from 'lucide-react/dist/esm/icons/maximize-2.js'
 import Minimize2 from 'lucide-react/dist/esm/icons/minimize-2.js'
 import Network from 'lucide-react/dist/esm/icons/network.js'
+import PanelLeft from 'lucide-react/dist/esm/icons/panel-left.js'
 import PanelLeftClose from 'lucide-react/dist/esm/icons/panel-left-close.js'
 import PanelRightClose from 'lucide-react/dist/esm/icons/panel-right-close.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
@@ -17,6 +18,10 @@ import { BacklinksPanel } from './backlinks/BacklinksPanel'
 import { CommandPaletteModal } from './commands/CommandPaletteModal'
 import { CodeMirrorEditor, type CodeMirrorEditorHandle } from './editor/CodeMirrorEditor'
 import { EditorToolbar } from './editor/EditorToolbar'
+import {
+  EMPTY_RICH_TEXT_FORMAT_STATE,
+  type RichTextFormatState,
+} from './editor/RichTextEditor'
 import { FileExplorer } from './explorer/FileExplorer'
 import { GraphView } from './graph/GraphView'
 import { OutlinePanel } from './outline/OutlinePanel'
@@ -61,7 +66,12 @@ export function NotesPage() {
   const [editorMode, setEditorMode] = useState<EditorMode>('live')
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
   const [stats, setStats] = useState({ wordCount: 0, charCount: 0 })
+  const [formatState, setFormatState] = useState<RichTextFormatState>(EMPTY_RICH_TEXT_FORMAT_STATE)
   const editorRef = useRef<CodeMirrorEditorHandle | null>(null)
+
+  useEffect(() => {
+    setFormatState(EMPTY_RICH_TEXT_FORMAT_STATE)
+  }, [activeTabId, editorMode])
 
   // Modals
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
@@ -317,60 +327,17 @@ created: ${today}
           <div className="notes-workspace-glass-card">
             {/* Card Top Header & Tab Strip */}
             <div className="notes-card-top-bar" data-window-drag>
-              {/* Compact workspace navigation. Keep the top rail about navigation only. */}
+              {/* Keep global chrome compact. Detailed note navigation lives inside the left panel. */}
               <div className="notes-card-nav-group">
                 <button
                   type="button"
-                  className={`notes-nav-chip ${leftSidebarOpen && leftNav === 'explorer' ? 'notes-nav-chip--active' : ''}`}
-                  onClick={() => {
-                    if (leftSidebarOpen && leftNav === 'explorer') {
-                      setLeftSidebarOpen(false)
-                    } else {
-                      setLeftNav('explorer')
-                      setLeftSidebarOpen(true)
-                    }
-                  }}
-                  title="Dosya Gezgini"
-                  aria-pressed={leftSidebarOpen && leftNav === 'explorer'}
+                  className={`notes-nav-chip ${leftSidebarOpen ? 'notes-nav-chip--active' : ''}`}
+                  onClick={() => setLeftSidebarOpen((prev) => !prev)}
+                  title={leftSidebarOpen ? 'Not panelini gizle' : 'Not panelini aç'}
+                  aria-pressed={leftSidebarOpen}
                 >
-                  <Folder size={13} />
-                  <span className="notes-nav-label">Dosyalar</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`notes-nav-chip ${leftSidebarOpen && leftNav === 'search' ? 'notes-nav-chip--active' : ''}`}
-                  onClick={() => {
-                    if (leftSidebarOpen && leftNav === 'search') {
-                      setLeftSidebarOpen(false)
-                    } else {
-                      setLeftNav('search')
-                      setLeftSidebarOpen(true)
-                    }
-                  }}
-                  title="Notlarda Ara"
-                  aria-pressed={leftSidebarOpen && leftNav === 'search'}
-                >
-                  <Search size={13} />
-                  <span className="notes-nav-label">Ara</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`notes-nav-chip ${leftSidebarOpen && leftNav === 'tags' ? 'notes-nav-chip--active' : ''}`}
-                  onClick={() => {
-                    if (leftSidebarOpen && leftNav === 'tags') {
-                      setLeftSidebarOpen(false)
-                    } else {
-                      setLeftNav('tags')
-                      setLeftSidebarOpen(true)
-                    }
-                  }}
-                  title="Etiketler"
-                  aria-pressed={leftSidebarOpen && leftNav === 'tags'}
-                >
-                  <Tag size={13} />
-                  <span className="notes-nav-label">Etiketler</span>
+                  <PanelLeft size={14} />
+                  <span className="notes-nav-label">Not paneli</span>
                 </button>
               </div>
 
@@ -399,12 +366,11 @@ created: ${today}
               {/* Left Drawer */}
               {leftSidebarOpen && (
                 <aside className="notes-card-sidebar notes-card-sidebar--left">
-                  <div className="sidebar-drawer-header">
-                    <span className="sidebar-drawer-title">
-                      {leftNav === 'explorer' && 'Dosya Gezgini'}
-                      {leftNav === 'search' && 'Notlarda Ara'}
-                      {leftNav === 'tags' && 'Etiket Listesi'}
-                    </span>
+                  <div className="sidebar-drawer-header notes-library-header">
+                    <div className="notes-library-heading">
+                      <span>Notlar</span>
+                      <small>{totalNotesCount}</small>
+                    </div>
                     <button
                       type="button"
                       className="sidebar-collapse-btn"
@@ -412,6 +378,38 @@ created: ${today}
                       title="Paneli Kapat"
                     >
                       <PanelLeftClose size={13} />
+                    </button>
+                  </div>
+                  <div className="notes-sidebar-switcher" role="tablist" aria-label="Not paneli bölümleri">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={leftNav === 'explorer'}
+                      className={`notes-sidebar-tab ${leftNav === 'explorer' ? 'notes-sidebar-tab--active' : ''}`}
+                      onClick={() => setLeftNav('explorer')}
+                    >
+                      <Folder size={14} />
+                      <span>Dosyalar</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={leftNav === 'search'}
+                      className={`notes-sidebar-tab ${leftNav === 'search' ? 'notes-sidebar-tab--active' : ''}`}
+                      onClick={() => setLeftNav('search')}
+                    >
+                      <Search size={14} />
+                      <span>Ara</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={leftNav === 'tags'}
+                      className={`notes-sidebar-tab ${leftNav === 'tags' ? 'notes-sidebar-tab--active' : ''}`}
+                      onClick={() => setLeftNav('tags')}
+                    >
+                      <Tag size={14} />
+                      <span>Etiket</span>
                     </button>
                   </div>
                   <div className="sidebar-content-area">
@@ -465,6 +463,7 @@ created: ${today}
                 {activeTab && activeTab.viewType !== 'graph' && (
                   <EditorToolbar
                     mode={editorMode}
+                    formatState={formatState}
                     onModeChange={setEditorMode}
                     onFormat={(command) => editorRef.current?.format(command)}
                     onUndo={() => editorRef.current?.undo()}
@@ -484,6 +483,7 @@ created: ${today}
                       mode={editorMode}
                       onSaveStatusChange={setSaveStatus}
                       onStatsChange={setStats}
+                      onFormatStateChange={setFormatState}
                     />
                   ) : null
                 ) : (

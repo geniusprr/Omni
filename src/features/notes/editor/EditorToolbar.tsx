@@ -19,9 +19,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { EditorMode } from '../types'
 import type { EditorFormatCommand } from './CodeMirrorEditor'
+import type { RichTextFormatState } from './RichTextEditor'
 
 interface EditorToolbarProps {
   mode: EditorMode
+  formatState: RichTextFormatState
   onModeChange: (mode: EditorMode) => void
   onFormat: (command: EditorFormatCommand) => void
   onUndo: () => void
@@ -65,6 +67,7 @@ function ToolButton({ label, shortcut, disabled, active, onClick, children }: To
 
 export function EditorToolbar({
   mode,
+  formatState,
   onModeChange,
   onFormat,
   onUndo,
@@ -78,7 +81,7 @@ export function EditorToolbar({
       <div className="notes-editor-toolbar" role="toolbar" aria-label="Not biçimlendirme araçları">
         <div className="notes-toolbar-group notes-toolbar-group--block-style">
           <Select
-            value="paragraph"
+            value={mode === 'live' ? formatState.blockType : 'paragraph'}
             disabled={editingDisabled}
             onValueChange={(value) => onFormat(value as EditorFormatCommand)}
           >
@@ -98,16 +101,16 @@ export function EditorToolbar({
         <span className="notes-toolbar-separator" aria-hidden="true" />
 
         <div className="notes-toolbar-group">
-          <ToolButton label="Kalın" shortcut="Ctrl+B" disabled={editingDisabled} onClick={() => onFormat('bold')}>
+          <ToolButton label="Kalın" shortcut="Ctrl+B" disabled={editingDisabled} active={mode === 'live' && formatState.bold} onClick={() => onFormat('bold')}>
             <Bold size={15} />
           </ToolButton>
-          <ToolButton label="İtalik" shortcut="Ctrl+I" disabled={editingDisabled} onClick={() => onFormat('italic')}>
+          <ToolButton label="İtalik" shortcut="Ctrl+I" disabled={editingDisabled} active={mode === 'live' && formatState.italic} onClick={() => onFormat('italic')}>
             <Italic size={15} />
           </ToolButton>
-          <ToolButton label="Üstü çizili" disabled={editingDisabled} onClick={() => onFormat('strike')}>
+          <ToolButton label="Üstü çizili" disabled={editingDisabled} active={mode === 'live' && formatState.strike} onClick={() => onFormat('strike')}>
             <Strikethrough size={15} />
           </ToolButton>
-          <ToolButton label="Satır içi kod" disabled={editingDisabled} onClick={() => onFormat('inlineCode')}>
+          <ToolButton label="Satır içi kod" disabled={editingDisabled} active={mode === 'live' && formatState.inlineCode} onClick={() => onFormat('inlineCode')}>
             <Code size={15} />
           </ToolButton>
         </div>
@@ -115,22 +118,22 @@ export function EditorToolbar({
         <span className="notes-toolbar-separator" aria-hidden="true" />
 
         <div className="notes-toolbar-group">
-          <ToolButton label="Madde işaretli liste" disabled={editingDisabled} onClick={() => onFormat('bulletList')}>
+          <ToolButton label="Madde işaretli liste" disabled={editingDisabled} active={mode === 'live' && formatState.bulletList} onClick={() => onFormat('bulletList')}>
             <List size={15} />
           </ToolButton>
-          <ToolButton label="Numaralı liste" disabled={editingDisabled} onClick={() => onFormat('orderedList')}>
+          <ToolButton label="Numaralı liste" disabled={editingDisabled} active={mode === 'live' && formatState.orderedList} onClick={() => onFormat('orderedList')}>
             <ListOrdered size={15} />
           </ToolButton>
-          <ToolButton label="Yapılacaklar listesi" disabled={editingDisabled} onClick={() => onFormat('taskList')}>
+          <ToolButton label="Yapılacaklar listesi" disabled={editingDisabled} active={mode === 'live' && formatState.taskList} onClick={() => onFormat('taskList')}>
             <ListChecks size={15} />
           </ToolButton>
-          <ToolButton label="Alıntı" disabled={editingDisabled} onClick={() => onFormat('quote')}>
+          <ToolButton label="Alıntı" disabled={editingDisabled} active={mode === 'live' && formatState.quote} onClick={() => onFormat('quote')}>
             <Quote size={15} />
           </ToolButton>
-          <ToolButton label="Bağlantı" shortcut="Ctrl+K" disabled={editingDisabled} onClick={() => onFormat('link')}>
+          <ToolButton label="Bağlantı" shortcut="Ctrl+K" disabled={editingDisabled} active={mode === 'live' && formatState.link} onClick={() => onFormat('link')}>
             <Link2 size={15} />
           </ToolButton>
-          <ToolButton label="Kod bloğu" disabled={editingDisabled} onClick={() => onFormat('codeBlock')}>
+          <ToolButton label="Kod bloğu" disabled={editingDisabled} active={mode === 'live' && formatState.codeBlock} onClick={() => onFormat('codeBlock')}>
             <Code2 size={15} />
           </ToolButton>
           <ToolButton label="Ayırıcı" disabled={editingDisabled} onClick={() => onFormat('horizontalRule')}>
@@ -155,7 +158,7 @@ export function EditorToolbar({
         <span className="notes-toolbar-separator" aria-hidden="true" />
 
         <div className="notes-toolbar-group notes-toolbar-mode-group" aria-label="Görünüm modu">
-          <ToolButton label="Düzenle" active={mode === 'live'} onClick={() => onModeChange('live')}>
+          <ToolButton label="WYSIWYG düzenle" active={mode === 'live'} onClick={() => onModeChange('live')}>
             <Type size={15} />
           </ToolButton>
           <ToolButton label="Okuma modu" active={mode === 'reading'} onClick={() => onModeChange('reading')}>

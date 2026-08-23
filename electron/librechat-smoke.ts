@@ -1,8 +1,12 @@
 import { createServer } from 'node:http'
+import { mkdtempSync, rmSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type { BrowserWindow } from 'electron'
-import type { AiStore } from './AiStore.js'
+import { AiStore } from './AiStore.js'
 import type { LibreChatServer } from './LibreChatServer.js'
 import type { LibreChatView } from './LibreChatView.js'
+import type { AgentToolRuntime } from './OmniAgent.js'
 
 export async function runLibreChatLifecycleSmoke(
   ai: AiStore,
@@ -11,6 +15,7 @@ export async function runLibreChatLifecycleSmoke(
   window: BrowserWindow,
 ) {
   const conversationId = await assertSqliteStreaming(ai)
+  await assertAgentToolLoop()
 
   const url = server.getUrl()
   const renamed = await postJson<{ title?: string }>(`${url}/api/convos/update`, { arg: { conversationId, title: 'Kalıcı sohbet' } })
@@ -20,18 +25,32 @@ export async function runLibreChatLifecycleSmoke(
     throw new Error(`SQLite sohbet güncellemesi kalıcı değil: ${JSON.stringify({ renamed, pinned, archived })}`)
   }
   await postJson(`${url}/api/convos/archive`, { arg: { conversationId, isArchived: false } })
-  const models = await fetchJson<{ openrouter?: string[] }>(`${url}/api/models`)
+  const models = await fetchJson<{ openrouter?: string[]; 'openrouter-free'?: string[] }>(`${url}/api/models`)
   if (!Array.isArray(models.openrouter) || models.openrouter.length < 50) {
     throw new Error(`OpenRouter kataloğu eksik: ${models.openrouter?.length ?? 0}`)
   }
   if (models.openrouter[0] !== 'test/stream-model') {
     throw new Error(`SQLite model tercihi listenin başında değil: ${models.openrouter[0] ?? 'boş'}`)
   }
+  if (!Array.isArray(models['openrouter-free']) || !models['openrouter-free'].includes('openrouter/free')) {
+    throw new Error(`OpenRouter ücretsiz model grubu eksik: ${JSON.stringify(models['openrouter-free']?.slice(0, 6) ?? [])}`)
+  }
+  if (models.openrouter.includes('openrouter/free') || models.openrouter.some((model) => model.endsWith(':free'))) {
+    throw new Error('Ücretsiz OpenRouter modelleri normal OpenRouter grubunda tekrar listeleniyor.')
+  }
 
-  const config = await fetchJson<{ modelSpecs?: { list?: Array<{ name?: string; preset?: { model?: string } }> } }>(`${url}/api/config`)
+  const config = await fetchJson<{ modelSpecs?: { list?: Array<{ name?: string; label?: string; preset?: { model?: string } }> } }>(`${url}/api/config`)
   const openRouterSpec = config.modelSpecs?.list?.find((item) => item.name === 'openrouter')
   if (openRouterSpec?.preset?.model !== 'test/stream-model') {
     throw new Error(`SQLite model tercihi başlangıç yapılandırmasına yansımadı: ${openRouterSpec?.preset?.model ?? 'boş'}`)
+  }
+  const freeSpec = config.modelSpecs?.list?.find((item) => item.name === 'openrouter-free')
+  if (freeSpec?.label !== 'OpenRouter · Ücretsiz') throw new Error('Ücretsiz OpenRouter model grubu başlangıç yapılandırmasında yok.')
+  const freeConversation = ai.createConversation('openrouter', 'openrouter/free')
+  const freeConversationPayload = await fetchJson<{ endpoint?: string; model?: string }>(`${url}/api/convos/${freeConversation.id}`)
+  ai.deleteConversation(freeConversation.id)
+  if (freeConversationPayload.endpoint !== 'openrouter-free' || freeConversationPayload.model !== 'openrouter/free') {
+    throw new Error(`Ücretsiz model konuşması ayrı endpoint'i korumadı: ${JSON.stringify(freeConversationPayload)}`)
   }
 
   const indexHtml = await (await fetch(`${url}/`)).text()
@@ -69,13 +88,31 @@ export async function runLibreChatLifecycleSmoke(
         return element ? getComputedStyle(element).display !== 'none' : false;
       })(),
       modelRequestObserved: performance.getEntriesByType('resource').some((entry) => entry.name.includes('/api/models')),
-    })`, true) as { ready: string; titlebarCount: number; titlebarTop: number; exportVisible: boolean; modelRequestObserved: boolean }
+      agentWidget: Boolean(document.querySelector('#omni-agent-center')),
+      omniTheme: document.documentElement.dataset.omniTheme || '',
+      bodyBackground: getComputedStyle(document.body).backgroundColor,
+    })`, true) as { ready: string; titlebarCount: number; titlebarTop: number; exportVisible: boolean; modelRequestObserved: boolean; agentWidget: boolean; omniTheme: string }
     return state.ready === 'complete'
       && state.titlebarCount > 0
       && state.titlebarTop === 0
       && !state.exportVisible
       && state.modelRequestObserved
+      && state.agentWidget
+      && Boolean(state.omniTheme)
+      && (state as { bodyBackground?: string }).bodyBackground === 'rgba(0, 0, 0, 0)'
   }, 20_000, 'LibreChat başlık işaretlemesi veya canlı model sorgusu hazır olmadı.')
+
+  const activityId = `smoke-tool-${Date.now()}`
+  view.pushAgentActivity({ id: activityId, tool: 'app_theme', label: 'Tema', status: 'running', detail: 'Ocean uygulanıyor', createdAt: Date.now() })
+  await waitUntilAsync(async () => Boolean(await nativeView.webContents.executeJavaScript(`(() => {
+    const card=document.querySelector('#omni-tool-stream .omni-tool-card');
+    return card?.getAttribute('data-status')==='running' && card.textContent?.includes('Ocean uygulanıyor');
+  })()`, true)), 5_000, 'Tool çağrısı sohbet içi widget olarak görünmedi.')
+  view.pushAgentActivity({ id: activityId, tool: 'app_theme', label: 'Tema', status: 'success', detail: 'Ocean uygulandı', createdAt: Date.now() })
+  await waitUntilAsync(async () => Boolean(await nativeView.webContents.executeJavaScript(`(() => {
+    const card=document.querySelector('#omni-tool-stream .omni-tool-card');
+    return card?.getAttribute('data-status')==='success' && card.textContent?.includes('Tamamlandı');
+  })()`, true)), 5_000, 'Tool widget tamamlanma durumuna geçmedi.')
 
   try {
     await waitUntilAsync(async () => Boolean(await nativeView.webContents.executeJavaScript(`!!document.querySelector('[data-testid="model-selector-button"]')`, true)), 15_000, 'Model seçici düğmesi oluşmadı.')
@@ -125,7 +162,14 @@ export async function runLibreChatLifecycleSmoke(
     return true;
   })()`, true)
   try {
-    await waitUntilAsync(async () => !await nativeView.webContents.executeJavaScript(`!!document.querySelector('#model-search')`, true), 5_000, 'Model seçimi kapanmadı.')
+    await waitUntilAsync(async () => Boolean(await nativeView.webContents.executeJavaScript(`(() => {
+      const search = document.querySelector('#model-search');
+      if (!search) return true;
+      const trigger = document.querySelector('[data-testid="model-selector-button"]');
+      if (trigger?.getAttribute('aria-expanded') === 'false') return true;
+      const style = getComputedStyle(search);
+      return style.display === 'none' || style.visibility === 'hidden';
+    })()`, true)), 5_000, 'Model seçimi kapanmadı.')
   } catch (error) {
     const diagnostics = await nativeView.webContents.executeJavaScript(`({
       searchOpen: Boolean(document.querySelector('#model-search')),
@@ -178,7 +222,73 @@ export async function runLibreChatLifecycleSmoke(
   if (window.getBrowserViews().some((candidate) => candidate === nativeView)) {
     throw new Error('LibreChat devre dışı bırakıldıktan sonra native görünüm bağlı kaldı.')
   }
-  console.log(`[librechat-smoke] ${models.openrouter.length} OpenRouter modeli (seçildi/gönderildi: ${selectableModel}), SQLite canlı commit/stream ve hizalı pencere başlığı geçti`)
+  console.log(`[librechat-smoke] ${models.openrouter.length} OpenRouter modeli + ${models['openrouter-free'].length} ücretsiz model, ajan tool döngüsü/widgetı, SQLite canlı commit/stream ve hizalı pencere başlığı geçti`)
+}
+
+async function assertAgentToolLoop() {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'omni-agent-smoke-'))
+  const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = []
+  const requests: Array<Record<string, unknown>> = []
+  const streamedTokens: string[] = []
+  const agent: AgentToolRuntime = {
+    systemPrompt: 'Kullanıcı yalnızca “temayı değiştir” derse hangi tema olduğunu sor. Tema belirtilmişse app_theme aracını kullan.',
+    tools: [{
+      name: 'app_theme',
+      description: 'Omni temasını değiştirir.',
+      parameters: { type: 'object', properties: { theme: { type: 'string', enum: ['ocean'] } }, required: ['theme'] },
+    }],
+    async execute(name, args) {
+      toolCalls.push({ name, args })
+      return { ok: true, theme: args.theme }
+    },
+  }
+  const provider = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+    requests.push(body)
+    response.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+    if (requests.length === 1) {
+      response.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"theme-call","type":"function","function":{"name":"app_","arguments":"{\\"theme\\":"}}]}}]}\n\n')
+      await wait(12)
+      response.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"theme","arguments":"\\"ocean\\"}"}}]}}]}\n\n')
+      response.end('data: [DONE]\n\n')
+      return
+    }
+    response.write('data: {"choices":[{"delta":{"content":"Ocean teması "}}]}\n\n')
+    await wait(12)
+    response.write('data: {"choices":[{"delta":{"content":"uygulandı."}}]}\n\n')
+    response.end('data: [DONE]\n\n')
+  })
+  await new Promise<void>((resolve) => provider.listen(0, '127.0.0.1', resolve))
+  const port = (provider.address() as { port: number }).port
+  const agentStore = new AiStore(dataDir, () => undefined, agent)
+  try {
+    agentStore.setProvider({ id: 'openrouter', baseUrl: `http://127.0.0.1:${port}`, model: 'agent-smoke-model', apiKey: 'agent-smoke-key' })
+    const result = await agentStore.sendMessage({ providerId: 'openrouter', model: 'agent-smoke-model', content: 'Ocean temasına geç' }, {
+      onToken: (token) => streamedTokens.push(token),
+    })
+    if (result.assistantMessage.content !== 'Ocean teması uygulandı.') throw new Error(`Ajan final yanıtı yanlış: ${result.assistantMessage.content}`)
+    if (streamedTokens.join('') !== 'Ocean teması uygulandı.' || streamedTokens.length < 2) {
+      throw new Error(`Ajan final yanıtı streaming gelmedi: ${JSON.stringify(streamedTokens)}`)
+    }
+    if (toolCalls.length !== 1 || toolCalls[0]?.name !== 'app_theme' || toolCalls[0]?.args.theme !== 'ocean') {
+      throw new Error(`Ajan app_theme aracını beklenen argümanla çalıştırmadı: ${JSON.stringify(toolCalls)}`)
+    }
+    const first = requests[0] as { stream?: unknown; tools?: unknown[]; messages?: Array<{ role?: string; content?: string }> }
+    if (first.stream !== true || !Array.isArray(first.tools) || !first.messages?.[0]?.content?.includes('hangi tema')) {
+      throw new Error('Ajan araçları/system prompt sağlayıcı isteğine doğru eklenmedi.')
+    }
+    const second = requests[1] as { messages?: Array<{ role?: string; tool_call_id?: string }> }
+    if (!second.messages?.some((message) => message.role === 'tool' && message.tool_call_id === 'theme-call')) {
+      throw new Error('Ajan araç sonucu ikinci model turuna eklenmedi.')
+    }
+  } finally {
+    agentStore.close()
+    provider.closeAllConnections?.()
+    await new Promise<void>((resolve) => provider.close(() => resolve()))
+    rmSync(dataDir, { recursive: true, force: true })
+  }
 }
 
 async function assertSqliteStreaming(ai: AiStore) {

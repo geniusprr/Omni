@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import Search from 'lucide-react/dist/esm/icons/search.js'
+import { useI18n } from '@/i18n'
 import { desktop } from '@/lib/desktop'
 import type { MiniOsMode } from './MiniOsDock'
 
@@ -9,6 +10,7 @@ interface MiniOsHeaderProps {
 }
 
 export function MiniOsHeader({ activeMode = 'home', onBrowserSearch }: MiniOsHeaderProps) {
+  const { localeTag, t } = useI18n()
   const [clockNow, setClockNow] = useState(() => new Date())
   const [searchQuery, setSearchQuery] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -55,7 +57,7 @@ export function MiniOsHeader({ activeMode = 'home', onBrowserSearch }: MiniOsHea
 
   if (activeMode === 'home') {
     const timeFormatted = `${String(clockNow.getHours()).padStart(2, '0')}:${String(clockNow.getMinutes()).padStart(2, '0')}`
-    const dateFormatted = clockNow.toLocaleDateString('tr-TR', {
+    const dateFormatted = clockNow.toLocaleDateString(localeTag, {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -70,7 +72,7 @@ export function MiniOsHeader({ activeMode = 'home', onBrowserSearch }: MiniOsHea
         <div className="header-home-dashboard-row" data-window-drag>
           <div className="header-home-dashboard-spacer" aria-hidden="true" />
           <div className="header-center-col" data-window-drag>
-            <div className="center-clock-block" data-window-drag aria-label={`Saat ${timeFormatted}`}>
+            <div className="center-clock-block" data-window-drag aria-label={t('Saat {time}', { time: timeFormatted })}>
               <div className="big-clock-digits" data-window-drag>
                 <span className="digits-main">{timeFormatted}</span>
               </div>
@@ -87,13 +89,13 @@ export function MiniOsHeader({ activeMode = 'home', onBrowserSearch }: MiniOsHea
                 className="spotlight-glass-input"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Google'da ara veya adres yaz..."
-                aria-label="Google'da ara veya web adresi yaz"
+                placeholder={t("Google'da ara veya adres yaz...")}
+                aria-label={t("Google'da ara veya web adresi yaz")}
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
               />
-              <kbd className="spotlight-key-badge" aria-label="Ctrl L ile odaklan">Ctrl L</kbd>
+              <kbd className="spotlight-key-badge" aria-label={t('Ctrl L ile odaklan')}>Ctrl L</kbd>
             </form>
           </div>
           <div className="header-compact-right" data-window-drag />

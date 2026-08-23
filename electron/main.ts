@@ -10,9 +10,11 @@ import { BrowserManager } from './BrowserManager.js'
 import { ContentManager } from './ContentManager.js'
 import { LocalSendManager } from './LocalSendManager.js'
 import { NotificationListenerManager } from './NotificationListenerManager.js'
+import { OmniAgent } from './OmniAgent.js'
 import { RemoteDesktopManager } from './RemoteDesktopManager.js'
 import { SystemManager } from './SystemManager.js'
 import { WindowManager } from './WindowManager.js'
+import { UpdateManager } from './UpdateManager.js'
 import { runBrowserLifecycleSmoke } from './browser-smoke.js'
 import { runLibreChatLifecycleSmoke } from './librechat-smoke.js'
 
@@ -36,6 +38,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
   let libreChatServer: LibreChatServer
   let libreChatView: LibreChatView
   let remoteDesktop: RemoteDesktopManager
+  let updater: UpdateManager
   let quitting = false
   let requestedExitCode = 0
 
@@ -56,6 +59,15 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     windows = new WindowManager(path.join(moduleDirectory, 'preload.cjs'))
     windows.createSplash(splashTarget)
     const mainWindow = windows.createMainWindow(rendererTarget)
+    updater = new UpdateManager({
+      getMainWindow: () => windows.getMainWindow(),
+      reportStatus: (status) => windows.setSplashStatus(status),
+      beforeInstall: () => {
+        quitting = true
+        windows.allowCloseOnQuit()
+      },
+    })
+    const initialUpdateCheck = updater.checkOnLaunch()
     windows.configureTray(() => windows.quit())
 
     browser = new BrowserManager(windows, mainWindow)
@@ -98,17 +110,37 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
         localSend.broadcastNotification(notif)
       },
     })
+    libreChatView = new LibreChatView(mainWindow)
+    const omniAgent = new OmniAgent({
+      windows,
+      browser,
+      alarms,
+      system,
+      content,
+      localSend,
+      remoteDesktop,
+      getNotifications: () => notifications || null,
+      setTheme: (theme) => {
+        const scheme = theme === 'light' ? 'light' : 'dark'
+        windows.setTheme(scheme)
+        browser.setTheme(scheme)
+        libreChatView.setTheme(theme)
+        send(APP_EVENTS.agentAction, { type: 'set-theme', theme })
+      },
+      openWorkspace: (workspace) => send(APP_EVENTS.agentAction, { type: 'open-workspace', workspace }),
+      openBrowser: (query) => send(APP_EVENTS.agentAction, { type: 'open-browser', query }),
+      onActivity: (activity) => libreChatView.pushAgentActivity(activity),
+    })
     // AI is an in-process local client. It opens one SQLite file under the
     // app data directory and serves the bundled LibreChat shell only on a
     // loopback port; no external server, Docker stack, or login flow is used.
-    aiStore = new AiStore(browser.sessions.dataDir, (snapshot) => send('ai:updated', { type: 'snapshot', snapshot }))
+    aiStore = new AiStore(browser.sessions.dataDir, (snapshot) => send('ai:updated', { type: 'snapshot', snapshot }), isBrowserSmokeTest ? null : omniAgent)
     void aiStore.ready().then((snapshot) => send('ai:updated', { type: 'snapshot', snapshot }))
     const libreChatStaticRoot = app.isPackaged
       ? path.join(process.resourcesPath, 'librechat-client')
       : path.join(app.getAppPath(), 'vendor', 'librechat-client')
     libreChatServer = new LibreChatServer(libreChatStaticRoot, aiStore)
     await libreChatServer.start()
-    libreChatView = new LibreChatView(mainWindow)
     if (!isBrowserSmokeTest) {
       localSend.start()
       alarms.start()
@@ -116,7 +148,15 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       system.restoreTimer()
     }
     registerIpc(mainWindow.webContents)
-    mainWindow.webContents.once('did-finish-load', () => windows.finishSplash())
+    mainWindow.webContents.once('did-finish-load', () => {
+      void Promise.race([
+        initialUpdateCheck,
+        new Promise<void>((resolve) => setTimeout(resolve, 3_500)),
+      ]).finally(() => {
+        windows.finishSplash()
+        void updater.promptForAvailableUpdate()
+      })
+    })
     mainWindow.on('closed', () => { if (!quitting) app.quit() })
     if (isBrowserSmokeTest) {
       const startSmoke = () => {
@@ -175,6 +215,8 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('window:minimize', () => windows.minimize())
     handle('window:toggle-maximize', () => windows.toggleMaximize())
     handle('window:is-maximized', () => windows.isMaximized())
+    handle('window:set-browser-focus', (payload) => windows.setBrowserFocusMode(Boolean(readObject(payload).enabled)))
+    handle('window:is-browser-focus', () => windows.isBrowserFocusMode())
     handle('window:close', () => windows.close())
     handle('window:show', () => windows.showMain())
     handle('open-external', (payload) => windows.openExternal(readString(payload, 'url')))
@@ -338,6 +380,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       return { url }
     })
     handle('librechat:set-bounds', (payload) => libreChatView?.setBounds(readBounds(readObject(payload).bounds)))
+    handle('librechat:set-theme', (payload) => libreChatView?.setTheme(readAppTheme(payload)))
     handle('librechat:deactivate', () => libreChatView?.deactivate())
   }
 
@@ -377,6 +420,12 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
   function readTheme(value: unknown): 'light' | 'dark' {
     const theme = readString(value, 'theme')
     if (theme !== 'light' && theme !== 'dark') throw new Error('Geçersiz tema.')
+    return theme
+  }
+
+  function readAppTheme(value: unknown): 'light' | 'obsidian' | 'rose' | 'violet' | 'ocean' {
+    const theme = readString(value, 'theme')
+    if (theme !== 'light' && theme !== 'obsidian' && theme !== 'rose' && theme !== 'violet' && theme !== 'ocean') throw new Error('Geçersiz uygulama teması.')
     return theme
   }
 

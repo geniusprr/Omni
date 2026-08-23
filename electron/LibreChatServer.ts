@@ -21,10 +21,16 @@ type PendingGeneration = {
   waiters: Set<() => void>
 }
 
+type OpenRouterCatalog = {
+  models: string[]
+  freeModels: string[]
+}
+
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
 const MODEL_CATALOG_TTL_MS = 6 * 60 * 60 * 1000
 const MODEL_CATALOG_TIMEOUT_MS = 8_000
 const OPENROUTER_FALLBACK_MODELS = [
+  'openrouter/free',
   'openrouter/auto',
   'openai/gpt-4o-mini',
   'anthropic/claude-3.5-haiku',
@@ -89,7 +95,7 @@ export class LibreChatServer {
   private server: Server | null = null
   private address: string | null = null
   private readonly generations = new Map<string, PendingGeneration>()
-  private modelCatalogRefresh: Promise<string[]> | null = null
+  private modelCatalogRefresh: Promise<OpenRouterCatalog> | null = null
 
   constructor(root: string, ai: AiStore) {
     this.root = path.resolve(root)
@@ -474,7 +480,7 @@ export class LibreChatServer {
       const conversationId = decodeURIComponent(pathname.slice('/api/messages/'.length))
       const messages = this.ai.listMessages(conversationId)
       const conversation = this.ai.getSnapshot().conversations.find((item) => item.id === conversationId)
-      const endpoint = conversation ? toLibreEndpoint(conversation.providerId) : 'custom'
+      const endpoint = conversation ? toLibreEndpoint(conversation.providerId, conversation.model) : 'custom'
       this.json(response, 200, messages.map((message, index) => this.toMessage(message, conversationId, index > 0 ? messages[index - 1]?.id ?? null : null, endpoint)))
       return
     }
@@ -634,7 +640,9 @@ export class LibreChatServer {
           role: 'user',
           content: String(generation.payload.text ?? ''),
           createdAt: Date.now(),
-        }, String(generation.payload.conversationId ?? ''), null, typeof generation.payload.endpoint === 'string' ? toLibreEndpoint(resolveProvider(generation.payload.endpoint)) : 'custom'),
+        }, String(generation.payload.conversationId ?? ''), null, typeof generation.payload.endpoint === 'string'
+          ? toLibreEndpoint(resolveProvider(generation.payload.endpoint, typeof generation.payload.model === 'string' ? generation.payload.model : undefined), typeof generation.payload.model === 'string' ? generation.payload.model : undefined)
+          : 'custom'),
         responseMessage: {
           messageId: generation.committed?.responseMessageId ?? randomUUID(),
           conversationId: generation.payload.conversationId ?? null,
@@ -674,13 +682,15 @@ export class LibreChatServer {
   }
 
   private async modelsConfig() {
-    const openRouterModels = await this.getOpenRouterModels()
-    return buildModelsConfig(openRouterModels, this.ai.getSnapshot())
+    const openRouter = await this.getOpenRouterModels()
+    return buildModelsConfig(openRouter.models, openRouter.freeModels, this.ai.getSnapshot())
   }
 
-  private getOpenRouterModels(): Promise<string[]> {
+  private getOpenRouterModels(): Promise<OpenRouterCatalog> {
     const stored = this.ai.getModelCatalog('openrouter')
-    if (stored && Date.now() - stored.updatedAt < MODEL_CATALOG_TTL_MS) return Promise.resolve(stored.models)
+    if (stored && Date.now() - stored.updatedAt < MODEL_CATALOG_TTL_MS) {
+      return Promise.resolve({ models: stored.models, freeModels: stored.models.filter(isOpenRouterFreeId) })
+    }
     if (this.modelCatalogRefresh) return this.modelCatalogRefresh
 
     this.modelCatalogRefresh = (async () => {
@@ -692,14 +702,21 @@ export class LibreChatServer {
           headers: { Accept: 'application/json', 'HTTP-Referer': 'https://kapanis.app', 'X-Title': 'kapanis' },
         })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const payload = await response.json() as { data?: Array<{ id?: unknown }> }
+        const payload = await response.json() as {
+          data?: Array<{
+            id?: unknown
+            pricing?: { prompt?: unknown; completion?: unknown; request?: unknown; image?: unknown }
+          }>
+        }
         const models = uniqueStrings((payload.data ?? []).map((item) => item?.id))
         if (models.length === 0) throw new Error('OpenRouter boş model kataloğu döndürdü.')
-        return this.ai.setModelCatalog('openrouter', models).models
+        const freeModels = uniqueStrings((payload.data ?? []).filter(isOpenRouterFreeModel).map((item) => item?.id))
+        const saved = this.ai.setModelCatalog('openrouter', models).models
+        return { models: saved, freeModels: freeModels.length ? freeModels : saved.filter(isOpenRouterFreeId) }
       } catch (error) {
-        if (stored?.models.length) return stored.models
+        if (stored?.models.length) return { models: stored.models, freeModels: stored.models.filter(isOpenRouterFreeId) }
         console.warn('[librechat] OpenRouter model kataloğu için yerel yedek kullanılıyor', error)
-        return OPENROUTER_FALLBACK_MODELS
+        return { models: OPENROUTER_FALLBACK_MODELS, freeModels: OPENROUTER_FALLBACK_MODELS.filter(isOpenRouterFreeId) }
       } finally {
         clearTimeout(timer)
         this.modelCatalogRefresh = null
@@ -720,7 +737,7 @@ export class LibreChatServer {
   }
 
   private toConversation(conversation: AiConversation, includeMessages = false) {
-    const endpoint = toLibreEndpoint(conversation.providerId)
+    const endpoint = toLibreEndpoint(conversation.providerId, conversation.model)
     return {
       conversationId: conversation.id,
       endpoint,
@@ -846,7 +863,8 @@ function resolveProvider(spec: string, model?: string): AiProviderId {
   return 'openrouter'
 }
 
-function toLibreEndpoint(provider: AiProviderId) {
+function toLibreEndpoint(provider: AiProviderId, model?: string) {
+  if (provider === 'openrouter' && model && isOpenRouterFreeId(model)) return 'openrouter-free'
   return provider === 'openai' ? 'openAI' : provider
 }
 
@@ -874,11 +892,35 @@ function uniqueStrings(values: unknown[]) {
   return result
 }
 
+function isOpenRouterFreeId(value: string) {
+  const id = value.trim().toLowerCase()
+  return id === 'openrouter/free' || id.endsWith(':free')
+}
+
+function isOpenRouterFreeModel(item: { id?: unknown; pricing?: { prompt?: unknown; completion?: unknown; request?: unknown; image?: unknown } }) {
+  if (typeof item.id !== 'string' || !item.id.trim()) return false
+  if (isOpenRouterFreeId(item.id)) return true
+  const pricing = item.pricing
+  if (!pricing || !isExplicitZeroPrice(pricing.prompt) || !isExplicitZeroPrice(pricing.completion)) return false
+  return isMissingOrZeroPrice(pricing.request) && isMissingOrZeroPrice(pricing.image)
+}
+
+function isExplicitZeroPrice(value: unknown) {
+  if ((typeof value !== 'string' && typeof value !== 'number') || String(value).trim() === '') return false
+  const number = Number(value)
+  return Number.isFinite(number) && number === 0
+}
+
+function isMissingOrZeroPrice(value: unknown) {
+  return value == null || value === '' || isExplicitZeroPrice(value)
+}
+
 function endpointsConfig() {
   // Keep the endpoint ids aligned with LibreChat's own endpoint enum.  The
   // OpenAI id is intentionally `openAI` (capital A); the client treats
   // `openai` as a different, unknown endpoint and silently drops its models.
   const definitions = [
+    ['openrouter-free', 'OpenRouter · Ücretsiz', 'custom', true],
     ['openrouter', 'OpenRouter', 'custom', true],
     ['openAI', 'OpenAI', 'openAI', true],
     ['anthropic', 'Anthropic', 'anthropic', true],
@@ -899,12 +941,20 @@ function endpointsConfig() {
   }]))
 }
 
-function buildModelsConfig(openRouterModels: string[], snapshot: AiSnapshot) {
+function buildModelsConfig(openRouterModels: string[], openRouterFreeModels: string[], snapshot: AiSnapshot) {
   const configured = new Map(snapshot.providers.map((provider) => [provider.id, provider.model]))
+  const freeModels = uniqueStrings(['openrouter/free', ...openRouterFreeModels])
+  const freeModelSet = new Set(freeModels)
+  const openRouterConfigured = configured.get('openrouter')
+  const regularOpenRouterModels = uniqueStrings([
+    openRouterConfigured && !freeModelSet.has(openRouterConfigured) && !isOpenRouterFreeId(openRouterConfigured) ? openRouterConfigured : undefined,
+    ...openRouterModels,
+  ]).filter((model) => !freeModelSet.has(model) && !isOpenRouterFreeId(model))
   return {
     initial: [],
     openAI: uniqueStrings([configured.get('openai'), 'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini']),
-    openrouter: uniqueStrings([configured.get('openrouter'), ...openRouterModels]),
+    'openrouter-free': freeModels,
+    openrouter: regularOpenRouterModels,
     anthropic: uniqueStrings([configured.get('anthropic'), 'claude-3-5-haiku-latest', 'claude-3-5-sonnet-latest']),
     google: uniqueStrings([configured.get('google'), 'gemini-2.0-flash', 'gemini-1.5-flash']),
     mistral: uniqueStrings([configured.get('mistral'), 'mistral-small-latest', 'mistral-large-latest']),
@@ -916,8 +966,11 @@ function buildModelsConfig(openRouterModels: string[], snapshot: AiSnapshot) {
 
 function startupConfig(snapshot: AiSnapshot) {
   const configured = new Map(snapshot.providers.map((provider) => [provider.id, provider.model]))
+  const configuredOpenRouter = configured.get('openrouter')
+  const configuredOpenRouterIsFree = Boolean(configuredOpenRouter && isOpenRouterFreeId(configuredOpenRouter))
   const specs = [
-    ['openrouter', 'OpenRouter', 'openrouter', configured.get('openrouter') || 'openai/gpt-4o-mini', true],
+    ['openrouter', 'OpenRouter', 'openrouter', !configuredOpenRouterIsFree && configuredOpenRouter ? configuredOpenRouter : 'openai/gpt-4o-mini', true],
+    ['openrouter-free', 'OpenRouter · Ücretsiz', 'openrouter-free', configuredOpenRouterIsFree && configuredOpenRouter ? configuredOpenRouter : 'openrouter/free', false],
     ['openai', 'OpenAI', 'openAI', configured.get('openai') || 'gpt-4o-mini', false],
     ['anthropic', 'Anthropic', 'anthropic', configured.get('anthropic') || 'claude-3-5-haiku-latest', false],
     ['google', 'Google Gemini', 'google', configured.get('google') || 'gemini-2.0-flash', false],

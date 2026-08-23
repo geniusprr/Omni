@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import LayoutTemplate from 'lucide-react/dist/esm/icons/layout-template.js'
 import type { MiniOsMode } from '@/components/layout/MiniOsDock'
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/i18n'
 import {
   BROWSER_DATA_EVENT,
   loadFavorites,
@@ -69,6 +70,7 @@ export function MiniOsDashboard({
   isCustomizeOpen = false,
   onToggleCustomizeOpen,
 }: MiniOsDashboardProps) {
+  const { t } = useI18n()
   const { entries } = useVault()
 
   // Widget Layout State with persistence
@@ -243,11 +245,11 @@ export function MiniOsDashboard({
               size="compact"
               className="dashboard-customize-btn"
               onClick={() => setCustomizeModalOpen(true)}
-              title="Widget ekle"
-              aria-label="Widget ekle"
+              title={t('Widget ekle')}
+              aria-label={t('Widget ekle')}
             >
               <LayoutTemplate size={13} aria-hidden="true" />
-              <span>Widget ekle</span>
+              <span>{t('Widget ekle')}</span>
             </Button>
           </div>
         </div>

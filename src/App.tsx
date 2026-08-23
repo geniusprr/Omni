@@ -58,6 +58,7 @@ export default function App() {
     return isAppTheme(storedTheme) ? storedTheme : DEFAULT_APP_THEME
   })
   const [isDockHidden, setIsDockHidden] = useState(false)
+  const [browserFocusMode, setBrowserFocusMode] = useState(false)
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
   const [quickActionsOpen, setQuickActionsOpen] = useState(false)
   const [pairingModalOpen, setPairingModalOpen] = useState(false)
@@ -83,6 +84,10 @@ export default function App() {
 
   const timerRef = useRef<TimerState | null>(null)
   timerRef.current = timer
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const browserFocusModeRef = useRef(browserFocusMode)
+  browserFocusModeRef.current = browserFocusMode
 
   const themeMode = themeColorScheme(appTheme)
 
@@ -90,7 +95,21 @@ export default function App() {
     window.localStorage.setItem(APP_THEME_STORAGE_KEY, appTheme)
     document.documentElement.dataset.appTheme = appTheme
     document.documentElement.style.colorScheme = themeMode
+    void desktop.libreChat.setTheme(appTheme).catch(() => undefined)
   }, [appTheme, themeMode])
+
+  useEffect(() => desktop.agent.onAction((action) => {
+    if (action.type === 'set-theme') {
+      setAppTheme(action.theme)
+      return
+    }
+    if (action.type === 'open-workspace') {
+      setMode(action.workspace)
+      return
+    }
+    setMode('browser')
+    requestBrowserNavigation(action.query)
+  }), [])
 
   useEffect(() => {
     void getEffectiveSettings().then(setSettings).catch(() => undefined)
@@ -118,7 +137,9 @@ export default function App() {
     }
   }, [])
 
-  // Keyboard shortcut (Ctrl+K for Quick Switcher)
+  // Global renderer shortcut for the quick switcher. F11 is consumed by
+  // Electron before its default menu accelerator runs, then forwarded through
+  // the desktop bridge (and captured directly inside native BrowserViews).
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -130,6 +151,28 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    void desktop.window.isBrowserFocus().then((enabled) => {
+      if (active) setBrowserFocusMode(enabled)
+    }).catch(() => undefined)
+    const unlisten = desktop.window.onBrowserFocusChanged(({ enabled }) => setBrowserFocusMode(enabled))
+    const unlistenShortcut = desktop.window.onBrowserFocusShortcut(() => {
+      if (modeRef.current !== 'browser') return
+      void desktop.window.setBrowserFocus(!browserFocusModeRef.current)
+    })
+    return () => {
+      active = false
+      unlisten()
+      unlistenShortcut()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mode === 'browser' || !browserFocusMode) return
+    void desktop.window.setBrowserFocus(false)
+  }, [browserFocusMode, mode])
 
   // Initial local data and Electron event listeners
   useEffect(() => {
@@ -382,11 +425,11 @@ export default function App() {
   }
 
   return (
-    <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'} minios-window--theme-${appTheme}`}>
+    <div className={`minios-window ${themeMode === 'dark' ? 'minios-window--dark' : 'minios-window--light'} minios-window--theme-${appTheme} ${browserFocusMode && mode === 'browser' ? 'minios-window--browser-focus' : ''}`}>
       {/* Background Scenic Ambient Glow / Mountains Wallpaper effect */}
       <div className="minios-wallpaper-backdrop" />
       {/* Main Mini-OS Shell Layout */}
-      <div className={`minios-shell minios-shell--with-actionbar ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''} ${mode === 'notes' ? 'minios-shell--notes' : ''} ${isDockHidden ? 'minios-shell--dock-hidden' : ''}`}>
+      <div className={`minios-shell minios-shell--with-actionbar ${mode === 'browser' ? 'minios-shell--browser' : ''} ${mode === 'home' ? 'minios-shell--home' : ''} ${mode === 'ai' ? 'minios-shell--ai' : ''} ${mode === 'notes' ? 'minios-shell--notes' : ''} ${isDockHidden ? 'minios-shell--dock-hidden' : ''} ${browserFocusMode && mode === 'browser' ? 'minios-shell--browser-focus' : ''}`}>
         {/* Left Floating Vertical Dock */}
         <MiniOsDock
           activeMode={mode}
@@ -459,7 +502,7 @@ export default function App() {
             )}
 
             {mode === 'settings' && settings && (
-              <div className="minios-subscreen">
+              <div className="minios-subscreen minios-subscreen--full">
                 <SettingsPage
                   settings={settings}
                   connectionStatus={connectionStatus}

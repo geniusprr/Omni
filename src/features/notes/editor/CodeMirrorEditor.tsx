@@ -11,8 +11,12 @@ import { tabStore } from '../stores/tabStore'
 import { vaultStore } from '../stores/vaultStore'
 import type { EditorMode, NoteTab } from '../types'
 import { kapanisEditorTheme, kapanisHighlightStyle } from './kapanisTheme'
-import { livePreviewExtension } from './livePreviewExtension'
 import { ReadingMode } from './ReadingMode'
+import {
+  RichTextEditor,
+  type RichTextEditorHandle,
+  type RichTextFormatState,
+} from './RichTextEditor'
 import {
   tagViewPlugin,
   wikilinkAutocomplete,
@@ -26,6 +30,7 @@ interface CodeMirrorEditorProps {
   mode: EditorMode
   onSaveStatusChange?: (status: 'saved' | 'saving') => void
   onStatsChange?: (stats: { wordCount: number; charCount: number }) => void
+  onFormatStateChange?: (state: RichTextFormatState) => void
 }
 
 export type EditorFormatCommand =
@@ -59,29 +64,72 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
   mode,
   onSaveStatusChange,
   onStatsChange,
+  onFormatStateChange,
 }, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const richEditorRef = useRef<RichTextEditorHandle | null>(null)
   const [content, setContent] = useState<string>('')
   const [initialLoading, setInitialLoading] = useState(true)
   const saveTimeoutRef = useRef<number | null>(null)
   const lastSavedContentRef = useRef<string>('')
+  const pendingContentRef = useRef<string | null>(null)
+  const vaultPathRef = useRef(vaultPath)
+  const tabPathRef = useRef(tab.path)
+  vaultPathRef.current = vaultPath
+  tabPathRef.current = tab.path
+
+  useEffect(() => () => {
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current)
+    }
+    const pending = pendingContentRef.current
+    if (!pending || pending === lastSavedContentRef.current) return
+
+    const finalVaultPath = vaultPathRef.current
+    const finalTabPath = tabPathRef.current
+    void desktop.vault.writeFile(finalVaultPath, finalTabPath, pending).then(() => {
+      void vaultStore.handleFileContentChange(finalTabPath, pending)
+    }).catch(() => {
+      // The tab remains marked dirty if the final flush cannot be written.
+    })
+  }, [])
 
   useImperativeHandle(ref, () => ({
     format: applyFormatting,
     undo: () => {
+      if (mode === 'live') {
+        richEditorRef.current?.undo()
+        return
+      }
       if (viewRef.current) undoCommand(viewRef.current)
     },
     redo: () => {
+      if (mode === 'live') {
+        richEditorRef.current?.redo()
+        return
+      }
       if (viewRef.current) redoCommand(viewRef.current)
     },
     search: () => {
+      if (mode === 'live') {
+        richEditorRef.current?.search()
+        return
+      }
       if (viewRef.current) openSearchPanel(viewRef.current)
     },
-    focus: () => viewRef.current?.focus(),
+    focus: () => {
+      if (mode === 'live') richEditorRef.current?.focus()
+      else viewRef.current?.focus()
+    },
   }))
 
   function applyFormatting(command: EditorFormatCommand) {
+    if (mode === 'live') {
+      richEditorRef.current?.format(command)
+      return
+    }
+
     const view = viewRef.current
     if (!view || mode === 'reading') return
 
@@ -214,6 +262,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         if (!active) return
         setContent(fileContent)
         lastSavedContentRef.current = fileContent
+        pendingContentRef.current = null
         setInitialLoading(false)
         updateStats(fileContent)
         onSaveStatusChange?.('saved')
@@ -236,9 +285,42 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     onStatsChange?.({ wordCount: words, charCount: chars })
   }
 
+  function handleContentChange(newDoc: string) {
+    setContent(newDoc)
+    pendingContentRef.current = newDoc
+    updateStats(newDoc)
+    tabStore.setTabDirty(tab.id, true)
+    onSaveStatusChange?.('saving')
+
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = window.setTimeout(() => {
+      if (newDoc !== lastSavedContentRef.current) {
+        void (async () => {
+          try {
+            await desktop.vault.writeFile(vaultPath, tab.path, newDoc)
+            lastSavedContentRef.current = newDoc
+            if (pendingContentRef.current === newDoc) pendingContentRef.current = null
+            tabStore.setTabDirty(tab.id, false)
+            await vaultStore.handleFileContentChange(tab.path, newDoc)
+            onSaveStatusChange?.('saved')
+          } catch {
+            // Keep the tab dirty when a write fails. A later edit retries it.
+          }
+        })()
+      } else {
+        if (pendingContentRef.current === newDoc) pendingContentRef.current = null
+        tabStore.setTabDirty(tab.id, false)
+        onSaveStatusChange?.('saved')
+      }
+    }, 600)
+  }
+
   // 2. Initialize CodeMirror EditorView
   useEffect(() => {
-    if (initialLoading || mode === 'reading' || !containerRef.current) return
+    if (initialLoading || mode === 'reading' || mode === 'live' || !containerRef.current) return
 
     // Build extension stack
     const extensions = [
@@ -269,41 +351,10 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           const newDoc = update.state.doc.toString()
-          setContent(newDoc)
-          updateStats(newDoc)
-          tabStore.setTabDirty(tab.id, true)
-          onSaveStatusChange?.('saving')
-
-          // Debounced auto-save (600ms)
-          if (saveTimeoutRef.current) {
-            window.clearTimeout(saveTimeoutRef.current)
-          }
-
-          saveTimeoutRef.current = window.setTimeout(() => {
-            if (newDoc !== lastSavedContentRef.current) {
-              void (async () => {
-                try {
-                  await desktop.vault.writeFile(vaultPath, tab.path, newDoc)
-                  lastSavedContentRef.current = newDoc
-                  tabStore.setTabDirty(tab.id, false)
-                  await vaultStore.handleFileContentChange(tab.path, newDoc)
-                  onSaveStatusChange?.('saved')
-                } catch {
-                  // ignore save error
-                }
-              })()
-            } else {
-              tabStore.setTabDirty(tab.id, false)
-              onSaveStatusChange?.('saved')
-            }
-          }, 600)
+          handleContentChange(newDoc)
         }
       }),
     ]
-
-    if (mode === 'live') {
-      extensions.push(livePreviewExtension)
-    }
 
     if (mode === 'source') {
       extensions.push(lineNumbers())
@@ -324,9 +375,6 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     return () => {
       view.destroy()
       viewRef.current = null
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current)
-      }
     }
   }, [initialLoading, mode, tab.id, tab.path, vaultPath])
 
@@ -366,6 +414,18 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
   if (mode === 'reading') {
     return <ReadingMode content={content} onNavigate={(target) => handleNavigateToNote(target)} />
+  }
+
+  if (mode === 'live') {
+    return (
+      <RichTextEditor
+        ref={richEditorRef}
+        markdown={content}
+        onChange={handleContentChange}
+        onNavigate={handleNavigateToNote}
+        onFormatStateChange={onFormatStateChange}
+      />
+    )
   }
 
   return <div className="codemirror-wrapper" ref={containerRef} />

@@ -15,11 +15,12 @@ import type {
   TimerState,
   TransferItem,
 } from '@/types'
-import { APP_EVENTS, BROWSER_EVENTS, type AiConversation, type AiMessage, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type AiSendResult, type AiSnapshot, type AiUpdate, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type ProgramCandidate, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
+import { APP_EVENTS, BROWSER_EVENTS, type AgentAppAction, type AiConversation, type AiMessage, type AiProviderConfigInput, type AiProviderId, type AiSendInput, type AiSendResult, type AiSnapshot, type AiUpdate, type BrowserBounds, type BrowserDebugSnapshot, type BrowserDownloadItem, type BrowserHistoryItem, type BrowserMediaProjection, type BrowserPermissionRecord, type BrowserPermissionRequest, type BrowserSessionSnapshot, type BrowserTabProjection, type DesktopEventName, type ElectronDesktopBridge, type IpcChannel, type PermissionSetInput, type ProgramCandidate, type SystemMediaSession, type YouTubeMusicState } from '../../shared/contracts'
 import type { VaultFileEntry } from '@/features/notes/types'
+import type { AppTheme } from '@/theme'
 
 export { APP_EVENTS, BROWSER_EVENTS }
-export type { AiConversation, AiMessage, AiProviderConfigInput, AiProviderId, AiSendInput, AiSendResult, AiSnapshot, AiUpdate, BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, ProgramCandidate, SystemMediaSession, YouTubeMusicState }
+export type { AgentAppAction, AiConversation, AiMessage, AiProviderConfigInput, AiProviderId, AiSendInput, AiSendResult, AiSnapshot, AiUpdate, BrowserBounds, BrowserDebugSnapshot, BrowserDownloadItem, BrowserHistoryItem, BrowserMediaProjection, BrowserPermissionRecord, BrowserPermissionRequest, BrowserSessionSnapshot, BrowserTabProjection, PermissionSetInput, ProgramCandidate, SystemMediaSession, YouTubeMusicState }
 
 type Unsubscribe = () => void
 
@@ -140,6 +141,10 @@ export const desktop = {
     minimize: () => optionalInvoke<void>('window:minimize', undefined),
     toggleMaximize: () => optionalInvoke<void>('window:toggle-maximize', undefined),
     isMaximized: () => optionalInvoke<boolean>('window:is-maximized', false),
+    setBrowserFocus: (enabled: boolean) => optionalInvoke<boolean>('window:set-browser-focus', false, { enabled }),
+    isBrowserFocus: () => optionalInvoke<boolean>('window:is-browser-focus', false),
+    onBrowserFocusChanged: (callback: (payload: { enabled: boolean }) => void) => listen(APP_EVENTS.browserFocusChanged, callback),
+    onBrowserFocusShortcut: (callback: () => void) => listen(APP_EVENTS.browserFocusShortcut, callback),
     close: () => optionalInvoke<void>('window:close', undefined),
   },
   system: {
@@ -251,9 +256,13 @@ export const desktop = {
     test: (title?: string, body?: string) => optionalInvoke<MirroredNotification | null>('notifications:test', null, { title, body }),
     onMirrored: (callback: (notification: MirroredNotification) => void) => listen(APP_EVENTS.notificationMirrored, callback),
   },
+  agent: {
+    onAction: (callback: (action: AgentAppAction) => void) => listen(APP_EVENTS.agentAction, callback),
+  },
   libreChat: {
     activate: (bounds: BrowserBounds) => optionalInvoke<{ url: string } | null>('librechat:activate', null, { bounds }),
     setBounds: (bounds: BrowserBounds) => optionalInvoke<void>('librechat:set-bounds', undefined, { bounds }),
+    setTheme: (theme: AppTheme) => optionalInvoke<void>('librechat:set-theme', undefined, { theme }),
     deactivate: () => optionalInvoke<void>('librechat:deactivate', undefined),
   },
 }

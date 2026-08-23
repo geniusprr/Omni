@@ -38,6 +38,7 @@ interface TabManagerCallbacks {
   onHistory: (projection: BrowserTabProjection) => void
   onRendererFailure: (projection: BrowserTabProjection, reason: string) => void
   onFullscreen: (tabId: string, fullscreen: boolean) => void
+  onBrowserFocusToggle: () => void
   onContextMenu: (tabId: string, params: unknown) => void
   onBeforeClose: (tabId: string, webContents: WebContents) => void | Promise<void>
 }
@@ -430,6 +431,11 @@ export class TabManager {
       return { action: 'deny' as const }
     }
     const onContextMenu = (_event: Electron.Event, params: unknown) => this.callbacks.onContextMenu(id, params)
+    const onBeforeInput = (event: Electron.Event, input: Electron.Input) => {
+      if (input.type !== 'keyDown' || input.key !== 'F11' || input.control || input.alt || input.meta || input.shift) return
+      event.preventDefault()
+      this.callbacks.onBrowserFocusToggle()
+    }
     const onEnterFullscreen = () => this.callbacks.onFullscreen(id, true)
     const onLeaveFullscreen = () => this.callbacks.onFullscreen(id, false)
     webContents.on('did-start-loading', onStart)
@@ -448,6 +454,7 @@ export class TabManager {
     webContents.on('will-navigate', onWillNavigate)
     webContents.setWindowOpenHandler(onWindowOpen)
     webContents.on('context-menu', onContextMenu)
+    webContents.on('before-input-event', onBeforeInput)
     webContents.on('enter-html-full-screen', onEnterFullscreen)
     webContents.on('leave-html-full-screen', onLeaveFullscreen)
     return () => {
@@ -466,6 +473,7 @@ export class TabManager {
       webContents.removeListener('destroyed', onDestroyed)
       webContents.removeListener('will-navigate', onWillNavigate)
       webContents.removeListener('context-menu', onContextMenu)
+      webContents.removeListener('before-input-event', onBeforeInput)
       webContents.removeListener('enter-html-full-screen', onEnterFullscreen)
       webContents.removeListener('leave-html-full-screen', onLeaveFullscreen)
     }

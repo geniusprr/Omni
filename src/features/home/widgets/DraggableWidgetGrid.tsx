@@ -30,6 +30,7 @@ import type { MiniOsMode } from '@/components/layout/MiniOsDock'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { useI18n, type TranslationValues } from '@/i18n'
 import {
   faviconForBrowserUrl,
   normalizeBrowserInput,
@@ -40,7 +41,7 @@ import {
 } from '@/features/browser/browserData'
 import { tabStore } from '@/features/notes/stores/tabStore'
 import { desktop, type ProgramCandidate } from '@/lib/desktop'
-import { durationLabel, targetLabel } from '@/lib/format'
+import { compactDuration, durationLabel, targetLabel } from '@/lib/format'
 import type {
   PairedController,
   LocalSendDevice,
@@ -130,7 +131,7 @@ interface DragState {
 }
 
 function normalizeProgramTarget(target: string) {
-  return target.trim().replace(/\//g, '\\').toLocaleLowerCase('tr-TR')
+  return target.trim().replace(/\//g, '\\').toLowerCase()
 }
 
 export function DraggableWidgetGrid({
@@ -160,6 +161,7 @@ export function DraggableWidgetGrid({
   onRefreshControllers,
   onOpenPairingModal,
 }: DraggableWidgetGridProps) {
+  const { localeTag, t } = useI18n()
   // POINTER-BASED DRAG & DROP ENGINE (100% reliable in Electron renderers)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [dropTargetCol, setDropTargetCol] = useState<number | null>(null)
@@ -196,7 +198,7 @@ export function DraggableWidgetGrid({
     const local = localDevices.find((device) => device.fingerprint === controller.controllerId)
     return {
       id: controller.id,
-      name: controller.controllerName || 'Mobil Cihaz',
+      name: controller.controllerName || t('Mobil Cihaz'),
       type: controller.controllerType || 'Android',
       localOnline: Boolean(local && presenceNow - local.lastSeen < 45_000),
       cloudOnline: Boolean(controller.lastActiveAt && presenceNow - Date.parse(controller.lastActiveAt) < 60_000),
@@ -214,10 +216,10 @@ export function DraggableWidgetGrid({
       .filter((item) => item.kind === 'program')
       .map((item) => normalizeProgramTarget(item.target)),
   )
-  const normalizedProgramSearch = programSearch.trim().toLocaleLowerCase('tr-TR')
+  const normalizedProgramSearch = programSearch.trim().toLocaleLowerCase(localeTag)
   const matchingPrograms = programCandidates.filter((program) => {
     if (!normalizedProgramSearch) return true
-    return `${program.name} ${program.path}`.toLocaleLowerCase('tr-TR').includes(normalizedProgramSearch)
+    return `${program.name} ${program.path}`.toLocaleLowerCase(localeTag).includes(normalizedProgramSearch)
   })
   const visiblePrograms = matchingPrograms.slice(0, 80)
   const programIconPaths = [
@@ -281,7 +283,7 @@ export function DraggableWidgetGrid({
       setProgramCandidates(await desktop.programs.list(refresh))
       setProgramsLoaded(true)
     } catch (cause) {
-      setShortcutError(cause instanceof Error ? cause.message : 'Program listesi alınamadı.')
+      setShortcutError(cause instanceof Error ? cause.message : t('Program listesi alınamadı.'))
     } finally {
       setProgramsLoading(false)
     }
@@ -290,7 +292,7 @@ export function DraggableWidgetGrid({
   function addProgramShortcut(program: ProgramCandidate) {
     if (addedProgramTargets.has(normalizeProgramTarget(program.path))) {
       setShortcutNotice(null)
-      setShortcutError(`${program.name} zaten hızlı erişimde.`)
+      setShortcutError(t('{name} zaten hızlı erişimde.', { name: program.name }))
       return
     }
     const next = [...quickAccessApps, {
@@ -303,7 +305,7 @@ export function DraggableWidgetGrid({
     }].slice(-11)
     persistQuickAccess(next)
     setShortcutError(null)
-    setShortcutNotice(`${program.name} hızlı erişime eklendi.`)
+    setShortcutNotice(t('{name} hızlı erişime eklendi.', { name: program.name }))
   }
 
   async function handleProgramFilePick() {
@@ -314,7 +316,7 @@ export function DraggableWidgetGrid({
       if (program) addProgramShortcut(program)
     } catch (cause) {
       setShortcutNotice(null)
-      setShortcutError(cause instanceof Error ? cause.message : 'Program seçilemedi.')
+      setShortcutError(cause instanceof Error ? cause.message : t('Program seçilemedi.'))
     } finally {
       setProgramPickerBusy(false)
     }
@@ -338,14 +340,14 @@ export function DraggableWidgetGrid({
     setShortcutName('')
     setShortcutTarget('')
     setShortcutError(null)
-    setShortcutNotice(`${name} hızlı erişime eklendi.`)
+    setShortcutNotice(t('{name} hızlı erişime eklendi.', { name }))
   }
 
   function openShortcut(item: QuickAppItem) {
     if (item.kind === 'program') {
       void desktop.programs.launch(item.target).catch((cause) => {
         openQuickAccessEditor('program')
-        setShortcutError(cause instanceof Error ? cause.message : 'Program başlatılamadı.')
+        setShortcutError(cause instanceof Error ? cause.message : t('Program başlatılamadı.'))
       })
       return
     }
@@ -726,7 +728,7 @@ export function DraggableWidgetGrid({
             >
               <p className="sticky-body-text">
                 {latestNote
-                  ? `${latestNote.name.replace(/\.md$/i, '')} notunu incele ve görevleri tamamla.`
+                  ? t('{name} notunu incele ve görevleri tamamla.', { name: latestNote.name.replace(/\.md$/i, '') })
                   : "Mükemmelliğe değil, ilerlemeye odaklanmayı unutma."}
               </p>
               <span className="sticky-body-date">Son güncelleme</span>
@@ -901,7 +903,7 @@ export function DraggableWidgetGrid({
                 <Input
                   type="text"
                   className="todo-inline-add-input"
-                  placeholder="Yeni görev..."
+                  placeholder={t('Yeni görev...')}
                   value={newTodoText}
                   onChange={(e) => setNewTodoText(e.target.value)}
                   autoFocus
@@ -919,7 +921,7 @@ export function DraggableWidgetGrid({
                   className={`todo-row ${item.completed ? 'todo-row--completed' : ''}`}
                   onClick={() => onToggleTodo(item.id)}
                 >
-                  <button type="button" className="todo-circle-btn" aria-label="Toggle task">
+                  <button type="button" className="todo-circle-btn" aria-label={t('Görevi değiştir')}>
                     {item.completed ? (
                       <div className="todo-checked-circle">
                         <Check size={9} strokeWidth={3} />
@@ -1029,10 +1031,10 @@ export function DraggableWidgetGrid({
 
                   <div className="widget-presets-grid">
                     {[
-                      { label: '15 dk', sec: 15 * 60 },
-                      { label: '30 dk', sec: 30 * 60 },
-                      { label: '45 dk', sec: 45 * 60 },
-                      { label: '1 saat', sec: 60 * 60 },
+                      { label: compactDuration(15 * 60), sec: 15 * 60 },
+                      { label: compactDuration(30 * 60), sec: 30 * 60 },
+                      { label: compactDuration(45 * 60), sec: 45 * 60 },
+                      { label: compactDuration(60 * 60), sec: 60 * 60 },
                     ].map((p) => (
                       <button
                         key={p.sec}
@@ -1138,7 +1140,7 @@ export function DraggableWidgetGrid({
                         <div key={`local-${device.ip}-${device.port}`} className="widget-controller-row widget-controller-row--presence">
                           <div className="widget-ctrl-icon"><Smartphone size={12} className="text-slate-400" /></div>
                           <div className="widget-ctrl-info">
-                            <span className="widget-ctrl-name">{device.alias || 'Yerel Telefon'}</span>
+                            <span className="widget-ctrl-name">{device.alias || t('Yerel Telefon')}</span>
                             <span className="widget-ctrl-type">Wi-Fi</span>
                           </div>
                           <div className="widget-presence-badges">
@@ -1292,17 +1294,17 @@ export function DraggableWidgetGrid({
         <form className="quick-access-editor__content" onSubmit={handleShortcutSubmit}>
           <div className="quick-access-editor__head">
             <div>
-              <h2 id="quick-access-editor-title">Hızlı erişime ekle</h2>
+              <h2 id="quick-access-editor-title">{t('Hızlı erişime ekle')}</h2>
               <p>{shortcutKind === 'program'
-                ? 'Bilgisayarındaki uygulamayı seç; kısayol otomatik eklenir.'
-                : 'Tarayıcıda açmak istediğin web sitesini ekle.'}</p>
+                ? t('Bilgisayarındaki uygulamayı seç; kısayol otomatik eklenir.')
+                : t('Tarayıcıda açmak istediğin web sitesini ekle.')}</p>
             </div>
-            <button type="button" className="quick-access-editor__close" onClick={closeQuickAccessEditor} aria-label="Kapat">
+            <button type="button" className="quick-access-editor__close" onClick={closeQuickAccessEditor} aria-label={t('Kapat')}>
               <X size={16} />
             </button>
           </div>
 
-          <div className="quick-access-editor__type" role="tablist" aria-label="Kısayol türü">
+          <div className="quick-access-editor__type" role="tablist" aria-label={t('Kısayol türü')}>
             <button
               type="button"
               role="tab"
@@ -1310,7 +1312,7 @@ export function DraggableWidgetGrid({
               className={shortcutKind === 'program' ? 'is-active' : ''}
               onClick={() => changeShortcutKind('program')}
             >
-              <MonitorUp size={15} /> Program
+              <MonitorUp size={15} /> {t('Program')}
             </button>
             <button
               type="button"
@@ -1319,7 +1321,7 @@ export function DraggableWidgetGrid({
               className={shortcutKind === 'website' ? 'is-active' : ''}
               onClick={() => changeShortcutKind('website')}
             >
-              <Link2 size={15} /> Web sitesi
+              <Link2 size={15} /> {t('Web sitesi')}
             </button>
           </div>
 
@@ -1332,26 +1334,26 @@ export function DraggableWidgetGrid({
                     autoFocus
                     value={programSearch}
                     onChange={(event) => setProgramSearch(event.target.value)}
-                    placeholder="Programlarda ara"
-                    aria-label="Programlarda ara"
+                    placeholder={t('Programlarda ara')}
+                    aria-label={t('Programlarda ara')}
                   />
                 </div>
 
                 <div className="quick-access-program-picker__meta">
                   <p id="quick-access-program-picker-title" aria-live="polite">
                     {programsLoading
-                      ? 'Programlar aranıyor…'
+                      ? t('Programlar aranıyor…')
                       : matchingPrograms.length === 0
-                        ? 'Program bulunamadı'
-                        : `${matchingPrograms.length} program bulundu`}
+                        ? t('Program bulunamadı')
+                        : t('{count} program bulundu', { count: matchingPrograms.length })}
                   </p>
                   <button
                     type="button"
                     className="quick-access-program-picker__refresh"
                     onClick={() => void loadPrograms(true)}
                     disabled={programsLoading || !desktop.isElectron()}
-                    aria-label="Program listesini yenile"
-                    title="Listeyi yenile"
+                    aria-label={t('Program listesini yenile')}
+                    title={t('Listeyi yenile')}
                   >
                     <RefreshCw size={14} className={programsLoading ? 'is-spinning' : undefined} />
                   </button>
@@ -1361,7 +1363,7 @@ export function DraggableWidgetGrid({
                   {programsLoading ? (
                     <div className="quick-access-program-picker__empty" role="status">
                       <LoaderCircle size={18} className="is-spinning" aria-hidden="true" />
-                      <p>Yüklü uygulamalar hazırlanıyor.</p>
+                      <p>{t('Yüklü uygulamalar hazırlanıyor.')}</p>
                     </div>
                   ) : visiblePrograms.length > 0 ? (
                     visiblePrograms.map((program) => {
@@ -1376,34 +1378,36 @@ export function DraggableWidgetGrid({
                           disabled={alreadyAdded}
                           onClick={() => addProgramShortcut(program)}
                           title={program.path}
-                          aria-label={alreadyAdded ? `${program.name} zaten hızlı erişimde` : `${program.name} ekle`}
+                          aria-label={alreadyAdded
+                            ? t('{name} zaten hızlı erişimde', { name: program.name })
+                            : t('{name} ekle', { name: program.name })}
                         >
                           <ShortcutIcon className="quick-access-program-picker__icon" src={icon} />
                           <span className="quick-access-program-picker__details">
                             <strong>{program.name}</strong>
-                            <small>{programSourceLabel(program.source)}</small>
+                            <small>{programSourceLabel(program.source, t)}</small>
                           </span>
-                          {alreadyAdded ? <CircleCheck size={17} aria-label="Eklendi" /> : <Plus size={17} aria-hidden="true" />}
+                          {alreadyAdded ? <CircleCheck size={17} aria-label={t('Eklendi')} /> : <Plus size={17} aria-hidden="true" />}
                         </button>
                       )
                     })
                   ) : (
                     <div className="quick-access-program-picker__empty">
                       <AppWindow size={20} aria-hidden="true" />
-                      <strong>{desktop.isElectron() ? 'Aramana uyan program yok.' : 'Program listesi masaüstü uygulamasında görünür.'}</strong>
-                      <p>Listede yoksa aşağıdan kendin seçebilirsin.</p>
+                      <strong>{desktop.isElectron() ? t('Aramana uyan program yok.') : t('Program listesi masaüstü uygulamasında görünür.')}</strong>
+                      <p>{t('Listede yoksa aşağıdan kendin seçebilirsin.')}</p>
                     </div>
                   )}
                 </div>
 
                 {matchingPrograms.length > visiblePrograms.length ? (
-                  <p className="quick-access-program-picker__limit">İlk 80 sonuç gösteriliyor. Aramayla daraltabilirsin.</p>
+                  <p className="quick-access-program-picker__limit">{t('İlk 80 sonuç gösteriliyor. Aramayla daraltabilirsin.')}</p>
                 ) : null}
 
                 <div className="quick-access-program-picker__fallback">
                   <div>
-                    <strong>Listede yok mu?</strong>
-                    <p>Program dosyasını kendin seç.</p>
+                    <strong>{t('Listede yok mu?')}</strong>
+                    <p>{t('Program dosyasını kendin seç.')}</p>
                   </div>
                   <button
                     type="button"
@@ -1411,14 +1415,14 @@ export function DraggableWidgetGrid({
                     disabled={programPickerBusy || !desktop.isElectron()}
                   >
                     {programPickerBusy ? <LoaderCircle size={15} className="is-spinning" aria-hidden="true" /> : <FolderOpen size={15} aria-hidden="true" />}
-                    {programPickerBusy ? 'Seçiliyor' : 'Dosyadan seç'}
+                    {programPickerBusy ? t('Seçiliyor') : t('Dosyadan seç')}
                   </button>
                 </div>
               </section>
             ) : (
-              <section className="quick-access-editor__website-fields" aria-label="Web sitesi ekle">
+              <section className="quick-access-editor__website-fields" aria-label={t('Web sitesi ekle')}>
                 <label>
-                  Ad
+                  {t('Ad')}
                   <input
                     autoFocus
                     value={shortcutName}
@@ -1428,7 +1432,7 @@ export function DraggableWidgetGrid({
                   />
                 </label>
                 <label>
-                  Web adresi
+                  {t('Web adresi')}
                   <input
                     value={shortcutTarget}
                     onChange={(event) => setShortcutTarget(event.target.value)}
@@ -1445,7 +1449,7 @@ export function DraggableWidgetGrid({
 
           <section className="quick-access-editor__saved" aria-labelledby="quick-access-saved-title">
             <div className="quick-access-editor__section-head">
-              <h3 id="quick-access-saved-title">Ekli kısayollar</h3>
+              <h3 id="quick-access-saved-title">{t('Ekli kısayollar')}</h3>
               <span>{quickAccessApps.length}/11</span>
             </div>
             <div className="quick-access-editor__list">
@@ -1455,7 +1459,7 @@ export function DraggableWidgetGrid({
                   <div key={item.id} className={icon ? '' : 'is-iconless'}>
                     <ShortcutIcon className="quick-access-editor__item-icon" src={icon} />
                     <span className="quick-access-editor__item-details"><strong>{item.name}</strong><small>{item.target}</small></span>
-                    <button type="button" onClick={() => persistQuickAccess(quickAccessApps.filter((entry) => entry.id !== item.id))} aria-label={`${item.name} kısayolunu sil`}><Trash2 size={14} /></button>
+                    <button type="button" onClick={() => persistQuickAccess(quickAccessApps.filter((entry) => entry.id !== item.id))} aria-label={t('{name} kısayolunu sil', { name: item.name })}><Trash2 size={14} /></button>
                   </div>
                 )
               })}
@@ -1463,8 +1467,8 @@ export function DraggableWidgetGrid({
           </section>
 
           <div className="quick-access-editor__actions">
-            <button type="button" onClick={closeQuickAccessEditor}>Kapat</button>
-            {shortcutKind === 'website' ? <button type="submit" className="is-primary">Web sitesi ekle</button> : null}
+            <button type="button" onClick={closeQuickAccessEditor}>{t('Kapat')}</button>
+            {shortcutKind === 'website' ? <button type="submit" className="is-primary">{t('Web sitesi ekle')}</button> : null}
           </div>
         </form>
       </dialog>
@@ -1472,10 +1476,10 @@ export function DraggableWidgetGrid({
   )
 }
 
-function programSourceLabel(source: ProgramCandidate['source']) {
-  if (source === 'start-menu') return 'Başlat menüsü'
-  if (source === 'app-paths') return 'Yüklü uygulama'
-  return 'Dosyadan seçildi'
+function programSourceLabel(source: ProgramCandidate['source'], translate: (source: string, values?: TranslationValues) => string) {
+  if (source === 'start-menu') return translate('Başlat menüsü')
+  if (source === 'app-paths') return translate('Yüklü uygulama')
+  return translate('Dosyadan seçildi')
 }
 
 function shortcutIconFor(

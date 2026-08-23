@@ -17,7 +17,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "test": "npx tsx electron/TrustedDeviceStore.test.ts && npx tsx src/features/notes/lib/markdownParser.test.ts && npx tsx src/features/notes/lib/vaultEngine.test.ts && npx tsx src/features/music/providers/youtube/youtubeUrl.test.ts && npx tsx src/features/music/core/queue.test.ts && npx tsx src/features/music/core/persistence.test.ts && npx tsx src/features/music/core/musicStore.test.ts && npx tsx src/features/browser/browserState.test.ts",
     "test:browser": "npm run build && node electron/browser-smoke-runner.mjs",
-    "dist": "npm run build && electron-builder --win nsis"
+    "dist": "npm run build && electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -45,6 +45,7 @@
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
     "date-fns": "4.4.0",
+    "electron-updater": "^6.8.9",
     "js-yaml": "^5.3.0",
     "koffi": "^3.1.6",
     "lucide-react": "^0.468.0",
@@ -110,7 +111,16 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Omni"
-    }
+      "shortcutName": "Omni",
+      "artifactName": "Omni-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "geniusprr",
+        "repo": "Shutty",
+        "releaseType": "release"
+      }
+    ]
   }
 }

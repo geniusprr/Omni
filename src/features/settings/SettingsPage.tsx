@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import Bell from 'lucide-react/dist/esm/icons/bell.js'
 import BellRing from 'lucide-react/dist/esm/icons/bell-ring.js'
 import Check from 'lucide-react/dist/esm/icons/check.js'
@@ -6,11 +6,13 @@ import CloudIcon from 'lucide-react/dist/esm/icons/cloud.js'
 import Copy from 'lucide-react/dist/esm/icons/copy.js'
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js'
 import Laptop from 'lucide-react/dist/esm/icons/laptop.js'
+import Languages from 'lucide-react/dist/esm/icons/languages.js'
 import Moon from 'lucide-react/dist/esm/icons/moon.js'
 import MousePointer2 from 'lucide-react/dist/esm/icons/mouse-pointer-2.js'
 import Palette from 'lucide-react/dist/esm/icons/palette.js'
 import QrCode from 'lucide-react/dist/esm/icons/qr-code.js'
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js'
+import Search from 'lucide-react/dist/esm/icons/search.js'
 import Shield from 'lucide-react/dist/esm/icons/shield.js'
 import Smartphone from 'lucide-react/dist/esm/icons/smartphone.js'
 import Sun from 'lucide-react/dist/esm/icons/sun.js'
@@ -20,7 +22,9 @@ import WifiOff from 'lucide-react/dist/esm/icons/wifi-off.js'
 import X from 'lucide-react/dist/esm/icons/x.js'
 import QRCode from 'qrcode'
 import { PairingModal } from '@/components/PairingModal'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -33,6 +37,7 @@ import {
   testSupabaseConnection,
 } from '@/features/remote/client'
 import { desktop } from '@/lib/desktop'
+import { LANGUAGE_OPTIONS, detectSystemLocale, formatDateTime, formatTime, useI18n, type AppLocale } from '@/i18n'
 import type { AppTheme } from '@/theme'
 import type { AppSettings, LocalSendDevice, PairedController, RemoteConnectionStatus, RemoteDesktopStatus, RemoteTrustedDevice } from '@/types'
 
@@ -65,6 +70,7 @@ const APPEARANCE_THEMES: Array<{
 const SETTINGS_SECTIONS = [
   { id: 'general', label: 'Genel', description: 'Başlangıç ve cihaz görünümü', icon: Laptop },
   { id: 'appearance', label: 'Görünüm', description: 'Tema ve arayüz tercihleri', icon: Palette },
+  { id: 'language', label: 'Dil', description: 'Uygulama dili ve bölgesel biçimler', icon: Languages },
   { id: 'notifications', label: 'Bildirimler', description: 'Telefon bildirim aktarımı', icon: Bell },
   { id: 'devices', label: 'Cihazlar', description: 'Eşleştirme ve erişim', icon: Smartphone },
   { id: 'connection', label: 'Bağlantı', description: 'Supabase ve senkronizasyon', icon: Wifi },
@@ -288,7 +294,9 @@ export function SettingsPage({
   appTheme,
   onThemeChange,
 }: SettingsPageProps) {
+  const { locale, localeTag, setLocale, t } = useI18n()
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
+  const [languageSearch, setLanguageSearch] = useState('')
   const [url, setUrl] = useState(settings.supabaseUrl)
   const [key, setKey] = useState(settings.supabaseAnonKey)
   const [deviceName, setDeviceName] = useState(settings.deviceName)
@@ -315,6 +323,24 @@ export function SettingsPage({
   const [remoteEnabled, setRemoteEnabled] = useState(settings.remoteDesktopEnabled !== false)
   const [remoteStatus, setRemoteStatus] = useState<RemoteDesktopStatus>({ state: 'ready', sessionId: null, controllerId: null, controllerName: null, display: null, lastError: null })
   const [trustedRemoteDevices, setTrustedRemoteDevices] = useState<RemoteTrustedDevice[]>([])
+
+  const systemLocale = detectSystemLocale()
+  const selectedLanguage = LANGUAGE_OPTIONS.find((language) => language.code === locale) || LANGUAGE_OPTIONS[0]
+  const systemLanguage = LANGUAGE_OPTIONS.find((language) => language.code === systemLocale) || LANGUAGE_OPTIONS[0]
+  const filteredLanguages = useMemo(() => {
+    const query = languageSearch.trim().toLocaleLowerCase(localeTag)
+    if (!query) return LANGUAGE_OPTIONS
+    return LANGUAGE_OPTIONS.filter((language) =>
+      `${language.nativeName} ${language.label} ${language.code}`.toLocaleLowerCase(localeTag).includes(query),
+    )
+  }, [languageSearch, localeTag])
+
+  function handleLanguageChange(nextLocale: AppLocale) {
+    setLocale(nextLocale)
+    const updated: AppSettings = { ...settings, language: nextLocale, lastSavedAt: Date.now() }
+    void saveEffectiveSettings(updated)
+    onSettingsChange(updated)
+  }
 
   useEffect(() => {
     void desktop.localsend.getStatus().then((st) => {
@@ -381,18 +407,19 @@ export function SettingsPage({
   }, [localCompanionUrl])
 
   useEffect(() => {
+    const relativeTime = new Intl.RelativeTimeFormat(localeTag, { numeric: 'auto' })
     const interval = setInterval(() => {
       if (!lastHeartbeat) {
         setHeartbeatAgo('')
         return
       }
       const diffSec = Math.floor((Date.now() - lastHeartbeat) / 1000)
-      if (diffSec < 5) setHeartbeatAgo('az önce')
-      else if (diffSec < 60) setHeartbeatAgo(`${diffSec} sn önce`)
-      else setHeartbeatAgo(`${Math.floor(diffSec / 60)} dk önce`)
+      if (diffSec < 5) setHeartbeatAgo(relativeTime.format(0, 'second'))
+      else if (diffSec < 60) setHeartbeatAgo(relativeTime.format(-diffSec, 'second'))
+      else setHeartbeatAgo(relativeTime.format(-Math.floor(diffSec / 60), 'minute'))
     }, 1000)
     return () => clearInterval(interval)
-  }, [lastHeartbeat])
+  }, [lastHeartbeat, localeTag])
 
   async function handleSaveSettings() {
     setSaving(true)
@@ -412,16 +439,16 @@ export function SettingsPage({
     try {
       await saveEffectiveSettings(updated)
       onSettingsChange(updated)
-      setTestResult({ success: true, message: 'Ayarlar başarıyla kaydedildi.' })
+      setTestResult({ success: true, message: t('Ayarlar başarıyla kaydedildi.') })
     } catch {
-      setTestResult({ success: false, message: 'Ayarlar kaydedilemedi.' })
+      setTestResult({ success: false, message: t('Ayarlar kaydedilemedi.') })
     } finally {
       setSaving(false)
     }
   }
 
   async function handleSendTestNotification() {
-    await desktop.notifications.test('Omni Test Bildirimi', 'Bilgisayarınızdan telefonunuza başarıyla iletildi!')
+    await desktop.notifications.test(t('Omni Test Bildirimi'), t('Bilgisayarınızdan telefonunuza başarıyla iletildi!'))
     setTestNotifSent(true)
     setTimeout(() => setTestNotifSent(false), 2500)
   }
@@ -492,30 +519,30 @@ export function SettingsPage({
     <section className="utility-screen settings-screen" aria-labelledby="settings-title">
       <header className="screen-heading settings-page-heading">
         <div>
-          <span className="settings-page-heading__eyebrow">OMNI / SYSTEM</span>
-          <h1 id="settings-title">Ayarlar</h1>
-          <p>Uygulamanın görünümünü, bağlantılarını ve cihaz erişimini yönetin.</p>
+          <span className="settings-page-heading__eyebrow">OMNI / {t('Sistem')}</span>
+          <h1 id="settings-title">{t('Ayarlar')}</h1>
+          <p>{t('Uygulamanın görünümünü, bağlantılarını ve cihaz erişimini yönetin.')}</p>
         </div>
         <div className="settings-status-badge">
           {connectionStatus === 'connected' ? (
             <span className="status-badge status-badge--online">
-              <span className="status-badge__dot" /> Supabase Bağlı
+              <span className="status-badge__dot" /> {t('Supabase Bağlı')}
             </span>
           ) : connectionStatus === 'connecting' ? (
             <span className="status-badge status-badge--connecting">
-              <span className="status-badge__dot" /> Bağlanıyor...
+              <span className="status-badge__dot" /> {t('Bağlanıyor...')}
             </span>
           ) : (
             <span className="status-badge status-badge--offline">
-              <WifiOff size={13} /> Bağlantı Yok
+              <WifiOff size={13} /> {t('Bağlantı Yok')}
             </span>
           )}
         </div>
       </header>
 
       <div className="settings-workspace">
-        <aside className="settings-navigation" aria-label="Ayarlar alt menüsü">
-          <div className="settings-navigation__label">Çalışma alanı</div>
+        <aside className="settings-navigation" aria-label={t('Ayarlar alt menüsü')}>
+          <div className="settings-navigation__label">{t('Çalışma alanı')}</div>
           <nav className="settings-navigation__list">
             {SETTINGS_SECTIONS.map((section) => {
               const Icon = section.icon
@@ -530,8 +557,8 @@ export function SettingsPage({
                 >
                   <span className="settings-navigation__icon"><Icon size={15} /></span>
                   <span className="settings-navigation__copy">
-                    <strong>{section.label}</strong>
-                    <small>{section.description}</small>
+                    <strong>{t(section.label)}</strong>
+                    <small>{t(section.description)}</small>
                   </span>
                 </button>
               )
@@ -539,14 +566,14 @@ export function SettingsPage({
           </nav>
           <div className="settings-navigation__footer">
             <span className="settings-navigation__footer-dot" />
-            <span>Omni masaüstü</span>
+            <span>{t('Omni masaüstü')}</span>
           </div>
         </aside>
 
       <div className="settings-scroll-area" data-active-section={activeSection}>
         <div className="settings-section-intro">
-          <span>{SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.label}</span>
-          <p>{SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.description}</p>
+          <span>{t(SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.label || '')}</span>
+          <p>{t(SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.description || '')}</p>
         </div>
 
         {/* Windows Başlangıcı */}
@@ -554,12 +581,12 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><Laptop size={17} /></div>
             <div>
-              <h3>Windows ile Başlatma</h3>
-              <p>Bilgisayar açıldığında Omni arka planda otomatik çalışsın.</p>
+              <h3>{t('Windows ile Başlatma')}</h3>
+              <p>{t('Bilgisayar açıldığında Omni arka planda otomatik çalışsın.')}</p>
             </div>
           </div>
           <div className="settings-card__body settings-row">
-            <Label htmlFor="autostart-toggle">Windows açılışında başlat</Label>
+            <Label htmlFor="autostart-toggle">{t('Windows açılışında başlat')}</Label>
             <Switch
               id="autostart-toggle"
               checked={autostart}
@@ -578,11 +605,11 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><Palette size={17} /></div>
             <div>
-              <h3>Tema ve görünüm</h3>
-              <p>Arayüzün ana görünümünü ve vurgu karakterini seçin.</p>
+              <h3>{t('Tema ve görünüm')}</h3>
+              <p>{t('Arayüzün ana görünümünü ve vurgu karakterini seçin.')}</p>
             </div>
           </div>
-          <div className="settings-theme-options" role="group" aria-label="Tema seçimi">
+          <div className="settings-theme-options" role="group" aria-label={t('Tema seçimi')}>
             {APPEARANCE_THEMES.map((theme) => {
               const Icon = theme.icon
               const active = appTheme === theme.id
@@ -596,7 +623,7 @@ export function SettingsPage({
                   aria-pressed={active}
                 >
                   <span className={`settings-theme-option__preview ${theme.previewClass}`}><Icon size={17} /></span>
-                  <span><strong>{theme.name}</strong><small>{theme.description}</small></span>
+                  <span><strong>{t(theme.name)}</strong><small>{t(theme.description)}</small></span>
                   {active ? <Check className="settings-theme-option__check" size={14} aria-hidden="true" /> : null}
                 </button>
               )
@@ -604,21 +631,77 @@ export function SettingsPage({
           </div>
         </div>
 
+        <Card className="settings-card settings-card--language" data-settings-section="language">
+          <CardHeader className="settings-card__header">
+            <div className="settings-card__icon"><Languages size={17} /></div>
+            <div className="settings-language-heading-copy">
+              <CardTitle>{t('Uygulama dili')}</CardTitle>
+              <CardDescription>{t('Omni ilk açılışta sistem dilinizi otomatik seçer. Buradan istediğiniz zaman değiştirebilirsiniz.')}</CardDescription>
+            </div>
+            <Badge variant="outline" className="settings-language-current-badge">
+              {selectedLanguage.nativeName}
+            </Badge>
+          </CardHeader>
+          <CardContent className="settings-card__body settings-language-body">
+            <div className="settings-language-summary">
+              <div>
+                <span className="settings-language-summary__label">{t('Sistem dili')}</span>
+                <strong>{systemLanguage.nativeName}</strong>
+              </div>
+              {locale === systemLocale ? <Badge variant="secondary">{t('Otomatik seçildi')}</Badge> : null}
+            </div>
+
+            <div className="settings-language-search">
+              <Search size={16} aria-hidden="true" />
+              <Input
+                value={languageSearch}
+                onChange={(event) => setLanguageSearch(event.target.value)}
+                placeholder={t('Dil ara...')}
+                aria-label={t('Dil ara...')}
+              />
+            </div>
+
+            <div className="settings-language-grid" role="listbox" aria-label={t('Uygulama dili')}>
+              {filteredLanguages.map((language) => {
+                const active = language.code === locale
+                return (
+                  <button
+                    type="button"
+                    className={`settings-language-option ${active ? 'settings-language-option--active' : ''}`}
+                    key={language.code}
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => handleLanguageChange(language.code)}
+                  >
+                    <span className="settings-language-option__code">{language.code.toUpperCase()}</span>
+                    <span className="settings-language-option__copy">
+                      <strong>{language.nativeName}</strong>
+                      <small>{language.label}</small>
+                    </span>
+                    {active ? <span className="settings-language-option__check"><Check size={14} /> {t('Seçili')}</span> : null}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="settings-language-footnote">{t('Arayüz dili anında uygulanır. Tarih, saat ve sayı biçimleri de seçilen dile uyarlanır.')}</p>
+          </CardContent>
+        </Card>
+
         {/* PC Bildirim Aynalama */}
         <div className="settings-card" data-settings-section="notifications">
           <div className="settings-card__header">
             <div className="settings-card__icon"><Bell size={17} /></div>
             <div>
-              <h3>PC Bildirim Aynalama (Telefona İletim)</h3>
-              <p>Windows'a gelen WhatsApp, Chrome, Discord, Sistem vb. bildirimleri telefona aktar.</p>
+              <h3>{t('PC Bildirim Aynalama (Telefona İletim)')}</h3>
+              <p>{t("Windows'a gelen WhatsApp, Chrome, Discord, Sistem vb. bildirimleri telefona aktar.")}</p>
             </div>
           </div>
           <div className="settings-card__body">
             <div className="settings-row" style={{ marginBottom: '14px' }}>
               <div>
-                <Label htmlFor="notif-mirror-toggle" style={{ fontWeight: 600 }}>Bildirim Aynalama Aktif</Label>
+                <Label htmlFor="notif-mirror-toggle" style={{ fontWeight: 600 }}>{t('Bildirim Aynalama Aktif')}</Label>
                 <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '2px 0 0' }}>
-                  {listenerStatus.running ? '✓ Windows bildirim dinleyicisi arka planda çalışıyor' : 'Dinleyici başlatılıyor...'}
+                  {listenerStatus.running ? t('✓ Windows bildirim dinleyicisi arka planda çalışıyor') : t('Dinleyici başlatılıyor...')}
                 </p>
               </div>
               <Switch
@@ -637,10 +720,10 @@ export function SettingsPage({
               <div className="settings-row" style={{ marginBottom: '10px' }}>
                 <div>
                   <Label htmlFor="ntfy-toggle" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <BellRing size={14} color="#38bdf8" /> ntfy.sh Kilit Ekranı Bildirimi (Dışarıdayken)
+                    <BellRing size={14} color="#38bdf8" /> {t('ntfy.sh Kilit Ekranı Bildirimi (Dışarıdayken)')}
                   </Label>
                   <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0' }}>
-                    Telefon kilitliyken ve tarayıcı kapalıyken bile sesli/titreşimli push bildirimi gönderir.
+                    {t('Telefon kilitliyken ve tarayıcı kapalıyken bile sesli/titreşimli push bildirimi gönderir.')}
                   </p>
                 </div>
                 <Switch
@@ -657,7 +740,7 @@ export function SettingsPage({
 
               {ntfyEnabled && (
                 <div className="compact-field" style={{ marginTop: '8px' }}>
-                  <Label htmlFor="ntfy-topic-input">ntfy.sh Gizli Kanal Adı (Topic)</Label>
+                  <Label htmlFor="ntfy-topic-input">{t('ntfy.sh Gizli Kanal Adı (Topic)')}</Label>
                   <Input
                     id="ntfy-topic-input"
                     value={ntfyTopic}
@@ -665,7 +748,7 @@ export function SettingsPage({
                     onChange={(e) => setNtfyTopic(e.target.value)}
                   />
                   <span className="field-hint">
-                    Telefondaki ücretsiz ntfy uygulamasından bu kanala abone olarak kilit ekranında bildirim alabilirsiniz.
+                    {t('Telefondaki ücretsiz ntfy uygulamasından bu kanala abone olarak kilit ekranında bildirim alabilirsiniz.')}
                   </span>
                 </div>
               )}
@@ -678,7 +761,7 @@ export function SettingsPage({
                 onClick={() => void handleSendTestNotification()}
               >
                 {testNotifSent ? <Check size={14} /> : <Bell size={14} />}
-                {testNotifSent ? 'Test Bildirimi Gönderildi!' : 'Test Bildirimi Gönder'}
+                {testNotifSent ? t('Test Bildirimi Gönderildi!') : t('Test Bildirimi Gönder')}
               </Button>
             </div>
           </div>
@@ -689,24 +772,24 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><Shield size={17} /></div>
             <div>
-              <h3>Bu Bilgisayar & Eşleştirme</h3>
-              <p>Telefondan ya da başka bir PC'den kontrol için benzersiz kod.</p>
+              <h3>{t('Bu Bilgisayar & Eşleştirme')}</h3>
+              <p>{t("Telefondan ya da başka bir PC'den kontrol için benzersiz kod.")}</p>
             </div>
           </div>
           <div className="settings-card__body">
             <div className="compact-field">
-              <Label htmlFor="device-name-input">Bilgisayar Adı</Label>
+              <Label htmlFor="device-name-input">{t('Bilgisayar Adı')}</Label>
               <Input
                 id="device-name-input"
                 value={deviceName}
-                placeholder="Örn: Masaüstü PC"
+                placeholder={t('Örn: Masaüstü PC')}
                 onChange={(e) => setDeviceName(e.target.value)}
               />
             </div>
 
             <div className="pairing-code-box">
               <div className="pairing-code-display">
-                <span className="pairing-code-label">EŞLEŞTİRME KODU</span>
+                <span className="pairing-code-label">{t('EŞLEŞTİRME KODU')}</span>
                 <strong className="pairing-code-value">{settings.pairingCode}</strong>
               </div>
               <div className="pairing-code-actions">
@@ -716,7 +799,7 @@ export function SettingsPage({
                   onClick={() => copyText(settings.pairingCode, setCopiedCode)}
                 >
                   {copiedCode ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedCode ? 'Kopyalandı' : 'Kodu Kopyala'}
+                  {copiedCode ? t('Kopyalandı') : t('Kodu Kopyala')}
                 </Button>
                 <Button
                   size="compact"
@@ -724,19 +807,19 @@ export function SettingsPage({
                   onClick={() => copyText(cloudRemoteUrl, setCopiedLink)}
                 >
                   {copiedLink ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedLink ? 'Link Kopyalandı' : 'Eşleştirme Linki'}
+                  {copiedLink ? t('Link Kopyalandı') : t('Eşleştirme Linki')}
                 </Button>
                 <Button
                   size="compact"
                   variant="accent"
                   onClick={() => setShowQrModal(true)}
                 >
-                  <QrCode size={14} /> QR Kod ile Bağlan
+                  <QrCode size={14} /> {t('QR Kod ile Bağlan')}
                 </Button>
                 <Button
                   size="compact"
                   variant="ghost"
-                  title="Yeni eşleştirme kodu üret"
+                  title={t('Yeni eşleştirme kodu üret')}
                   onClick={() => void handleRegeneratePairingCode()}
                 >
                   <RefreshCw size={14} />
@@ -746,7 +829,7 @@ export function SettingsPage({
 
             <div className="heartbeat-info">
               <span className="runtime-dot" />
-              <span>Kalp atışı aktif (15 sn) {heartbeatAgo ? `· Son sinyal: ${heartbeatAgo}` : ''}</span>
+              <span>{t('Kalp atışı aktif (15 sn)')} {heartbeatAgo ? `· ${t('Son sinyal')}: ${heartbeatAgo}` : ''}</span>
             </div>
           </div>
         </div>
@@ -756,16 +839,18 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><MousePointer2 size={17} /></div>
             <div>
-              <h3>Mobil PC Ekranı</h3>
-              <p>Aynı Wi‑Fi ağındaki telefondan ekranı gör, mouse’u hareket ettir ve yazı yaz.</p>
+              <h3>{t('Mobil PC Ekranı')}</h3>
+              <p>{t('Aynı Wi‑Fi ağındaki telefondan ekranı gör, mouse’u hareket ettir ve yazı yaz.')}</p>
             </div>
           </div>
           <div className="settings-card__body">
             <div className="settings-row" style={{ marginBottom: '12px' }}>
               <div>
-                <Label htmlFor="remote-desktop-toggle" style={{ fontWeight: 600 }}>PC Ekranı aktif</Label>
+                <Label htmlFor="remote-desktop-toggle" style={{ fontWeight: 600 }}>{t('PC Ekranı aktif')}</Label>
                 <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0' }}>
-                  {remoteStatus.state === 'connected' ? `${remoteStatus.controllerName || 'Mobil cihaz'} bağlı` : remoteEnabled ? 'LAN bağlantısı için hazır' : 'Mobil ekran kontrolü kapalı'}
+                  {remoteStatus.state === 'connected'
+                    ? t('{device} bağlı', { device: remoteStatus.controllerName || t('Mobil cihaz') })
+                    : remoteEnabled ? t('LAN bağlantısı için hazır') : t('Mobil ekran kontrolü kapalı')}
                 </p>
               </div>
               <Switch id="remote-desktop-toggle" checked={remoteEnabled} onCheckedChange={(value) => void handleRemoteEnabledChange(value)} />
@@ -774,29 +859,29 @@ export function SettingsPage({
             {remoteStatus.sessionId ? (
               <div className="heartbeat-info" style={{ marginBottom: '12px' }}>
                 <span className="runtime-dot" />
-                <span>{remoteStatus.controllerName || 'Mobil cihaz'} şu anda PC ekranını kontrol ediyor.</span>
-                <Button size="compact" variant="ghost" onClick={() => void desktop.remoteDesktop.stopSession()}>Oturumu Kapat</Button>
+                <span>{t('{device} şu anda PC ekranını kontrol ediyor.', { device: remoteStatus.controllerName || t('Mobil cihaz') })}</span>
+                <Button size="compact" variant="ghost" onClick={() => void desktop.remoteDesktop.stopSession()}>{t('Oturumu Kapat')}</Button>
               </div>
             ) : null}
 
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px' }}>
               <div className="settings-row" style={{ marginBottom: '8px' }}>
                 <div>
-                  <Label style={{ fontWeight: 600 }}>Güvenilen telefonlar</Label>
-                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0' }}>PIN yalnızca yeni eşleşmede istenir.</p>
+                  <Label style={{ fontWeight: 600 }}>{t('Güvenilen telefonlar')}</Label>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0' }}>{t('PIN yalnızca yeni eşleşmede istenir.')}</p>
                 </div>
-                {trustedRemoteDevices.length > 0 ? <Button size="compact" variant="ghost" onClick={() => void handleRevokeAllRemoteDevices()}>Tümünü İptal Et</Button> : null}
+                {trustedRemoteDevices.length > 0 ? <Button size="compact" variant="ghost" onClick={() => void handleRevokeAllRemoteDevices()}>{t('Tümünü İptal Et')}</Button> : null}
               </div>
               {trustedRemoteDevices.length === 0 ? (
-                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Henüz güvenilen mobil cihaz yok.</p>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>{t('Henüz güvenilen mobil cihaz yok.')}</p>
               ) : trustedRemoteDevices.map((device) => (
                 <div className="paired-item" key={device.id}>
                   <div className="paired-item__icon"><Smartphone size={15} /></div>
                   <div className="paired-item__info">
                     <strong>{device.controllerName}</strong>
-                    <small>Son kullanım: {new Date(device.lastActiveAt).toLocaleString('tr-TR')}</small>
+                    <small>{t('Son kullanım')}: {formatDateTime(device.lastActiveAt, undefined, locale)}</small>
                   </div>
-                  <Button size="compact" variant="icon" title="Güveni kaldır" onClick={() => void handleRevokeRemoteDevice(device.id)}><Trash2 size={14} /></Button>
+                  <Button size="compact" variant="icon" title={t('Güveni kaldır')} onClick={() => void handleRevokeRemoteDevice(device.id)}><Trash2 size={14} /></Button>
                 </div>
               ))}
             </div>
@@ -808,15 +893,15 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><Smartphone size={17} /></div>
             <div>
-              <h3>Aktif Cihazlar ({activeDeviceCount})</h3>
-              <p>Bu bilgisayara uzaktan erişim izni olan yerel Wi-Fi ve bulut cihazları.</p>
+              <h3>{t('Aktif Cihazlar')} ({activeDeviceCount})</h3>
+              <p>{t('Bu bilgisayara uzaktan erişim izni olan yerel Wi-Fi ve bulut cihazları.')}</p>
             </div>
           </div>
           <div className="settings-card__body">
             {pairedControllers.length === 0 && localDevices.length === 0 ? (
               <div className="paired-empty">
                 <Smartphone size={22} />
-                <span>Henüz eşleşmiş bir cihaz yok. Telefondan QR kodu okutun veya aynı Wi-Fi ağından bağlanın.</span>
+                <span>{t('Henüz eşleşmiş bir cihaz yok. Telefondan QR kodu okutun veya aynı Wi-Fi ağından bağlanın.')}</span>
               </div>
             ) : (
               <div className="paired-list">
@@ -826,11 +911,11 @@ export function SettingsPage({
                       <Smartphone size={15} />
                     </div>
                     <div className="paired-item__info">
-                      <strong>{dev.alias || 'Yerel Cihaz'}</strong>
-                      <small>{dev.ip}:{dev.port} · {dev.deviceModel || 'Mobil'}</small>
+                      <strong>{dev.alias || t('Yerel Cihaz')}</strong>
+                      <small>{dev.ip}:{dev.port} · {dev.deviceModel || t('Mobil')}</small>
                     </div>
                     <span className={`status-badge ${activeLocal(dev) ? 'status-badge--online' : 'status-badge--offline'}`} style={{ fontSize: '11px', padding: '2px 8px' }}>
-                      <span className="status-badge__dot" /> {activeLocal(dev) ? 'Yerel' : 'Bekliyor'}
+                      <span className="status-badge__dot" /> {activeLocal(dev) ? t('Yerel') : t('Bekliyor')}
                     </span>
                   </div>
                 ))}
@@ -840,18 +925,18 @@ export function SettingsPage({
                       {ctrl.controllerType === 'desktop' ? <Laptop size={15} /> : <Smartphone size={15} />}
                     </div>
                     <div className="paired-item__info">
-                      <strong>{ctrl.controllerName || 'Telefon Denetleyici'}</strong>
-                      <small>Son aktiflik: {ctrl.lastActiveAt ? new Date(ctrl.lastActiveAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Bilinmiyor'}</small>
+                      <strong>{ctrl.controllerName || t('Telefon Denetleyici')}</strong>
+                      <small>{t('Son aktiflik')}: {ctrl.lastActiveAt ? formatTime(ctrl.lastActiveAt, { hour: '2-digit', minute: '2-digit' }, locale) : t('Bilinmiyor')}</small>
                     </div>
-                    <div className="paired-item__presence" title="Bağlantı kanalları">
-                      {activeLocal(localDevices.find((device) => device.fingerprint === ctrl.controllerId)) ? <span className="presence-chip presence-chip--local"><Wifi size={11} /> Yerel</span> : null}
-                      {activeCloud(ctrl) ? <span className="presence-chip presence-chip--cloud"><CloudIcon size={11} /> Bulut</span> : null}
-                      {!activeLocal(localDevices.find((device) => device.fingerprint === ctrl.controllerId)) && !activeCloud(ctrl) ? <span className="presence-chip presence-chip--offline"><WifiOff size={11} /> Bekliyor</span> : null}
+                    <div className="paired-item__presence" title={t('Bağlantı kanalları')}>
+                      {activeLocal(localDevices.find((device) => device.fingerprint === ctrl.controllerId)) ? <span className="presence-chip presence-chip--local"><Wifi size={11} /> {t('Yerel')}</span> : null}
+                      {activeCloud(ctrl) ? <span className="presence-chip presence-chip--cloud"><CloudIcon size={11} /> {t('Bulut')}</span> : null}
+                      {!activeLocal(localDevices.find((device) => device.fingerprint === ctrl.controllerId)) && !activeCloud(ctrl) ? <span className="presence-chip presence-chip--offline"><WifiOff size={11} /> {t('Bekliyor')}</span> : null}
                     </div>
                     <Button
                       size="compact"
                       variant="icon"
-                      title="Bağlantıyı Kes / Kaldır"
+                      title={t('Bağlantıyı Kes / Kaldır')}
                       onClick={() => void handleRemoveController(ctrl.id)}
                     >
                       <Trash2 size={14} />
@@ -868,8 +953,8 @@ export function SettingsPage({
           <div className="settings-card__header">
             <div className="settings-card__icon"><Wifi size={17} /></div>
             <div>
-              <h3>Supabase Bağlantısı</h3>
-              <p>Gerçek zamanlı komutlar ve kalp atışı için veritabanı ayarları.</p>
+              <h3>{t('Supabase Bağlantısı')}</h3>
+              <p>{t('Gerçek zamanlı komutlar ve kalp atışı için veritabanı ayarları.')}</p>
             </div>
           </div>
           <div className="settings-card__body">
@@ -900,20 +985,20 @@ export function SettingsPage({
                 disabled={saving}
                 onClick={() => void handleSaveSettings()}
               >
-                {saving ? 'Kaydediliyor…' : 'Ayarları Kaydet'}
+                {saving ? t('Kaydediliyor…') : t('Ayarları Kaydet')}
               </Button>
               <Button
                 variant="soft"
                 disabled={testingConnection || !url || !key}
                 onClick={() => void handleTestConnection()}
               >
-                {testingConnection ? 'Test Ediliyor…' : 'Bağlantıyı Test Et'}
+                {testingConnection ? t('Test Ediliyor…') : t('Bağlantıyı Test Et')}
               </Button>
               <Button
                 variant="ghost"
                 onClick={() => setShowSqlModal(true)}
               >
-                <ExternalLink size={14} /> SQL Şeması
+                <ExternalLink size={14} /> {t('SQL Şeması')}
               </Button>
             </div>
 
@@ -942,13 +1027,13 @@ export function SettingsPage({
         <div className="settings-modal-overlay" onClick={() => setShowSqlModal(false)}>
           <div className="settings-modal settings-modal--large" onClick={(e) => e.stopPropagation()}>
             <header className="settings-modal__header">
-              <h3>Supabase SQL Kurulum Şeması</h3>
+              <h3>{t('Supabase SQL Kurulum Şeması')}</h3>
               <Button size="compact" variant="icon" onClick={() => setShowSqlModal(false)}>
                 <X size={15} />
               </Button>
             </header>
             <div className="settings-modal__body">
-              <p>Supabase panelinizde <strong>SQL Editor</strong> bölümüne yapıştırıp <strong>Run</strong> butonuna basarak tabloları oluşturabilirsiniz:</p>
+              <p>{t('Supabase panelinizde SQL Editor bölümüne yapıştırıp Run butonuna basarak tabloları oluşturabilirsiniz:')}</p>
               <textarea
                 className="sql-code-box"
                 readOnly
@@ -961,10 +1046,10 @@ export function SettingsPage({
                   onClick={() => copyText(SUPABASE_SCHEMA_SQL, setCopiedSql)}
                 >
                   {copiedSql ? <Check size={15} /> : <Copy size={15} />}
-                  {copiedSql ? 'SQL Kopyalandı!' : 'Tüm SQL Kodunu Kopyala'}
+                  {copiedSql ? t('SQL Kopyalandı!') : t('Tüm SQL Kodunu Kopyala')}
                 </Button>
                 <Button variant="ghost" onClick={() => setShowSqlModal(false)}>
-                  Kapat
+                  {t('Kapat')}
                 </Button>
               </div>
             </div>

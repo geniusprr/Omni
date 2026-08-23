@@ -13,6 +13,7 @@ import type {
   AiSendResult,
   AiSnapshot,
 } from '../shared/contracts.js'
+import type { AgentToolDefinition, AgentToolRuntime } from './OmniAgent.js'
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 90_000
@@ -122,9 +123,11 @@ function normalizeApiKey(value: string) {
 export class AiStore {
   private readonly db: DatabaseSync
   private readonly emit: (snapshot: AiSnapshot) => void
+  private readonly agent: AgentToolRuntime | null
 
-  constructor(dataDir: string, emit: (snapshot: AiSnapshot) => void) {
+  constructor(dataDir: string, emit: (snapshot: AiSnapshot) => void, agent: AgentToolRuntime | null = null) {
     this.emit = emit
+    this.agent = agent
     const aiDir = path.join(dataDir, 'ai')
     mkdirSync(aiDir, { recursive: true })
     this.db = new DatabaseSync(path.join(aiDir, 'ai.sqlite'))
@@ -347,7 +350,12 @@ export class AiStore {
     })
     const history = this.listMessages(conversation.id).map(({ role, content: message }) => ({ role, content: message }))
     const cacheKey = createHash('sha256').update(JSON.stringify({ provider: provider.id, model, history })).digest('hex')
-    const cached = this.db.prepare('SELECT response, expires_at AS expiresAt FROM response_cache WHERE cache_key = ?').get(cacheKey) as { response?: string; expiresAt?: number } | undefined
+    // Agent turns may contain real side effects (theme changes, alarms, file
+    // operations, etc.). Replaying a cached sentence would skip those tools,
+    // so only plain chat turns are eligible for response caching.
+    const cached = this.agent
+      ? undefined
+      : this.db.prepare('SELECT response, expires_at AS expiresAt FROM response_cache WHERE cache_key = ?').get(cacheKey) as { response?: string; expiresAt?: number } | undefined
     let answer: string
     let fromCache = false
     let emittedToken = false
@@ -362,11 +370,13 @@ export class AiStore {
       fromCache = true
       emitToken?.(answer)
     } else {
-      answer = await requestProvider(provider, storedProvider?.baseUrl || provider.baseUrl, apiKey, model, history, emitToken)
+      answer = await requestProvider(provider, storedProvider?.baseUrl || provider.baseUrl, apiKey, model, history, emitToken, this.agent)
       if (!emittedToken) emitToken?.(answer)
-      this.db.prepare(`INSERT INTO response_cache (cache_key, provider_id, model, response, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(cache_key) DO UPDATE SET response=excluded.response, created_at=excluded.created_at, expires_at=excluded.expires_at`)
-        .run(cacheKey, provider.id, model, answer, now, now + CACHE_TTL_MS)
+      if (!this.agent) {
+        this.db.prepare(`INSERT INTO response_cache (cache_key, provider_id, model, response, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(cache_key) DO UPDATE SET response=excluded.response, created_at=excluded.created_at, expires_at=excluded.expires_at`)
+          .run(cacheKey, provider.id, model, answer, now, now + CACHE_TTL_MS)
+      }
     }
     const assistantMessage: AiMessage = { id: responseMessageId, role: 'assistant', content: answer, createdAt: Date.now(), cached: fromCache }
     this.db.exec('BEGIN IMMEDIATE')
@@ -487,10 +497,16 @@ async function requestProvider(
   model: string,
   messages: Array<{ role: AiMessage['role']; content: string }>,
   onToken?: (token: string) => void,
+  agent?: AgentToolRuntime | null,
 ) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
+    if (agent) {
+      const answer = await requestAgentProvider(provider, baseUrl, apiKey, model, messages, agent, controller.signal, onToken)
+      if (answer.trim()) return answer.trim()
+      throw new Error('AI sağlayıcısı boş yanıt döndürdü.')
+    }
     if (provider.kind === 'anthropic') {
       const system = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n')
       const response = await fetch(`${baseUrl.replace(/\/$/, '')}/messages`, {
@@ -549,6 +565,331 @@ async function requestProvider(
     throw error
   } finally {
     clearTimeout(timer)
+  }
+}
+
+const MAX_AGENT_STEPS = 8
+const MAX_TOOL_RESULT_CHARS = 16_000
+
+async function requestAgentProvider(
+  provider: ProviderDefinition,
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: AiMessage['role']; content: string }>,
+  agent: AgentToolRuntime,
+  signal: AbortSignal,
+  onToken?: (token: string) => void,
+) {
+  if (provider.kind === 'anthropic') return requestAnthropicAgent(baseUrl, apiKey, model, messages, agent, signal, onToken)
+  if (provider.kind === 'gemini') return requestGeminiAgent(baseUrl, apiKey, model, messages, agent, signal, onToken)
+  if (provider.kind === 'ollama') return requestOllamaAgent(baseUrl, model, messages, agent, signal, onToken)
+  return requestOpenAiAgent(provider, baseUrl, apiKey, model, messages, agent, signal, onToken)
+}
+
+async function requestOpenAiAgent(
+  provider: ProviderDefinition,
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  history: Array<{ role: AiMessage['role']; content: string }>,
+  agent: AgentToolRuntime,
+  signal: AbortSignal,
+  onToken?: (token: string) => void,
+) {
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`)
+  if (provider.id === 'openrouter') {
+    headers.set('HTTP-Referer', 'https://kapanis.app')
+    headers.set('X-Title', 'Omni')
+  }
+  const messages: Array<Record<string, unknown>> = [
+    { role: 'system', content: agent.systemPrompt },
+    ...history,
+  ]
+  const tools = agent.tools.map(toOpenAiTool)
+
+  for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      signal,
+      headers,
+      body: JSON.stringify({ model, messages, temperature: 0.35, stream: true, tools, tool_choice: 'auto' }),
+    })
+    if (!response.ok) await readJson(response)
+    const streamed = await readOpenAiAgentStream(response, onToken)
+    const toolCalls = streamed.toolCalls.filter((call) => call.function?.name)
+    if (toolCalls.length === 0) {
+      const content = streamed.content.trim()
+      if (content) return content
+      throw new Error('AI sağlayıcısı boş ajan yanıtı döndürdü.')
+    }
+
+    messages.push({ role: 'assistant', content: streamed.content || null, tool_calls: toolCalls })
+    for (const call of toolCalls) {
+      const name = String(call.function?.name || '')
+      const args = parseToolArguments(call.function?.arguments)
+      const result = await executeAgentTool(agent, name, args)
+      messages.push({
+        role: 'tool',
+        tool_call_id: call.id || `${name}-${step}`,
+        name,
+        content: serializeToolResult(result),
+      })
+    }
+  }
+  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı. İsteği daha küçük adımlara bölmeyi deneyin.')
+}
+
+async function requestAnthropicAgent(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  history: Array<{ role: AiMessage['role']; content: string }>,
+  agent: AgentToolRuntime,
+  signal: AbortSignal,
+  onToken?: (token: string) => void,
+) {
+  const systemText = [agent.systemPrompt, ...history.filter((message) => message.role === 'system').map((message) => message.content)].filter(Boolean).join('\n\n')
+  const messages: Array<Record<string, unknown>> = history
+    .filter((message) => message.role !== 'system')
+    .map((message) => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }))
+  const tools = agent.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters }))
+
+  for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/messages`, {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, max_tokens: 4096, system: systemText, messages, tools }),
+    })
+    const json = await readJson(response) as {
+      content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>
+    }
+    const content = Array.isArray(json.content) ? json.content : []
+    const toolUses = content.filter((part) => part.type === 'tool_use' && typeof part.name === 'string')
+    if (toolUses.length === 0) {
+      const text = content.filter((part) => part.type === 'text').map((part) => part.text || '').join('').trim()
+      if (text) {
+        await emitProgressiveText(text, onToken)
+        return text
+      }
+      throw new Error('Anthropic boş ajan yanıtı döndürdü.')
+    }
+
+    messages.push({ role: 'assistant', content })
+    const toolResults: Array<Record<string, unknown>> = []
+    for (const use of toolUses) {
+      const name = String(use.name)
+      const result = await executeAgentTool(agent, name, use.input && typeof use.input === 'object' ? use.input : {})
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: use.id || `${name}-${step}`,
+        content: serializeToolResult(result),
+      })
+    }
+    messages.push({ role: 'user', content: toolResults })
+  }
+  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı.')
+}
+
+async function requestGeminiAgent(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  history: Array<{ role: AiMessage['role']; content: string }>,
+  agent: AgentToolRuntime,
+  signal: AbortSignal,
+  onToken?: (token: string) => void,
+) {
+  const systemText = [agent.systemPrompt, ...history.filter((message) => message.role === 'system').map((message) => message.content)].filter(Boolean).join('\n\n')
+  const contents: Array<Record<string, unknown>> = history
+    .filter((message) => message.role !== 'system')
+    .map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }))
+  const functionDeclarations = agent.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters }))
+  const url = `${baseUrl.replace(/\/$/, '')}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
+
+  for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
+    const response = await fetch(url, {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemText }] },
+        contents,
+        tools: [{ functionDeclarations }],
+      }),
+    })
+    const json = await readJson(response) as {
+      candidates?: Array<{ content?: { role?: string; parts?: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }>
+    }
+    const modelContent = json.candidates?.[0]?.content
+    const parts = Array.isArray(modelContent?.parts) ? modelContent.parts : []
+    const calls = parts.filter((part) => part.functionCall?.name)
+    if (calls.length === 0) {
+      const text = parts.map((part) => part.text || '').join('').trim()
+      if (text) {
+        await emitProgressiveText(text, onToken)
+        return text
+      }
+      throw new Error('Gemini boş ajan yanıtı döndürdü.')
+    }
+
+    contents.push({ role: 'model', parts })
+    const responseParts: Array<Record<string, unknown>> = []
+    for (const part of calls) {
+      const name = String(part.functionCall?.name || '')
+      const result = await executeAgentTool(agent, name, part.functionCall?.args || {})
+      responseParts.push({ functionResponse: { name, response: { result } } })
+    }
+    contents.push({ role: 'user', parts: responseParts })
+  }
+  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı.')
+}
+
+async function requestOllamaAgent(
+  baseUrl: string,
+  model: string,
+  history: Array<{ role: AiMessage['role']; content: string }>,
+  agent: AgentToolRuntime,
+  signal: AbortSignal,
+  onToken?: (token: string) => void,
+) {
+  const messages: Array<Record<string, unknown>> = [{ role: 'system', content: agent.systemPrompt }, ...history]
+  const tools = agent.tools.map(toOpenAiTool)
+  for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: false, tools }),
+    })
+    const json = await readJson(response) as {
+      message?: { role?: string; content?: string; tool_calls?: Array<{ function?: { name?: string; arguments?: Record<string, unknown> | string } }> }
+    }
+    const message = json.message
+    if (!message) throw new Error('Ollama geçerli bir ajan mesajı döndürmedi.')
+    const calls = Array.isArray(message.tool_calls) ? message.tool_calls.filter((call) => call.function?.name) : []
+    if (calls.length === 0) {
+      if (message.content?.trim()) {
+        const text = message.content.trim()
+        await emitProgressiveText(text, onToken)
+        return text
+      }
+      throw new Error('Ollama boş ajan yanıtı döndürdü.')
+    }
+    messages.push({ role: 'assistant', content: message.content || '', tool_calls: calls })
+    for (const call of calls) {
+      const name = String(call.function?.name || '')
+      const rawArgs = call.function?.arguments
+      const args = typeof rawArgs === 'string' ? parseToolArguments(rawArgs) : rawArgs && typeof rawArgs === 'object' ? rawArgs : {}
+      const result = await executeAgentTool(agent, name, args)
+      messages.push({ role: 'tool', name, content: serializeToolResult(result) })
+    }
+  }
+  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı.')
+}
+
+function toOpenAiTool(tool: AgentToolDefinition) {
+  return { type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } }
+}
+
+function parseToolArguments(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
+  if (typeof value !== 'string' || !value.trim()) return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+async function executeAgentTool(agent: AgentToolRuntime, name: string, args: Record<string, unknown>) {
+  try {
+    return { ok: true, result: await agent.execute(name, args) }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function serializeToolResult(value: unknown) {
+  let result: string
+  try { result = JSON.stringify(value) } catch { result = JSON.stringify({ ok: false, error: 'Araç sonucu serileştirilemedi.' }) }
+  if (result.length <= MAX_TOOL_RESULT_CHARS) return result
+  return `${result.slice(0, MAX_TOOL_RESULT_CHARS)}…`
+}
+
+async function readOpenAiAgentStream(response: Response, onToken?: (token: string) => void) {
+  if (!response.body) throw new Error('AI sağlayıcısı ajan akış gövdesi döndürmedi.')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let content = ''
+  const calls = new Map<number, { id?: string; type?: string; function: { name?: string; arguments: string } }>()
+
+  const consumeLine = (line: string) => {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('data:')) return
+    const data = trimmed.slice(5).trim()
+    if (!data || data === '[DONE]') return
+    try {
+      const payload = JSON.parse(data) as {
+        choices?: Array<{
+          delta?: {
+            content?: string | Array<{ text?: string; content?: string }>
+            tool_calls?: Array<{
+              index?: number
+              id?: string
+              type?: string
+              function?: { name?: string; arguments?: string }
+            }>
+          }
+        }>
+      }
+      const delta = payload.choices?.[0]?.delta
+      const rawContent = delta?.content
+      const token = typeof rawContent === 'string'
+        ? rawContent
+        : Array.isArray(rawContent)
+          ? rawContent.map((part) => part.text || part.content || '').join('')
+          : ''
+      if (token) {
+        content += token
+        onToken?.(token)
+      }
+      for (const part of delta?.tool_calls ?? []) {
+        const index = Number.isInteger(part.index) ? Number(part.index) : calls.size
+        const current = calls.get(index) ?? { function: { arguments: '' } }
+        if (part.id) current.id = part.id
+        if (part.type) current.type = part.type
+        if (part.function?.name) current.function.name = `${current.function.name ?? ''}${part.function.name}`
+        if (part.function?.arguments) current.function.arguments += part.function.arguments
+        calls.set(index, current)
+      }
+    } catch {
+      // OpenAI-compatible providers may include SSE keep-alives or comments.
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const lines = buffer.split(/\r?\n/)
+    buffer = done ? '' : lines.pop() || ''
+    for (const line of lines) consumeLine(line)
+    if (done) break
+  }
+  if (buffer) consumeLine(buffer)
+  return { content, toolCalls: [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call) }
+}
+
+async function emitProgressiveText(text: string, onToken?: (token: string) => void) {
+  if (!onToken || !text) return
+  const chunks = text.match(/.{1,28}(?:\s+|$)|\S{1,28}/g) ?? [text]
+  for (const chunk of chunks) {
+    onToken(chunk)
+    if (chunks.length > 1) await new Promise<void>((resolve) => setTimeout(resolve, 9))
   }
 }
 

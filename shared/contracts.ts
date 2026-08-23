@@ -51,7 +51,11 @@ export const APP_EVENTS = {
   vaultFsChange: 'vault:fs-change',
   youtubeMusicState: 'youtube-music-state',
   aiUpdated: 'ai:updated',
+  agentAction: 'app:agent-action',
   remoteDesktopState: 'remote-desktop:state',
+  browserFocusChanged: 'window:browser-focus-changed',
+  browserFocusShortcut: 'window:browser-focus-shortcut',
+  updateStatus: 'app:update-status',
 } as const
 
 export type AppEventName = (typeof APP_EVENTS)[keyof typeof APP_EVENTS]
@@ -295,10 +299,27 @@ export interface AiSendResult {
 
 export type AiUpdate = { type: 'snapshot'; snapshot: AiSnapshot }
 
+export type AppUpdatePhase = 'checking' | 'available' | 'current' | 'downloading' | 'downloaded' | 'error'
+
+export interface AppUpdateStatus {
+  phase: AppUpdatePhase
+  message: string
+  currentVersion: string
+  availableVersion?: string
+  progress?: number
+}
+
+export type AgentAppAction =
+  | { type: 'set-theme'; theme: 'light' | 'obsidian' | 'rose' | 'violet' | 'ocean' }
+  | { type: 'open-workspace'; workspace: 'home' | 'browser' | 'ai' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings' }
+  | { type: 'open-browser'; query: string }
+
 export type IpcChannel =
   | 'window:minimize'
   | 'window:toggle-maximize'
   | 'window:is-maximized'
+  | 'window:set-browser-focus'
+  | 'window:is-browser-focus'
   | 'window:close'
   | 'window:show'
   | 'open-external'
@@ -412,6 +433,7 @@ export type IpcChannel =
   | 'ai:clear-cache'
   | 'librechat:activate'
   | 'librechat:set-bounds'
+  | 'librechat:set-theme'
   | 'librechat:deactivate'
 
 export interface ElectronDesktopBridge {
@@ -448,6 +470,8 @@ export type SharedAppPayload =
   | AiSnapshot
   | AiSendResult
   | AiUpdate
+  | AgentAppAction
+  | AppUpdateStatus
   | string
   | null
 
