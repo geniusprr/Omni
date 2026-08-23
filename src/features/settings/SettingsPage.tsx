@@ -55,10 +55,10 @@ const APPEARANCE_THEMES: Array<{
   previewClass: string
   icon: typeof Sun
 }> = [
-  { id: 'obsidian', name: 'Obsidyen', description: 'Siyah ağırlıklı, beyaz detaylı modern tema', previewClass: 'settings-theme-option__preview--obsidian', icon: Moon },
-  { id: 'rose', name: 'Pembe', description: 'Siyah zemin üzerinde zarif pembe vurgular', previewClass: 'settings-theme-option__preview--rose', icon: Palette },
-  { id: 'violet', name: 'Mor', description: 'Derin siyah ve premium mor detaylar', previewClass: 'settings-theme-option__preview--violet', icon: Palette },
-  { id: 'ocean', name: 'Okyanus', description: 'Koyu arayüz ve canlı mavi detaylar', previewClass: 'settings-theme-option__preview--ocean', icon: Palette },
+  { id: 'obsidian', name: 'Obsidyen', description: 'Dengeli grafit yüzeyler ve net beyaz detaylar', previewClass: 'settings-theme-option__preview--obsidian', icon: Moon },
+  { id: 'rose', name: 'Pembe', description: 'Koyu gül tonları ve yumuşak pembe vurgular', previewClass: 'settings-theme-option__preview--rose', icon: Palette },
+  { id: 'violet', name: 'Mor', description: 'Mürdüm yüzeyler ve rafine mor detaylar', previewClass: 'settings-theme-option__preview--violet', icon: Palette },
+  { id: 'ocean', name: 'Okyanus', description: 'Koyu teal yüzeyler ve ferah mavi vurgular', previewClass: 'settings-theme-option__preview--ocean', icon: Palette },
   { id: 'light', name: 'Açık', description: 'Aydınlık ve temiz gündüz görünümü', previewClass: 'settings-theme-option__preview--light', icon: Sun },
 ]
 
