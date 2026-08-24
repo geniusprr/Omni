@@ -11,6 +11,7 @@ import { AlarmsPage } from '@/features/alarms/AlarmsPage'
 import { LibreChatPage } from '@/features/ai/LibreChatPage'
 import { BrowserPage } from '@/features/browser/BrowserPage'
 import { requestBrowserNavigation } from '@/features/browser/browserData'
+import { CalendarPage } from '@/features/calendar/CalendarPage'
 import { MiniOsDashboard } from '@/features/home/MiniOsDashboard'
 import { LocalSendPage } from '@/features/localsend/LocalSendPage'
 import { NotesPage } from '@/features/notes/NotesPage'
@@ -380,6 +381,8 @@ export default function App() {
     const lower = cmd.toLowerCase().trim()
     if (lower.startsWith('/kapat') || lower.startsWith('kapat')) {
       setMode('power')
+    } else if (lower.startsWith('/takvim') || lower.startsWith('takvim') || lower.startsWith('/calendar') || lower.startsWith('calendar')) {
+      setMode('calendar')
     } else if (lower.startsWith('/alarm') || lower.startsWith('alarm')) {
       setMode('alarms')
     } else if (lower.startsWith('/not') || lower.startsWith('not')) {
@@ -478,6 +481,12 @@ export default function App() {
                   onCreate={createAlarm}
                   onCancel={cancelAlarm}
                 />
+              </div>
+            )}
+
+            {mode === 'calendar' && (
+              <div className="minios-subscreen minios-subscreen--full">
+                <CalendarPage alarms={alarms} onOpenAlarms={() => setMode('alarms')} />
               </div>
             )}
 

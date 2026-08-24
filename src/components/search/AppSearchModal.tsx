@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import AlarmClock from 'lucide-react/dist/esm/icons/alarm-clock.js'
 import Bot from 'lucide-react/dist/esm/icons/bot.js'
+import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
@@ -28,6 +29,7 @@ const APP_SEARCH_ITEMS = [
   { mode: 'ai' as const, label: 'AI · LibreChat', description: 'Yapay zekâ çalışma alanı', keywords: 'ai yapay zeka librechat chat sohbet asistan', icon: Bot },
   { mode: 'power' as const, label: 'Güç & Zamanlayıcı', description: 'Kapatma ve güç planları', keywords: 'güç power kapat shutdown yeniden başlat zamanlayıcı timer /kapat', icon: Power },
   { mode: 'alarms' as const, label: 'Alarmlar', description: 'Alarm oluştur ve yönet', keywords: 'alarm saat hatırlatıcı zaman /alarm', icon: AlarmClock },
+  { mode: 'calendar' as const, label: 'Takvim', description: 'Etkinlikler ve günlük plan', keywords: 'takvim calendar etkinlik ajanda plan toplantı tarih /takvim', icon: CalendarDays },
   { mode: 'notes' as const, label: 'Notlar', description: 'Not defteri ve dosyalar', keywords: 'not notes defter vault markdown dosya yazı /not', icon: StickyNote },
   { mode: 'localsend' as const, label: 'Dosya Paylaşımı', description: 'LocalSend ile cihazlara gönder', keywords: 'localsend dosya paylaş paylaşım gönder transfer /paylas', icon: Share2 },
   { mode: 'remote' as const, label: 'Uzak Bağlantı', description: 'Telefon ve uzaktan kontrol', keywords: 'remote uzak bağlantı telefon cihaz kontrol eşleştirme', icon: MonitorSmartphone },

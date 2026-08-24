@@ -329,7 +329,7 @@ export interface AppUpdateStatus {
 
 export type AgentAppAction =
   | { type: 'set-theme'; theme: 'light' | 'obsidian' | 'rose' | 'violet' | 'ocean' }
-  | { type: 'open-workspace'; workspace: 'home' | 'browser' | 'ai' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings' }
+  | { type: 'open-workspace'; workspace: 'home' | 'browser' | 'ai' | 'calendar' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings' }
   | { type: 'open-browser'; query: string }
 
 export type IpcChannel =

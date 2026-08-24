@@ -9,7 +9,7 @@ import type { SystemManager } from './SystemManager.js'
 import type { WindowManager } from './WindowManager.js'
 
 export type OmniTheme = 'light' | 'obsidian' | 'rose' | 'violet' | 'ocean'
-export type OmniWorkspace = 'home' | 'browser' | 'ai' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
+export type OmniWorkspace = 'home' | 'browser' | 'ai' | 'calendar' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
 
 export interface AgentToolDefinition {
   name: string
@@ -65,7 +65,7 @@ export const OMNI_AGENT_TOOLS: readonly AgentToolDefinition[] = [
   {
     name: 'app_workspace',
     description: 'Eon içinde belirtilen çalışma alanını açar.',
-    parameters: objectSchema({ workspace: ACTION(['home', 'browser', 'ai', 'power', 'alarms', 'notes', 'localsend', 'remote', 'settings']) }, ['workspace']),
+    parameters: objectSchema({ workspace: ACTION(['home', 'browser', 'ai', 'calendar', 'power', 'alarms', 'notes', 'localsend', 'remote', 'settings']) }, ['workspace']),
   },
   {
     name: 'browser',
@@ -223,7 +223,7 @@ export class OmniAgent implements AgentToolRuntime {
         return { ok: true, theme }
       }
       case 'app_workspace': {
-        const workspace = readEnum(args, 'workspace', ['home', 'browser', 'ai', 'power', 'alarms', 'notes', 'localsend', 'remote', 'settings'] as const)
+        const workspace = readEnum(args, 'workspace', ['home', 'browser', 'ai', 'calendar', 'power', 'alarms', 'notes', 'localsend', 'remote', 'settings'] as const)
         this.options.openWorkspace(workspace)
         return { ok: true, workspace }
       }

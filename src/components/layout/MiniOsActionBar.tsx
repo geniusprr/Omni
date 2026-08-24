@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import AlarmClock from 'lucide-react/dist/esm/icons/alarm-clock.js'
 import Bot from 'lucide-react/dist/esm/icons/bot.js'
+import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
 import Home from 'lucide-react/dist/esm/icons/home.js'
@@ -41,6 +42,7 @@ function modeLabel(mode: MiniOsMode) {
     case 'home': return 'Anasayfa'
     case 'power': return 'Güç yönetimi'
     case 'alarms': return 'Alarmlar'
+    case 'calendar': return 'Takvim'
     case 'notes': return 'Defter'
     case 'localsend': return 'Dosya paylaşımı'
     case 'remote': return 'Mobil kumanda'
@@ -55,6 +57,7 @@ function modeIcon(mode: MiniOsMode) {
     case 'home': return <Home size={13} />
     case 'power': return <Zap size={13} />
     case 'alarms': return <AlarmClock size={13} />
+    case 'calendar': return <CalendarDays size={13} />
     case 'notes': return <FileText size={13} />
     case 'localsend': return <Share2 size={13} />
     case 'remote': return <Smartphone size={13} />
@@ -97,6 +100,12 @@ export function MiniOsActionBar({
           { id: 'power', label: 'Güç yönetimine geç', icon: <Zap size={14} />, onClick: navigate('power') },
           { id: 'quick', label: 'Hızlı eylemleri aç', icon: <Plus size={14} />, onClick: onQuickAction },
           { id: 'settings', label: 'Ayarları aç', icon: <Settings size={14} />, onClick: navigate('settings') },
+        ]
+      case 'calendar':
+        return [
+          { id: 'alarms', label: 'Alarm yönetimine geç', icon: <AlarmClock size={14} />, onClick: navigate('alarms') },
+          { id: 'search', label: 'Arama ve komutları aç', icon: <Search size={14} />, onClick: onOpenQuickSwitcher },
+          { id: 'home', label: 'Anasayfaya dön', icon: <Home size={14} />, onClick: navigate('home') },
         ]
       case 'notes':
         return [

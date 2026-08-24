@@ -1,5 +1,6 @@
 import React from 'react'
 import Bot from 'lucide-react/dist/esm/icons/bot.js'
+import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js'
 import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
@@ -12,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { EonLogo } from '@/components/brand/EonLogo'
 import type { RemoteConnectionStatus } from '@/types'
 
-export type MiniOsMode = 'home' | 'browser' | 'ai' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
+export type MiniOsMode = 'home' | 'browser' | 'ai' | 'calendar' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
 
 interface MiniOsDockProps {
   activeMode: MiniOsMode
@@ -116,6 +117,22 @@ export function MiniOsDock({
               </button>
             </TooltipTrigger>
             <TooltipContent className="dock-tooltip" side="bottom">LibreChat</TooltipContent>
+          </Tooltip>
+
+          {/* Calendar */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`dock-btn ${activeMode === 'calendar' ? 'dock-btn--active' : ''}`}
+                onClick={() => onSelectMode('calendar')}
+                aria-label="Takvim"
+                title="Takvim"
+              >
+                <CalendarDays size={18} strokeWidth={1.8} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="dock-tooltip" side="bottom">Takvim</TooltipContent>
           </Tooltip>
 
           {/* 3. Clock / Time & Power Management */}
