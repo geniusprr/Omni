@@ -1,10 +1,10 @@
 {
-  "name": "kapanis",
+  "name": "eon",
   "version": "1.1.0",
   "private": true,
   "main": "dist-electron/electron/main.js",
-  "description": "Omni — Windows için tarayıcı, LibreChat, notlar, dosya paylaşımı, uzaktan erişim, medya, alarm ve güç yönetimini tek masaüstünde birleştiren kişisel çalışma alanı.",
-  "author": "Omni contributors",
+  "description": "Eon — Windows için tarayıcı, yapay zekâ, dosya paylaşımı, uzaktan erişim, medya, alarm ve güç yönetimini tek masaüstünde birleştiren kişisel çalışma alanı.",
+  "author": "Eon contributors",
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -80,7 +80,7 @@
   },
   "build": {
     "appId": "com.kapanis.desktop",
-    "productName": "Omni",
+    "productName": "Eon",
     "directories": {
       "output": "release"
     },
@@ -107,15 +107,15 @@
       "target": [
         "nsis"
       ],
-      "icon": "app-icon.png"
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Omni",
-      "artifactName": "Omni-Setup-${version}.${ext}"
+      "shortcutName": "Eon",
+      "artifactName": "Eon-Setup-${version}.${ext}"
     },
     "publish": [
       {

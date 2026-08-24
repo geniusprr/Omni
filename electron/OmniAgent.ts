@@ -59,17 +59,17 @@ const ACTION = (values: string[], description?: string) => ({ type: 'string', en
 export const OMNI_AGENT_TOOLS: readonly AgentToolDefinition[] = [
   {
     name: 'app_theme',
-    description: 'Omni uygulamasının temasını değiştirir. Kullanıcı tema adını belirtmediyse bu aracı çağırma; önce Light, Obsidian, Rose, Violet veya Ocean seçeneklerinden hangisini istediğini sor.',
+    description: 'Eon uygulamasının temasını değiştirir. Kullanıcı tema adını belirtmediyse bu aracı çağırma; önce Light, Obsidian, Rose, Violet veya Ocean seçeneklerinden hangisini istediğini sor.',
     parameters: objectSchema({ theme: ACTION(['light', 'obsidian', 'rose', 'violet', 'ocean'], 'Seçilecek kesin tema.') }, ['theme']),
   },
   {
     name: 'app_workspace',
-    description: 'Omni içinde belirtilen çalışma alanını açar.',
+    description: 'Eon içinde belirtilen çalışma alanını açar.',
     parameters: objectSchema({ workspace: ACTION(['home', 'browser', 'ai', 'power', 'alarms', 'notes', 'localsend', 'remote', 'settings']) }, ['workspace']),
   },
   {
     name: 'browser',
-    description: 'Omni tarayıcısını kontrol eder. open yeni bir URL/arama açar; navigate aktif sekmeyi değiştirir; list_tabs açık sekmeleri döndürür.',
+    description: 'Eon tarayıcısını kontrol eder. open yeni bir URL/arama açar; navigate aktif sekmeyi değiştirir; list_tabs açık sekmeleri döndürür.',
     parameters: objectSchema({
       action: ACTION(['open', 'navigate', 'list_tabs', 'reload', 'back', 'forward']),
       query: { type: 'string', description: 'URL veya arama metni. open/navigate için gerekir.' },
@@ -127,7 +127,7 @@ export const OMNI_AGENT_TOOLS: readonly AgentToolDefinition[] = [
   },
   {
     name: 'vault',
-    description: 'Omni Markdown vault dosyalarını listeler, okur, yazar, oluşturur, yeniden adlandırır, siler veya Explorer’da gösterir. delete yalnızca kullanıcı açıkça isterse kullanılmalıdır.',
+    description: 'Eon Markdown vault dosyalarını listeler, okur, yazar, oluşturur, yeniden adlandırır, siler veya Explorer’da gösterir. delete yalnızca kullanıcı açıkça isterse kullanılmalıdır.',
     parameters: objectSchema({
       action: ACTION(['default_path', 'list', 'read', 'write', 'create_file', 'create_folder', 'rename', 'delete', 'reveal']),
       vaultPath: { type: 'string' },
@@ -138,7 +138,7 @@ export const OMNI_AGENT_TOOLS: readonly AgentToolDefinition[] = [
   },
   {
     name: 'transfers',
-    description: 'Omni aktarım kayıtlarını listeler, dosyayı açar, Explorer’da gösterir veya kaydı siler.',
+    description: 'Eon aktarım kayıtlarını listeler, dosyayı açar, Explorer’da gösterir veya kaydı siler.',
     parameters: objectSchema({
       action: ACTION(['list', 'open', 'show', 'delete']),
       id: { type: 'string' },
@@ -181,7 +181,7 @@ export const OMNI_AGENT_TOOLS: readonly AgentToolDefinition[] = [
   },
 ] as const
 
-const SYSTEM_PROMPT = `Sen Omni'nin uygulama içi ajanısın. Sohbet etmekle kalmaz, gerektiğinde sağlanan araçlarla uygulamayı gerçekten kontrol edersin.
+const SYSTEM_PROMPT = `Sen Eon'nin uygulama içi ajanısın. Sohbet etmekle kalmaz, gerektiğinde sağlanan araçlarla uygulamayı gerçekten kontrol edersin.
 
 Kurallar:
 - Kullanıcı bir uygulama işlemini açıkça istiyorsa uygun aracı çağır ve sonucu doğrula; yapılmamış bir şeyi yapılmış gibi söyleme.
@@ -189,7 +189,7 @@ Kurallar:
 - Silme, kapatma/yeniden başlatma, program başlatma gibi etkili işlemleri yalnızca açık kullanıcı isteğiyle yap.
 - Araç sonucu hata döndürürse hatayı saklama; kullanıcıya anlaşılır biçimde söyle.
 - Araç sonuçlarını kısa ve doğal biçimde özetle. Aynı işi gereksiz yere iki kez yapma.
-- Omni içindeki çalışma alanlarını, notları, alarmları, tarayıcıyı, medya kontrollerini, LocalSend'i, dosya vault'unu, uzak masaüstünü, bildirimleri ve sistem ayarlarını kullanabilirsin.`
+- Eon içindeki çalışma alanlarını, notları, alarmları, tarayıcıyı, medya kontrollerini, LocalSend'i, dosya vault'unu, uzak masaüstünü, bildirimleri ve sistem ayarlarını kullanabilirsin.`
 
 export class OmniAgent implements AgentToolRuntime {
   readonly tools = OMNI_AGENT_TOOLS
@@ -239,7 +239,7 @@ export class OmniAgent implements AgentToolRuntime {
       case 'remote': return this.remote(args)
       case 'notifications': return this.notifications(args)
       case 'programs': return this.programs(args)
-      default: throw new Error(`Bilinmeyen Omni aracı: ${name}`)
+      default: throw new Error(`Bilinmeyen Eon aracı: ${name}`)
     }
   }
 
@@ -281,7 +281,7 @@ export class OmniAgent implements AgentToolRuntime {
     const delaySeconds = readPositiveInt(args, 'delaySeconds', 315_360_000)
     return this.options.alarms.create({
       timestamp: Date.now() + delaySeconds * 1000,
-      note: readOptionalString(args, 'note') || 'Omni ajan alarmı',
+      note: readOptionalString(args, 'note') || 'Eon ajan alarmı',
       intervalSeconds: null,
       occurrenceCount: 1,
       soundEnabled: readOptionalBoolean(args, 'soundEnabled') ?? true,
@@ -410,7 +410,7 @@ export class OmniAgent implements AgentToolRuntime {
     const action = readEnum(args, 'action', ['status', 'history', 'test'] as const)
     if (action === 'status') return notifications.getStatus()
     if (action === 'history') return notifications.getHistory().slice(0, 100)
-    return notifications.sendTestNotification(readOptionalString(args, 'title') || 'Omni', readOptionalString(args, 'body') || 'Omni ajanından test bildirimi')
+    return notifications.sendTestNotification(readOptionalString(args, 'title') || 'Eon', readOptionalString(args, 'body') || 'Eon ajanından test bildirimi')
   }
 
   private async programs(args: Record<string, unknown>) {

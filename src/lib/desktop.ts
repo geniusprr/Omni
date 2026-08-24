@@ -38,7 +38,7 @@ export function isDesktopRuntime() {
 
 function requireBridge() {
   const bridge = getBridge()
-  if (!bridge) throw new Error('Omni masaüstü API’si yalnızca Electron uygulaması içinde çalışır.')
+  if (!bridge) throw new Error('Eon masaüstü API’si yalnızca Electron uygulaması içinde çalışır.')
   return bridge
 }
 
@@ -229,11 +229,11 @@ export const desktop = {
     onReceived: (callback: (item: TransferItem) => void) => listen(APP_EVENTS.mobileFile, callback),
   },
   mobile: {
-    getConnectionInfo: () => optionalInvoke<ConnectionInfo>('mobile:get-connection-info', { port: 54321, ipAddresses: ['127.0.0.1'], deviceName: 'Omni Desktop', qrPayload: 'kapanis://connect?host=127.0.0.1&port=54321&name=Desktop' }),
+    getConnectionInfo: () => optionalInvoke<ConnectionInfo>('mobile:get-connection-info', { port: 54321, ipAddresses: ['127.0.0.1'], deviceName: 'Eon Desktop', qrPayload: 'kapanis://connect?host=127.0.0.1&port=54321&name=Desktop' }),
     onNotification: (callback: (payload: MobileNotification) => void) => listen(APP_EVENTS.mobileNotification, callback),
   },
   localsend: {
-    getStatus: () => optionalInvoke<LocalSendStatus>('localsend:get-status', { isRunning: false, localIp: '127.0.0.1', allIps: ['127.0.0.1'], port: 53317, alias: 'Omni Desktop', fingerprint: 'web-preview', autoAccept: false, downloadDir: '', discoveredCount: 0 }),
+    getStatus: () => optionalInvoke<LocalSendStatus>('localsend:get-status', { isRunning: false, localIp: '127.0.0.1', allIps: ['127.0.0.1'], port: 53317, alias: 'Eon Desktop', fingerprint: 'web-preview', autoAccept: false, downloadDir: '', discoveredCount: 0 }),
     getDevices: () => optionalInvoke<LocalSendDevice[]>('localsend:get-devices', []),
     scanNetwork: () => optionalInvoke<void>('localsend:scan-network', undefined),
     sendText: (targetIp: string, targetPort: number, text: string) => invoke<string>('localsend:send-text', { targetIp, targetPort, text }),

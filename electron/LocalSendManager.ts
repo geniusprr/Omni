@@ -372,7 +372,7 @@ export class LocalSendManager {
     return {
       port: this.port,
       ipAddresses: ips,
-      deviceName: os.hostname() || 'Omni Desktop',
+      deviceName: os.hostname() || 'Eon Desktop',
       qrPayload: 'kapanis://connect?host=' + encodeURIComponent(host) + '&port=' + this.port + '&name=' + encodeURIComponent(os.hostname() || 'Desktop'),
     }
   }
@@ -406,7 +406,7 @@ export class LocalSendManager {
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const settings = this.mobile.system.getSettings()
       response.setHeader('Content-Type', 'text/html; charset=utf-8')
-      response.end(renderCompanionHtml(settings?.deviceName || os.hostname() || 'Omni Desktop', this.port))
+      response.end(renderCompanionHtml(settings?.deviceName || os.hostname() || 'Eon Desktop', this.port))
       return
     }
 
@@ -458,7 +458,7 @@ export class LocalSendManager {
       sendJson(response, {
         status: 'ok',
         authenticated: isAuth,
-        deviceName: settings?.deviceName || os.hostname() || 'Omni Desktop',
+        deviceName: settings?.deviceName || os.hostname() || 'Eon Desktop',
         deviceId: settings?.deviceId,
         // Pairing credentials must never be part of an unauthenticated discovery response.
         pairingCode: isAuth ? settings?.pairingCode : undefined,
@@ -521,7 +521,7 @@ export class LocalSendManager {
     if (request.method === 'POST' && url.pathname === '/api/notifications/test') {
       const testNotif: MirroredNotification = {
         id: randomUUID(),
-        appName: 'Omni Test',
+        appName: 'Eon Test',
         title: 'Test Bildirimi',
         body: 'Yerel ağdan telefonunuza başarıyla iletildi!',
         timestamp: Date.now(),
@@ -538,7 +538,7 @@ export class LocalSendManager {
       const settings = this.mobile.system.getSettings()
       sendJson(response, {
         status: 'ok',
-        deviceName: settings?.deviceName || os.hostname() || 'Omni Desktop',
+        deviceName: settings?.deviceName || os.hostname() || 'Eon Desktop',
         deviceId: settings?.deviceId,
         version: '2.0.0',
         port: this.port,
@@ -621,7 +621,7 @@ export class LocalSendManager {
     }
     if (request.method === 'POST' && url.pathname === '/api/notify') {
       const body = await readJson(request)
-      const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim() : 'Omni Mobil Bildirim'
+      const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim() : 'Eon Mobil Bildirim'
       const message = typeof body?.message === 'string' ? body.message.slice(0, 2_000) : ''
       if (message && Notification.isSupported()) new Notification({ title, body: message }).show()
       this.mobile.emit('mobile:notification', { id: randomUUID(), title, message, urgent: body?.urgent === true, createdAt: Date.now() })
@@ -719,7 +719,7 @@ export class LocalSendManager {
     return {
       ip: localIps()[0] || '127.0.0.1',
       port: this.port,
-      alias: settings?.deviceName || os.hostname() || 'Omni Desktop',
+      alias: settings?.deviceName || os.hostname() || 'Eon Desktop',
       version: '1.0',
       deviceModel: 'Electron',
       deviceType: 'desktop',
@@ -932,7 +932,7 @@ function renderCompanionHtml(deviceName: string, port: number): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Omni Yerel Panel</title>
+  <title>Eon Yerel Panel</title>
   <style>
     :root {
       --bg: #0b0f17;
@@ -1045,7 +1045,7 @@ function renderCompanionHtml(deviceName: string, port: number): string {
   <div id="app-view">
     <header>
       <div class="header-brand">
-        <h1>Omni <span style="font-weight:400; font-size:0.82rem; color:var(--text-muted);">Yerel</span></h1>
+        <h1>Eon <span style="font-weight:400; font-size:0.82rem; color:var(--text-muted);">Yerel</span></h1>
       </div>
       <div class="header-right">
         <div class="status-badge">
@@ -1257,7 +1257,7 @@ function renderCompanionHtml(deviceName: string, port: number): string {
       Notification.requestPermission().then(perm => {
         updatePermButton();
         if (perm === 'granted') {
-          new Notification('Omni Yerel', { body: 'PC bildirimleri telefonunuza başarıyla bağlandı!' });
+          new Notification('Eon Yerel', { body: 'PC bildirimleri telefonunuza başarıyla bağlandı!' });
         }
       });
     }

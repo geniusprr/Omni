@@ -60,7 +60,7 @@ export class WindowManager {
       height: 900,
       minWidth: 720,
       minHeight: 520,
-      title: 'Omni',
+      title: 'Eon',
       show: false,
       // Use the operating system's real caption buttons. The titlebar is
       // hidden into the client area so the wallpaper remains visible behind
@@ -131,7 +131,7 @@ export class WindowManager {
     this.splashWindow = new BrowserWindow({
       width: 430,
       height: 238,
-      title: 'Omni',
+      title: 'Eon',
       show: false,
       frame: false,
       transparent: false,
@@ -410,12 +410,24 @@ export class WindowManager {
     }
   }
 
-  configureTray(onQuit: () => void) {
+  async configureTray(onQuit: () => void) {
     if (this.tray) return
-    const iconPath = path.join(app.getAppPath(), 'app-icon.png')
-    const icon = nativeImage.createFromPath(iconPath)
+    let icon = nativeImage.createEmpty()
+    try {
+      // Packaged Windows builds inherit the Eon SVG through electron-builder;
+      // reading the executable icon keeps the tray perfectly in sync with it.
+      if (app.isPackaged && process.platform === 'win32') {
+        icon = await app.getFileIcon(process.execPath, { size: 'small' })
+      }
+    } catch {
+      // Fall through to the development/fallback asset below.
+    }
+    if (icon.isEmpty()) {
+      const iconPath = path.join(app.getAppPath(), 'app-icon.png')
+      icon = nativeImage.createFromPath(iconPath)
+    }
     this.tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-    this.tray.setToolTip('Omni')
+    this.tray.setToolTip('Eon')
     const menu = Menu.buildFromTemplate([
       { label: 'Aç', click: () => this.showMain() },
       { type: 'separator' },

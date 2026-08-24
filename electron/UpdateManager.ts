@@ -36,7 +36,7 @@ export class UpdateManager {
       this.pendingInfo = info
       this.report({
         phase: 'available',
-        message: `Omni ${info.version} bulundu`,
+        message: `Eon ${info.version} bulundu`,
         currentVersion: app.getVersion(),
         availableVersion: info.version,
       })
@@ -47,7 +47,7 @@ export class UpdateManager {
     autoUpdater.on('update-not-available', () => {
       this.report({
         phase: 'current',
-        message: 'Omni güncel',
+        message: 'Eon güncel',
         currentVersion: app.getVersion(),
       })
     })
@@ -122,8 +122,8 @@ export class UpdateManager {
 
     const response = await dialog.showMessageBox(window, {
       type: 'info',
-      title: 'Omni güncellemesi',
-      message: `Omni ${info.version} kullanıma hazır.`,
+      title: 'Eon güncellemesi',
+      message: `Eon ${info.version} kullanıma hazır.`,
       detail: `Şu an ${app.getVersion()} sürümünü kullanıyorsunuz. Yeni sürümü şimdi indirmek ister misiniz? İndirme tamamlandığında kurulum için yeniden başlatma izniniz ayrıca istenecek.`,
       buttons: ['İndir ve güncelle', 'Şimdi değil'],
       defaultId: 0,
@@ -149,7 +149,7 @@ export class UpdateManager {
       await dialog.showMessageBox(window, {
         type: 'error',
         title: 'Güncelleme indirilemedi',
-        message: 'Omni güncellemesi indirilemedi.',
+        message: 'Eon güncellemesi indirilemedi.',
         detail: 'İnternet bağlantınızı kontrol edip uygulamayı yeniden açtığınızda güncelleme tekrar denetlenecek.',
         buttons: ['Tamam'],
         defaultId: 0,
@@ -165,8 +165,8 @@ export class UpdateManager {
     const response = await dialog.showMessageBox(window, {
       type: 'info',
       title: 'Güncelleme hazır',
-      message: `Omni ${version} indirildi.`,
-      detail: 'Güncellemeyi kurmak için Omni yeniden başlatılmalı. Açık çalışmalarınızı kaydedin; yeniden başlatma sonrasında yeni sürüm otomatik olarak açılacak.',
+      message: `Eon ${version} indirildi.`,
+      detail: 'Güncellemeyi kurmak için Eon yeniden başlatılmalı. Açık çalışmalarınızı kaydedin; yeniden başlatma sonrasında yeni sürüm otomatik olarak açılacak.',
       buttons: ['Yeniden başlat ve güncelle', 'Daha sonra'],
       defaultId: 0,
       cancelId: 1,

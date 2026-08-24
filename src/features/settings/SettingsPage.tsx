@@ -79,7 +79,7 @@ const SETTINGS_SECTIONS = [
 type SettingsSection = typeof SETTINGS_SECTIONS[number]['id']
 
 const SUPABASE_SCHEMA_SQL = `-- ============================================================================
--- Omni Supabase Database Schema: Temiz Kurulum & Sıfırlama
+-- Eon Supabase Database Schema: Temiz Kurulum & Sıfırlama
 -- ============================================================================
 
 -- 1. Eski Çakışan Tablo ve Tipleri Güvenle Temizleme
@@ -448,7 +448,7 @@ export function SettingsPage({
   }
 
   async function handleSendTestNotification() {
-    await desktop.notifications.test(t('Omni Test Bildirimi'), t('Bilgisayarınızdan telefonunuza başarıyla iletildi!'))
+    await desktop.notifications.test(t('Eon Test Bildirimi'), t('Bilgisayarınızdan telefonunuza başarıyla iletildi!'))
     setTestNotifSent(true)
     setTimeout(() => setTestNotifSent(false), 2500)
   }
@@ -519,7 +519,7 @@ export function SettingsPage({
     <section className="utility-screen settings-screen" aria-labelledby="settings-title">
       <header className="screen-heading settings-page-heading">
         <div>
-          <span className="settings-page-heading__eyebrow">OMNI / {t('Sistem')}</span>
+          <span className="settings-page-heading__eyebrow">EON / {t('Sistem')}</span>
           <h1 id="settings-title">{t('Ayarlar')}</h1>
           <p>{t('Uygulamanın görünümünü, bağlantılarını ve cihaz erişimini yönetin.')}</p>
         </div>
@@ -566,7 +566,7 @@ export function SettingsPage({
           </nav>
           <div className="settings-navigation__footer">
             <span className="settings-navigation__footer-dot" />
-            <span>{t('Omni masaüstü')}</span>
+            <span>{t('Eon masaüstü')}</span>
           </div>
         </aside>
 
@@ -582,7 +582,7 @@ export function SettingsPage({
             <div className="settings-card__icon"><Laptop size={17} /></div>
             <div>
               <h3>{t('Windows ile Başlatma')}</h3>
-              <p>{t('Bilgisayar açıldığında Omni arka planda otomatik çalışsın.')}</p>
+              <p>{t('Bilgisayar açıldığında Eon arka planda otomatik çalışsın.')}</p>
             </div>
           </div>
           <div className="settings-card__body settings-row">
@@ -636,7 +636,7 @@ export function SettingsPage({
             <div className="settings-card__icon"><Languages size={17} /></div>
             <div className="settings-language-heading-copy">
               <CardTitle>{t('Uygulama dili')}</CardTitle>
-              <CardDescription>{t('Omni ilk açılışta sistem dilinizi otomatik seçer. Buradan istediğiniz zaman değiştirebilirsiniz.')}</CardDescription>
+              <CardDescription>{t('Eon ilk açılışta sistem dilinizi otomatik seçer. Buradan istediğiniz zaman değiştirebilirsiniz.')}</CardDescription>
             </div>
             <Badge variant="outline" className="settings-language-current-badge">
               {selectedLanguage.nativeName}

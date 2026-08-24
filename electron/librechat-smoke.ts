@@ -236,7 +236,7 @@ async function assertAgentToolLoop() {
     systemPrompt: 'Kullanıcı yalnızca “temayı değiştir” derse hangi tema olduğunu sor. Tema belirtilmişse app_theme aracını kullan.',
     tools: [{
       name: 'app_theme',
-      description: 'Omni temasını değiştirir.',
+      description: 'Eon temasını değiştirir.',
       parameters: { type: 'object', properties: { theme: { type: 'string', enum: ['ocean'] } }, required: ['theme'] },
     }],
     async execute(name, args) {

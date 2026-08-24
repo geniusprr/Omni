@@ -28,7 +28,7 @@ export function YouTubeMusicPage({ isVisible = true }: YouTubeMusicPageProps) {
 
   return <div className="youtube-music-webview-host" data-youtube-music-browser>
     <div className="youtube-music-browser-fallback">
-      <p>YouTube Music, Omni tarayıcı sekmelerinde çalışır.</p>
+      <p>YouTube Music, Eon tarayıcı sekmelerinde çalışır.</p>
       <button type="button" onClick={openInBrowser}>Tarayıcı sekmesinde aç</button>
       {!isElectronRuntime() ? <small>Bu özellik Electron masaüstü uygulamasında kullanılabilir.</small> : null}
     </div>

@@ -2030,7 +2030,7 @@ export function BrowserPage({
           {/* Omnibox / Search & Address Input */}
           <form className="edge-browser__address-bar" onSubmit={submit}>
             {/* Security / Privacy Indicator */}
-            <div className="edge-browser__security-badge" title={panel ? 'Omni dahili sayfası' : isIncognito ? 'Gizli Tarama Modu' : isHttps ? 'Bağlantı güvenli (HTTPS)' : 'Web Adresi veya Arama'}>
+            <div className="edge-browser__security-badge" title={panel ? 'Eon dahili sayfası' : isIncognito ? 'Gizli Tarama Modu' : isHttps ? 'Bağlantı güvenli (HTTPS)' : 'Web Adresi veya Arama'}>
               {panel ? (
                 <Settings2 size={13} />
               ) : isIncognito ? (
@@ -2245,7 +2245,7 @@ export function BrowserPage({
             <div className="edge-browser__internal-sidebar-heading">
               <Globe2 size={17} />
               <span>
-                <strong>Omni</strong>
+                <strong>Eon</strong>
                 <small>Dahili sayfalar</small>
               </span>
             </div>
@@ -2640,7 +2640,7 @@ export function BrowserPage({
                   </button>
                 </div>
                 <p className="edge-browser__extension-note">
-                  Omni Chromium tabanlıdır. Electron yalnızca Chrome Extension API'lerinin desteklediği bölümünü sağlar; bazı eklentiler Chrome'daki tüm özellikleriyle çalışmayabilir.
+                  Eon Chromium tabanlıdır. Electron yalnızca Chrome Extension API'lerinin desteklediği bölümünü sağlar; bazı eklentiler Chrome'daki tüm özellikleriyle çalışmayabilir.
                 </p>
               </section>
 

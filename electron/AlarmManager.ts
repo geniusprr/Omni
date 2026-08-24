@@ -122,7 +122,7 @@ export class AlarmManager {
     this.activeAlarm = { ...alarm }
     try { fs.writeFileSync(this.activePath, JSON.stringify(alarm, null, 2), 'utf8') } catch { /* best effort */ }
     if (Notification.isSupported()) {
-      const notification = new Notification({ title: 'Omni alarmı', body: alarm.note || 'Alarm zamanı geldi.' })
+      const notification = new Notification({ title: 'Eon alarmı', body: alarm.note || 'Alarm zamanı geldi.' })
       notification.show()
     }
     if (alarm.soundEnabled) this.playSound(alarm.soundProfile)

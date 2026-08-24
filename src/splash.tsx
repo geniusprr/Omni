@@ -8,6 +8,7 @@ import '@fontsource-variable/plus-jakarta-sans'
 import './styles/compact.css'
 import { APP_EVENTS, type AppUpdateStatus } from '../shared/contracts'
 import { APP_THEME_STORAGE_KEY, DEFAULT_APP_THEME, isAppTheme } from './theme'
+import { EonLogo } from './components/brand/EonLogo'
 
 document.documentElement.classList.add('splash-page')
 const storedTheme = window.localStorage.getItem(APP_THEME_STORAGE_KEY)
@@ -34,14 +35,17 @@ function Splash() {
   return (
     <main className={`splash-window splash-window--${status.phase}`} data-window-drag role="status" aria-live="polite">
       <div className="splash-topline" data-window-drag>
-        <span className="splash-kicker">OMNI</span>
+        <span className="splash-brand">
+          <EonLogo size={28} className="splash-brand-logo" />
+          <span className="splash-kicker">EON</span>
+        </span>
         <span className="splash-version">{status.currentVersion ? `v${status.currentVersion}` : 'desktop'}</span>
       </div>
 
       <div className="splash-content" data-window-drag>
         <div className="splash-lockup">
           <p className="splash-eyebrow">Çalışma alanın hazırlanıyor</p>
-          <h1>Omni başlatılıyor</h1>
+          <h1>Eon başlatılıyor</h1>
           <div className="splash-status-line">
             <span className="splash-status-dot" aria-hidden="true" />
             <span>{status.message}</span>

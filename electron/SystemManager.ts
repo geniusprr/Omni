@@ -111,7 +111,7 @@ export class SystemManager {
     if (normalized.length > MAX_TERMINAL_COMMAND_LENGTH) throw new Error(`Komut en fazla ${MAX_TERMINAL_COMMAND_LENGTH} karakter olabilir.`)
     if (normalized.includes('\u0000')) throw new Error('Komut geçersiz bir karakter içeriyor.')
     if (!await this.isRunningAsAdministrator()) {
-      const error = new Error('Yönetici CMD oturumu için bilgisayardaki Omni uygulamasını "Yönetici olarak çalıştır" ile yeniden açın.')
+      const error = new Error('Yönetici CMD oturumu için bilgisayardaki Eon uygulamasını "Yönetici olarak çalıştır" ile yeniden açın.')
       ;(error as Error & { code?: string }).code = 'ELEVATION_REQUIRED'
       throw error
     }

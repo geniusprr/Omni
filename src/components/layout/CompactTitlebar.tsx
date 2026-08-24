@@ -9,7 +9,7 @@ export function CompactTitlebar() {
     <header className="compact-titlebar" data-window-drag>
       <div className="compact-titlebar__brand" data-window-drag>
         <span className="brand-mark" aria-hidden="true"><span /></span>
-        <span className="brand-title">Omni</span>
+        <span className="brand-title">Eon</span>
       </div>
       <div className="compact-titlebar__spacer" data-window-drag />
       <TooltipProvider delayDuration={700}>

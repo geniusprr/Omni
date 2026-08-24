@@ -46,7 +46,7 @@ const LOCAL_USER = {
   id: 'kapanis-local-user',
   username: 'kapanis',
   email: 'local@kapanis.invalid',
-  name: 'Omni',
+  name: 'Eon',
   avatar: '',
   role: 'USER',
   provider: 'local',
@@ -928,7 +928,7 @@ function endpointsConfig() {
     ['mistral', 'Mistral', 'custom', true],
     ['groq', 'Groq', 'custom', true],
     ['ollama', 'Ollama (yerel)', 'custom', false],
-    ['custom', 'Omni yerel AI', 'custom', false],
+    ['custom', 'Eon yerel AI', 'custom', false],
   ] as const
   return Object.fromEntries(definitions.map(([id, label, type, userProvide], order) => [id, {
     order,
@@ -977,7 +977,7 @@ function startupConfig(snapshot: AiSnapshot) {
     ['mistral', 'Mistral', 'mistral', configured.get('mistral') || 'mistral-small-latest', false],
     ['groq', 'Groq', 'groq', configured.get('groq') || 'llama-3.3-70b-versatile', false],
     ['ollama', 'Ollama (yerel)', 'ollama', configured.get('ollama') || 'llama3.2', false],
-    ['local', 'Omni yerel AI', 'custom', configured.get('custom') || 'local-model', false],
+    ['local', 'Eon yerel AI', 'custom', configured.get('custom') || 'local-model', false],
   ].map(([name, label, endpoint, model, isDefault]) => ({
     name,
     label,

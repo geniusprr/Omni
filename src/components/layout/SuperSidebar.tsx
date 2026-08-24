@@ -103,7 +103,7 @@ export function SuperSidebar({
         <div className="super-sidebar__workspace-selector">
           <div className="workspace-brand-badge">
             <span className="workspace-logo-dot" />
-            <span className="workspace-title">Omni</span>
+            <span className="workspace-title">Eon</span>
           </div>
           <ChevronDown size={14} className="workspace-chevron" />
         </div>

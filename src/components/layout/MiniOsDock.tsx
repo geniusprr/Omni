@@ -4,12 +4,12 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js'
 import FileText from 'lucide-react/dist/esm/icons/file-text.js'
 import Folder from 'lucide-react/dist/esm/icons/folder.js'
 import Globe2 from 'lucide-react/dist/esm/icons/globe-2.js'
-import Home from 'lucide-react/dist/esm/icons/home.js'
 import Plus from 'lucide-react/dist/esm/icons/plus.js'
 import Search from 'lucide-react/dist/esm/icons/search.js'
 import Share2 from 'lucide-react/dist/esm/icons/share-2.js'
 import Settings from 'lucide-react/dist/esm/icons/settings.js'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { EonLogo } from '@/components/brand/EonLogo'
 import type { RemoteConnectionStatus } from '@/types'
 
 export type MiniOsMode = 'home' | 'browser' | 'ai' | 'power' | 'alarms' | 'notes' | 'localsend' | 'remote' | 'settings'
@@ -48,7 +48,7 @@ export function MiniOsDock({
                 aria-label="Anasayfa / Dashboard"
                 title="Anasayfa"
               >
-                <Home size={18} strokeWidth={2.2} />
+                <EonLogo size={20} className="dock-eon-logo" />
               </button>
             </TooltipTrigger>
             <TooltipContent className="dock-tooltip" side="bottom">Anasayfa</TooltipContent>

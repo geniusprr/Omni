@@ -14,7 +14,7 @@ const WELCOME_NOTE = [
   'status: active',
   '---',
   '',
-  '# Omni Defter\'e Hoş Geldiniz',
+  '# Eon Defter\'e Hoş Geldiniz',
   '',
   'Bu defter, **Obsidian** ve **Geode** mantığıyla çalışan, tamamen yerel dosya tabanlı bir kişisel bilgi ve not yönetim sistemidir.',
   '',
@@ -126,8 +126,8 @@ export class ContentManager {
     if (!fs.existsSync(welcome)) fs.writeFileSync(welcome, WELCOME_NOTE, 'utf8')
     const projects = path.join(vault, 'Projeler')
     fs.mkdirSync(projects, { recursive: true })
-    const project = path.join(projects, 'Omni.md')
-    if (!fs.existsSync(project)) fs.writeFileSync(project, '# Omni Projesi\n\nSakin ve düşük kaynak tüketimli Windows kapatma, alarm ve defter uygulaması.\n\nİlgili not: [[Hoşgeldiniz]]', 'utf8')
+    const project = path.join(projects, 'Eon.md')
+    if (!fs.existsSync(project)) fs.writeFileSync(project, '# Eon Projesi\n\nSakin ve düşük kaynak tüketimli Windows kapatma, alarm ve defter uygulaması.\n\nİlgili not: [[Hoşgeldiniz]]', 'utf8')
     return vault
   }
 

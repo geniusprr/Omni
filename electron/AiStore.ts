@@ -601,7 +601,7 @@ async function requestOpenAiAgent(
   if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`)
   if (provider.id === 'openrouter') {
     headers.set('HTTP-Referer', 'https://kapanis.app')
-    headers.set('X-Title', 'Omni')
+    headers.set('X-Title', 'Eon')
   }
   const messages: Array<Record<string, unknown>> = [
     { role: 'system', content: agent.systemPrompt },
@@ -638,7 +638,7 @@ async function requestOpenAiAgent(
       })
     }
   }
-  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı. İsteği daha küçük adımlara bölmeyi deneyin.')
+  throw new Error('Eon ajanı çok fazla ardışık araç çağrısı yaptı. İsteği daha küçük adımlara bölmeyi deneyin.')
 }
 
 async function requestAnthropicAgent(
@@ -690,7 +690,7 @@ async function requestAnthropicAgent(
     }
     messages.push({ role: 'user', content: toolResults })
   }
-  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı.')
+  throw new Error('Eon ajanı çok fazla ardışık araç çağrısı yaptı.')
 }
 
 async function requestGeminiAgent(
@@ -744,7 +744,7 @@ async function requestGeminiAgent(
     }
     contents.push({ role: 'user', parts: responseParts })
   }
-  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı.')
+  throw new Error('Eon ajanı çok fazla ardışık araç çağrısı yaptı.')
 }
 
 async function requestOllamaAgent(
@@ -787,7 +787,7 @@ async function requestOllamaAgent(
       messages.push({ role: 'tool', name, content: serializeToolResult(result) })
     }
   }
-  throw new Error('Omni ajanı çok fazla ardışık araç çağrısı yaptı.')
+  throw new Error('Eon ajanı çok fazla ardışık araç çağrısı yaptı.')
 }
 
 function toOpenAiTool(tool: AgentToolDefinition) {

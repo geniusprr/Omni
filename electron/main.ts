@@ -68,7 +68,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       },
     })
     const initialUpdateCheck = updater.checkOnLaunch()
-    windows.configureTray(() => windows.quit())
+    void windows.configureTray(() => windows.quit())
 
     browser = new BrowserManager(windows, mainWindow)
     await browser.initializeFeatures()
@@ -173,7 +173,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
       mainWindow.webContents.once('did-finish-load', startSmoke)
     }
   }).catch((error) => {
-    console.error('[startup] Omni could not start', error)
+    console.error('[startup] Eon could not start', error)
     app.quit()
   })
 
@@ -373,7 +373,7 @@ if (!isBrowserSmokeTest && !app.requestSingleInstanceLock()) {
     handle('notifications:get-status', () => notifications?.getStatus() || { running: false, accessGranted: false, historyCount: 0 })
     handle('notifications:test', (payload) => {
       const obj = payload && typeof payload === 'object' ? payload as any : {}
-      const title = typeof obj.title === 'string' && obj.title ? obj.title : 'Omni Test Bildirimi'
+      const title = typeof obj.title === 'string' && obj.title ? obj.title : 'Eon Test Bildirimi'
       const body = typeof obj.body === 'string' && obj.body ? obj.body : 'Bilgisayarınızdan telefonunuza iletildi!'
       return notifications?.sendTestNotification(title, body)
     })

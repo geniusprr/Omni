@@ -294,7 +294,7 @@ export function NotebookPage({
                 <div className="empty-state">
                   <Smartphone size={28} className="empty-state__icon" />
                   <p>Mobilden aktarım bekleniyor.</p>
-                  <span>Telefondaki Omni uygulamasından fotoğraf veya dosya seçip anında gönderin.</span>
+                  <span>Telefondaki Eon uygulamasından fotoğraf veya dosya seçip anında gönderin.</span>
                 </div>
               ) : (
                 <div className="transfers-grid">
@@ -406,7 +406,7 @@ export function NotebookPage({
                   <span className="qr-info-val">{connInfo?.deviceName || appSettings?.deviceName || 'Windows PC'}</span>
                 </div>
                 <p className="qr-subtext">
-                  Omni Mobil uygulamasında QR kodu okutabilir veya 6 haneli kodu girerek dünyanın her yerinden uzaktan bağlanabilirsiniz.
+                  Eon Mobil uygulamasında QR kodu okutabilir veya 6 haneli kodu girerek dünyanın her yerinden uzaktan bağlanabilirsiniz.
                 </p>
               </div>
             </div>

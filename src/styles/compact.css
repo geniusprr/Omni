@@ -1346,6 +1346,21 @@ textarea {
   width: 100%;
 }
 
+.splash-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--splash-text);
+}
+
+.splash-brand-logo {
+  width: 29px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: currentColor;
+  filter: drop-shadow(0 3px 10px color-mix(in srgb, var(--splash-accent) 18%, transparent));
+}
+
 .splash-kicker,
 .splash-version,
 .splash-meta {
@@ -1358,6 +1373,19 @@ textarea {
   color: var(--splash-text);
   font-weight: 650;
   letter-spacing: 0.13em;
+}
+
+.dock-eon-logo {
+  width: 20px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: currentColor;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+
+.dock-btn:hover .dock-eon-logo,
+.dock-btn--active .dock-eon-logo {
+  transform: scale(1.06);
 }
 
 .splash-version {
@@ -4626,7 +4654,7 @@ html.splash-page[data-app-theme='ocean'] .splash-window {
 
 /* ==========================================================================
    DEFTER (NOTES) PKM MODULE STYLES
-   Calm, focused, futuristic Windows glass workspace for Omni
+   Calm, focused, futuristic Windows glass workspace for Eon
    ========================================================================== */
 
 .notes-workspace-screen {

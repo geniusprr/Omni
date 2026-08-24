@@ -235,7 +235,7 @@ export function SuperTitlebar({
 
       {/* Center Breadcrumb */}
       <div className="super-titlebar__center" data-window-drag>
-        <span className="titlebar-app-name" data-window-drag>Omni</span>
+        <span className="titlebar-app-name" data-window-drag>Eon</span>
         <span className="titlebar-sep" data-window-drag>·</span>
         <span className="titlebar-active-mode" data-window-drag>{modeLabels[activeMode] || activeMode}</span>
       </div>
